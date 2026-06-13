@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Génération du corpus OpenCacao sur un pod GPU loué (RunPod, etc.).
 #
-# Tourne ENTIÈREMENT sur le pod : installe vLLM + dépendances, sert Mistral 7B
+# Tourne ENTIÈREMENT sur le pod : installe vLLM + dépendances, sert Ministral 3
 # en local, lance la génération RAG (qui télécharge elle-même les documents
 # officiels), puis valide le corpus. Aucun transfert de PDF nécessaire.
 #
@@ -19,8 +19,8 @@
 set -euo pipefail
 
 CIBLE="${1:-10000}"
-MODELE_BASE="mistralai/Mistral-7B-Instruct-v0.3"
-NOM_SERVI="mistral"
+MODELE_BASE="mistralai/Ministral-3-8B-Instruct-2512"
+NOM_SERVI="ministral"
 PORT=8000
 
 if [[ -z "${HF_TOKEN:-}" ]]; then
@@ -31,10 +31,11 @@ fi
 
 echo "==> 1/5  Installation de vLLM et des dépendances du corpus"
 pip install --quiet --upgrade pip
-pip install --quiet vllm
+# Ministral 3 (déc. 2025) requiert vLLM >= 0.12 et mistral-common >= 1.8.6.
+pip install --quiet -U "vllm>=0.12.0" "mistral-common>=1.8.6"
 pip install --quiet -r training/requirements-corpus.txt
 
-echo "==> 2/5  Démarrage du serveur Mistral (vLLM) sur le port ${PORT}"
+echo "==> 2/5  Démarrage du serveur Ministral 3 (vLLM) sur le port ${PORT}"
 export HUGGING_FACE_HUB_TOKEN="${HF_TOKEN}"
 python -m vllm.entrypoints.openai.api_server \
   --model "${MODELE_BASE}" \

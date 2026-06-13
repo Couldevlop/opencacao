@@ -1,10 +1,16 @@
-# Versions épinglées — pipeline d'entraînement LoRA (CLAUDE §2.1)
-torch==2.3.1
-transformers==4.44.2
-peft==0.12.0
-bitsandbytes==0.43.3
-trl==0.10.1
-datasets==2.20.0
-accelerate==0.33.0
-sentencepiece==0.2.0
-protobuf==5.28.2
+# Pipeline d'entraînement LoRA — modèle de base Ministral-3-8B-Instruct-2512.
+#
+# Ministral 3 (déc. 2025) exige un stack récent : le stack mi-2024 (transformers
+# 4.44, etc.) ne sait pas charger cette architecture. On fixe des versions
+# MINIMALES validées pour le chargement/affinage ; le pod installe au besoin la
+# dernière version compatible (pod_train.sh). mistral-common fournit le tokenizer.
+torch>=2.5
+transformers>=4.50
+peft>=0.13
+bitsandbytes>=0.44
+trl>=0.12
+datasets>=3.0
+accelerate>=1.0
+sentencepiece>=0.2
+protobuf>=5
+mistral-common>=1.8.6

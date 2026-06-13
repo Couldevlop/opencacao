@@ -38,7 +38,7 @@ pip install -r training/requirements-corpus.txt
 ```
 
 Un serveur LLM **local** OpenAI-compatible doit être disponible (vLLM servant
-Mistral-7B ou le modèle OpenCacao). Variables d'environnement :
+Ministral 3 ou le modèle OpenCacao). Variables d'environnement :
 
 | Variable | Rôle | Défaut |
 |---|---|---|

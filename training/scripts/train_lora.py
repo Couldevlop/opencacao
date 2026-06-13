@@ -1,4 +1,4 @@
-"""Fine-tuning LoRA 4-bit de Mistral 7B sur le corpus cacao (CLAUDE §6.1).
+"""Fine-tuning LoRA 4-bit de Ministral 3 8B sur le corpus cacao (CLAUDE §6.1).
 
 Hyperparamètres épinglés. Exécuté ponctuellement sur GPU 24 Go.
 
@@ -24,7 +24,7 @@ from transformers import (
 )
 from trl import SFTTrainer
 
-BASE_MODEL = "mistralai/Mistral-7B-Instruct-v0.3"
+BASE_MODEL = "mistralai/Ministral-3-8B-Instruct-2512"
 SEED = 42
 
 LORA_CONFIG = {
@@ -61,12 +61,27 @@ TRAINING_ARGS = {
 }
 
 
-def _format_exemple(exemple: dict[str, str]) -> dict[str, str]:
-    """Met une paire au format de chat Mistral [INST] ... [/INST]."""
+def _format_exemple(exemple: dict[str, str], tokenizer: AutoTokenizer) -> dict[str, str]:
+    """Met une paire au format de chat du modèle via son propre template.
+
+    Utilise ``tokenizer.apply_chat_template`` plutôt qu'un format codé en dur,
+    pour rester correct quel que soit le modèle (Ministral 3, Mistral…).
+
+    Args:
+        exemple: Paire ``instruction``/``input``/``output``.
+        tokenizer: Tokenizer du modèle de base (fournit le template de chat).
+
+    Returns:
+        Dict avec la clé ``text`` (dialogue formaté prêt pour le SFT).
+    """
     instruction = exemple["instruction"].strip()
     contexte = exemple.get("input", "").strip()
     prompt = f"{instruction}\n{contexte}".strip() if contexte else instruction
-    texte = f"<s>[INST] {prompt} [/INST] {exemple['output'].strip()}</s>"
+    messages = [
+        {"role": "user", "content": prompt},
+        {"role": "assistant", "content": exemple["output"].strip()},
+    ]
+    texte = tokenizer.apply_chat_template(messages, tokenize=False)
     return {"text": texte}
 
 
@@ -99,7 +114,9 @@ def entrainer(corpus: list[Path], output: Path) -> None:
     model.print_trainable_parameters()
 
     dataset = load_dataset("json", data_files=[str(c) for c in corpus], split="train")
-    dataset = dataset.map(_format_exemple, remove_columns=dataset.column_names)
+    dataset = dataset.map(
+        lambda ex: _format_exemple(ex, tokenizer), remove_columns=dataset.column_names
+    )
     split = dataset.train_test_split(test_size=0.1, seed=SEED)
 
     trainer = SFTTrainer(

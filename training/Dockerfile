@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
-# Image d'entraînement GPU (CUDA 12.1). Exécutée ponctuellement sur GPU loué.
-FROM pytorch/pytorch:2.3.1-cuda12.1-cudnn8-runtime
+# Image d'entraînement GPU (CUDA). Exécutée ponctuellement sur GPU loué.
+# PyTorch récent requis pour charger Ministral 3 (déc. 2025).
+FROM pytorch/pytorch:2.5.1-cuda12.1-cudnn9-runtime
 
 ENV PYTHONUNBUFFERED=1 \
     HF_HOME=/cache/huggingface

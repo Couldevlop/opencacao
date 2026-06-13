@@ -205,20 +205,6 @@ documents:
     annee: 2020
     themes: [post_recolte, sechage, conservation, qualite]
 
-  - id: guide_mondial_systemes_cacao
-    source: "FAO"
-    titre: "Un guide mondial sur les systèmes de culture du cacao (ICCO, version FR)"
-    url: "https://www.icco.org/wp-content/uploads/B27407-Cocoa-Grower-Guide-French-CFW-v7-interactive.pdf"
-    annee: 2022
-    themes: [systemes_culture, agroforesterie, sol, ravageurs, fermentation]
-
-  - id: icco_revue_mondiale_systemes
-    source: "FAO"
-    titre: "Revue mondiale des systèmes de culture du cacao (ICCO, version FR)"
-    url: "https://www.icco.org/wp-content/uploads/Global-Review-of-Cocoa-Farming-Systems_Final-French.pdf"
-    annee: 2022
-    themes: [systemes_culture, agroforesterie, post_recolte, qualite, ravageurs]
-
   - id: fao_analyse_prospective_filiere
     source: "FAO"
     titre: "Analyse prospective de la filière cacao en Côte d'Ivoire"

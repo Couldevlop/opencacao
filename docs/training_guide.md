@@ -9,7 +9,7 @@ libère l'instance.
 - Un GPU **16–20 Go de VRAM suffisent** pour le LoRA 4-bit (QLoRA) — ex. RTX 4000
   Ada 20 Go, RTX 3090/4090 24 Go. RunPod / Vast.ai (~0,30–0,70 USD/h). 24 Go =
   plus de confort (contexte/batch), pas une obligation.
-- Un token Hugging Face avec accès à `mistralai/Mistral-7B-Instruct-v0.3`
+- Un token Hugging Face avec accès à `mistralai/Ministral-3-8B-Instruct-2512`
   (variable `HF_TOKEN`).
 - Le corpus généré `corpus/corpus_cacao_rag.jsonl` (voir
   [`corpus_rag_guide.md`](corpus_rag_guide.md)), entraîné avec le corpus de
@@ -68,7 +68,7 @@ Durée typique pour 500 paires sur 3 époques : 30 à 90 min selon le GPU.
 make merge
 # ou :
 python training/scripts/merge_and_export.py \
-    --base mistralai/Mistral-7B-Instruct-v0.3 \
+    --base mistralai/Ministral-3-8B-Instruct-2512 \
     --adapter models/lora-adapter \
     --output models/opencacao-7b
 ```

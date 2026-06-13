@@ -1,7 +1,7 @@
 # OpenCacao-7B
 
 Assistant de conseil agronomique pour les producteurs de cacao de Côte d'Ivoire,
-fondé sur **Mistral 7B Instruct v0.3** affiné par fine-tuning **LoRA 4-bit** sur un
+fondé sur **Ministral 3 8B Instruct** affiné par fine-tuning **LoRA 4-bit** sur un
 corpus de la filière cacao ivoirienne.
 
 > Démonstration technique du livre blanc *« IA souveraine pour la Côte d'Ivoire »*
@@ -43,7 +43,7 @@ docker compose -f docker-compose.cpu.yml up -d
 
 ### Valider le flux avant entraînement (modèle de base)
 
-Pour tester l'API de bout en bout **sans modèle affiné**, on sert le Mistral 7B
+Pour tester l'API de bout en bout **sans modèle affiné**, on sert le Ministral 3 8B
 de base depuis Hugging Face sous le même nom logique (`opencacao-7b`). Prérequis :
 GPU NVIDIA ~16 Go et un token Hugging Face (`HF_TOKEN` dans `.env`, modèle gated).
 
@@ -60,15 +60,14 @@ Le premier démarrage télécharge les poids (plusieurs minutes) : `/v1/chat` re
 
 ### Valider le flux en CPU (sans GPU)
 
-Pour une machine sans GPU NVIDIA, on sert le Mistral 7B de base quantifié (GGUF)
-via llama-cpp. Aucun token HF requis (quantification communautaire). Lent
-(3-8 tokens/s) mais suffisant pour valider le flux.
+Pour une machine sans GPU NVIDIA, on sert le Ministral 3 8B de base quantifié
+(GGUF) via llama-cpp. Lent (3-8 tokens/s) mais suffisant pour valider le flux.
 
 ```bash
-# 1. télécharger le GGUF (~4,4 Go) dans models/
+# 1. télécharger le GGUF (~5 Go) dans models/
 pip install -U "huggingface_hub[cli]"
-huggingface-cli download bartowski/Mistral-7B-Instruct-v0.3-GGUF \
-  Mistral-7B-Instruct-v0.3-Q4_K_M.gguf --local-dir models
+huggingface-cli download mistralai/Ministral-3-8B-Instruct-2512-GGUF \
+  Ministral-3-8B-Instruct-2512-Q4_K_M.gguf --local-dir models
 
 # 2. démarrer
 make demo-base-cpu            # docker-compose.base-cpu.yml
@@ -107,4 +106,4 @@ Détails : [`docs/training_guide.md`](docs/training_guide.md).
 
 - Code : MIT
 - Corpus : CC BY-NC-SA 4.0
-- Poids LoRA dérivés : Apache 2.0 (cohérent avec Mistral 7B)
+- Poids LoRA dérivés : Apache 2.0 (cohérent avec Ministral 3)

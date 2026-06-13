@@ -1,4 +1,4 @@
-# Validation du flux complet en CPU (sans GPU) avec le modèle de BASE Mistral-7B
+# Validation du flux complet en CPU (sans GPU) avec le modèle de BASE Ministral 3 8B
 # en GGUF quantifié, AVANT tout entraînement LoRA. Servi sous le même nom logique
 # (opencacao-7b) → bascule transparente vers le modèle affiné plus tard.
 #
@@ -9,10 +9,12 @@
 # Lancement : docker compose -f docker-compose.base-cpu.yml up --build
 services:
   inference:
-    image: ghcr.io/abetlen/llama-cpp-python:v0.3.1
+    # Image llama-cpp-python récente : le GGUF de Ministral 3 exige un llama.cpp
+    # à jour. Mettre à jour le tag si le modèle ne se charge pas.
+    image: ghcr.io/abetlen/llama-cpp-python:latest
     command: >-
       python3 -m llama_cpp.server
-      --model /models/Mistral-7B-Instruct-v0.3-Q4_K_M.gguf
+      --model /models/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf
       --model_alias opencacao-7b
       --host 0.0.0.0
       --port 8000

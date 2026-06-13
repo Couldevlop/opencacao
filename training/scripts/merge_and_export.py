@@ -5,7 +5,7 @@ SHA-256 du modèle pour le versionnement (CLAUDE §11.2).
 
 Usage :
     python training/scripts/merge_and_export.py \
-        --base mistralai/Mistral-7B-Instruct-v0.3 \
+        --base mistralai/Ministral-3-8B-Instruct-2512 \
         --adapter models/lora-adapter \
         --output models/opencacao-7b
 """
@@ -60,7 +60,7 @@ def fusionner(base: str, adapter: Path, output: Path) -> None:
 def main() -> None:
     """Point d'entrée CLI."""
     parser = argparse.ArgumentParser(description="Fusion LoRA + modèle de base.")
-    parser.add_argument("--base", default="mistralai/Mistral-7B-Instruct-v0.3")
+    parser.add_argument("--base", default="mistralai/Ministral-3-8B-Instruct-2512")
     parser.add_argument("--adapter", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=Path("models/opencacao-7b"))
     args = parser.parse_args()

@@ -37,6 +37,7 @@ import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -57,6 +58,11 @@ LONGUEUR_CHUNK_MIN = 250  # en deçà : passage trop maigre pour générer du Q/
 SEUIL_DEDUP_CHUNK = 0.92  # cosinus au-delà duquel deux passages sont redondants.
 SEUIL_DEDUP_QUESTION = 0.90  # cosinus au-delà duquel deux questions sont doublons.
 PAIRES_PAR_CHUNK = 3
+# Nombre de requêtes LLM concurrentes. vLLM agrège les requêtes (batching
+# continu) : la concurrence est ce qui permet de générer le corpus en ~1 h au
+# lieu de plusieurs heures en séquentiel. La validation/déduplication reste
+# sérialisée (thread principal) pour garder un état déterministe.
+CONCURRENCE_DEFAUT = 16
 MODELE_EMBED_DEFAUT = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 TIMEOUT_TELECHARGEMENT = 60
 TIMEOUT_LLM = 180
@@ -703,13 +709,16 @@ def construire_corpus(
     paires_par_chunk: int = PAIRES_PAR_CHUNK,
     seuil_question: float = SEUIL_DEDUP_QUESTION,
     angles: tuple[tuple[str, str], ...] = ANGLES,
+    concurrence: int = CONCURRENCE_DEFAUT,
 ) -> StatistiquesRun:
     """Génère, valide, déduplique et écrit les paires Q/R jusqu'à la cible.
 
     Pour chaque passage, interroge le LLM sous plusieurs **angles** (symptômes,
     action, prévention, calendrier…) afin d'extraire un maximum de questions
-    réellement distinctes sans extrapoler hors-source. La déduplication exacte
-    et sémantique élimine les recoupements entre angles et entre passages.
+    réellement distinctes sans extrapoler hors-source. Les appels LLM sont
+    émis en parallèle (``concurrence`` requêtes simultanées, agrégées par vLLM) ;
+    la validation et la déduplication exacte + sémantique restent sérialisées
+    dans le thread principal pour un état déterministe.
 
     Args:
         chunks: Passages sources diversifiés.
@@ -720,6 +729,7 @@ def construire_corpus(
         paires_par_chunk: Paires demandées par couple (passage, angle).
         seuil_question: Cosinus au-delà duquel deux questions sont doublons.
         angles: Angles de questionnement (clé, directive) à parcourir.
+        concurrence: Nombre de requêtes LLM simultanées.
 
     Returns:
         Les statistiques du run.
@@ -761,28 +771,53 @@ def construire_corpus(
         embeddings_questions.append(vecteur)
         stats.paires_ecrites += 1
 
-    with sortie.open("a", encoding="utf-8") as handle:
-        for chunk in chunks:
-            if _atteint():
+    taches = ((chunk, directive) for chunk in chunks for _ka, directive in angles)
+    chunks_soumis: set[int] = set()
+
+    with (
+        sortie.open("a", encoding="utf-8") as handle,
+        ThreadPoolExecutor(max_workers=concurrence) as executor,
+    ):
+        en_cours: dict[Future, Chunk] = {}
+
+        def _soumettre() -> bool:
+            """Soumet la prochaine tâche (chunk, angle). False si épuisé."""
+            tache = next(taches, None)
+            if tache is None:
+                return False
+            chunk, directive = tache
+            chunks_soumis.add(id(chunk))
+            system, user = construire_prompt(chunk, paires_par_chunk, directive)
+            en_cours[executor.submit(client.generer, system, user)] = chunk
+            return True
+
+        for _ in range(concurrence):
+            if not _soumettre():
                 break
-            stats.chunks_utilises += 1
-            for _cle_angle, directive in angles:
-                if _atteint():
-                    break
-                system, user = construire_prompt(chunk, paires_par_chunk, directive)
+
+        while en_cours and not _atteint():
+            termines, _ = wait(list(en_cours), return_when=FIRST_COMPLETED)
+            for fut in termines:
+                chunk = en_cours.pop(fut)
                 try:
-                    brut = client.generer(system, user)
+                    brut = fut.result()
                 except (urllib.error.URLError, TimeoutError, ValueError) as exc:
                     stats.erreurs_llm += 1
                     logger.warning(
                         "llm_erreur", doc=chunk.doc.id, page=chunk.page, erreur=str(exc)
                     )
-                    continue
+                else:
+                    for paire in parser_reponse_llm(brut):
+                        _enregistrer(handle, paire)
+                        if _atteint():
+                            break
+                if not _atteint():
+                    _soumettre()
 
-                for paire in parser_reponse_llm(brut):
-                    _enregistrer(handle, paire)
-                    if _atteint():
-                        break
+        for fut in en_cours:
+            fut.cancel()
+
+    stats.chunks_utilises = len(chunks_soumis)
 
     logger.info(
         "run_termine",
@@ -853,6 +888,12 @@ def _parser_args(argv: list[str] | None) -> argparse.Namespace:
         type=int,
         default=PAIRES_PAR_CHUNK,
         help="Paires demandées par couple (passage, angle).",
+    )
+    parser.add_argument(
+        "--concurrence",
+        type=int,
+        default=CONCURRENCE_DEFAUT,
+        help="Requêtes LLM simultanées (clé du <1 h ; vLLM les agrège).",
     )
     parser.add_argument(
         "--angles",
@@ -965,6 +1006,7 @@ def main(argv: list[str] | None = None) -> int:
         cible=args.target,
         paires_par_chunk=args.par_chunk,
         angles=angles,
+        concurrence=args.concurrence,
     )
     return 0 if stats.paires_ecrites > 0 else 1
 

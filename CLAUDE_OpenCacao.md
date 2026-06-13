@@ -9,7 +9,7 @@
 
 ### 1.1 Présentation du projet
 
-**OpenCacao-7B** est un assistant de conseil agronomique pour les producteurs de cacao de Côte d'Ivoire, fondé sur un modèle de langue open-source (Mistral 7B Instruct) affiné par fine-tuning LoRA sur un corpus de la filière cacao ivoirienne, et publié en accès libre sous licence permissive.
+**OpenCacao-7B** est un assistant de conseil agronomique pour les producteurs de cacao de Côte d'Ivoire, fondé sur un modèle de langue open-source (Ministral 3 8B Instruct) affiné par fine-tuning LoRA sur un corpus de la filière cacao ivoirienne, et publié en accès libre sous licence permissive.
 
 Le projet accompagne le livre blanc *« IA souveraine pour la Côte d'Ivoire »* (Waopron Coulibaly, OpenLab Consulting, 2026) en tant que **démonstration technique** du chantier A2 — *Le conseil agronomique pour tous les producteurs*. Il matérialise la thèse défendue dans l'ouvrage : une équipe ivoirienne peut produire, avec des moyens modestes, une intelligence artificielle souveraine et utile.
 
@@ -17,7 +17,7 @@ Le projet accompagne le livre blanc *« IA souveraine pour la Côte d'Ivoire »*
 
 - **Nature** : démonstration technique, non un produit commercial.
 - **Public visé pour la démonstration** : Ministère de la Transition Numérique et de l'Innovation Technologique, Conseil du Café-Cacao, ANADER, CNRA, et tout acteur de la filière.
-- **Licence** : code MIT, corpus et poids LoRA sous licence ouverte (CC BY-NC-SA 4.0 pour le corpus, Apache 2.0 pour les poids dérivés, en cohérence avec la licence de Mistral 7B).
+- **Licence** : code MIT, corpus et poids LoRA sous licence ouverte (CC BY-NC-SA 4.0 pour le corpus, Apache 2.0 pour les poids dérivés, en cohérence avec la licence de Ministral 3).
 - **Disclaimer impératif** : OpenCacao est un outil d'aide à la décision. Il ne remplace ni l'agronome, ni l'encadrement de terrain de l'ANADER, ni les recommandations officielles du Conseil du Café-Cacao. Cette mention figure dans chaque réponse du modèle et dans toute interface utilisateur.
 
 ### 1.3 Principes directeurs (non négociables)
@@ -37,33 +37,37 @@ Le projet accompagne le livre blanc *« IA souveraine pour la Côte d'Ivoire »*
 | Composant | Version | Rôle |
 |---|---|---|
 | Python | 3.11 | Runtime |
-| PyTorch | 2.3.1 | Tenseurs et entraînement |
-| Transformers (HF) | 4.44.x | Chargement du modèle |
-| PEFT | 0.12.x | LoRA |
-| bitsandbytes | 0.43.x | Quantification 4-bit |
-| TRL | 0.10.x | SFTTrainer |
-| Datasets | 2.20.x | Pipeline corpus |
-| Accelerate | 0.33.x | Optimisation entraînement |
+| PyTorch | ≥ 2.5 | Tenseurs et entraînement |
+| Transformers (HF) | ≥ 4.50 | Chargement du modèle (support Ministral 3) |
+| PEFT | ≥ 0.13 | LoRA |
+| bitsandbytes | ≥ 0.44 | Quantification 4-bit |
+| TRL | ≥ 0.12 | SFTTrainer |
+| Datasets | ≥ 3.0 | Pipeline corpus |
+| Accelerate | ≥ 1.0 | Optimisation entraînement |
+| mistral-common | ≥ 1.8.6 | Tokenizer Ministral 3 |
 | FastAPI | 0.115.x | API HTTP |
 | Uvicorn | 0.32.x | Serveur ASGI |
 | Pydantic | 2.x | Validation |
-| vLLM | 0.6.x | Service d'inférence (GPU) |
-| llama-cpp-python | 0.3.x | Service d'inférence (CPU, fallback) |
+| vLLM | ≥ 0.12 | Service d'inférence (GPU, support Ministral 3) |
+| llama-cpp-python | ≥ 0.3 | Service d'inférence (CPU, fallback GGUF) |
 | Docker | 24+ | Conteneurisation |
 | Docker Compose | v2 | Orchestration |
 
 ### 2.2 Modèle de base
 
-- **Mistral 7B Instruct v0.3** (`mistralai/Mistral-7B-Instruct-v0.3`)
+- **Ministral 3 8B Instruct** (`mistralai/Ministral-3-8B-Instruct-2512`, déc. 2025)
 - Licence : Apache 2.0
-- Taille : 7,2 milliards de paramètres
-- Contexte : 32 k tokens
+- Taille : 8 milliards de paramètres
+- Contexte : jusqu'à 256 k tokens
 - Téléchargement : Hugging Face (token requis pour le pull initial)
+- Note : migration depuis Mistral 7B Instruct v0.3 (validée) pour disposer du
+  modèle ouvert souverain le plus récent. Exige un stack récent (transformers
+  ≥ 4.50, vLLM ≥ 0.12, `mistral-common` ≥ 1.8.6).
 
 ### 2.3 Choix techniques justifiés
 
 - **LoRA 4-bit** plutôt que fine-tuning complet : permet l'entraînement sur un GPU 24 Go (RTX 4090, A10G) au lieu d'un cluster multi-A100.
-- **Mistral 7B** plutôt qu'un modèle plus gros : tient en VRAM modeste à l'inférence, et reste sous Apache 2.0 (souveraineté commerciale possible).
+- **Ministral 3 8B** (modèle ouvert Mistral le plus récent, déc. 2025) plutôt qu'un modèle plus gros : tient en VRAM modeste (≈20 Go pour l'affinage 4-bit, moins à l'inférence quantifiée), et reste sous Apache 2.0 (souveraineté commerciale possible).
 - **vLLM** pour servir : performance d'inférence très supérieure aux serveurs naïfs, supporte les batchs continus.
 - **llama-cpp** en fallback CPU : permet de servir le modèle quantifié (GGUF) sur du matériel sans GPU pour la démo locale.
 
@@ -96,7 +100,7 @@ PIPELINE D'ENTRAÎNEMENT (exécuté ponctuellement, sur GPU loué) :
 ─────────────────────────────────────────────────────────────
 training/                    (conteneur GPU séparé)
   corpus/*.jsonl  →  train_lora.py  →  adaptateur LoRA
-  adaptateur LoRA + Mistral 7B  →  merge_and_export.py  →  opencacao-7b/
+  adaptateur LoRA + Ministral 3 8B  →  merge_and_export.py  →  opencacao-7b/
   opencacao-7b/  →  export GGUF  →  service llama-cpp
 ```
 

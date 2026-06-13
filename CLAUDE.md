@@ -12,7 +12,7 @@ Le dépôt ne contient pour l'instant **que la spec** — aucun code, `docker-co
 
 ## Projet
 
-OpenCacao-7B : assistant de conseil agronomique pour les producteurs de cacao ivoiriens, basé sur **Mistral 7B Instruct v0.3** affiné par **LoRA 4-bit**, servi via une API FastAPI. Démonstration technique du livre blanc *« IA souveraine pour la Côte d'Ivoire »* (OpenLab Consulting). Souveraineté, reproductibilité, modestie — pas de produit commercial.
+OpenCacao-7B : assistant de conseil agronomique pour les producteurs de cacao ivoiriens, basé sur **Ministral 3 8B Instruct** (`mistralai/Ministral-3-8B-Instruct-2512`, migration validée depuis Mistral 7B v0.3) affiné par **LoRA 4-bit**, servi via une API FastAPI. Démonstration technique du livre blanc *« IA souveraine pour la Côte d'Ivoire »* (OpenLab Consulting). Souveraineté, reproductibilité, modestie — pas de produit commercial.
 
 ## Architecture (résumé)
 

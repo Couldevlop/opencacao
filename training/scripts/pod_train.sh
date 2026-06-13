@@ -2,7 +2,7 @@
 # Entraînement LoRA d'OpenCacao-7B sur un pod GPU loué (RunPod, etc.).
 #
 # Tourne ENTIÈREMENT sur le pod : installe les dépendances d'entraînement,
-# affine Mistral 7B en LoRA 4-bit sur le corpus (RAG + démarrage), fusionne
+# affine Ministral 3 8B en LoRA 4-bit sur le corpus (RAG + démarrage), fusionne
 # l'adaptateur avec le modèle de base, et exporte le modèle prêt pour vLLM.
 #
 # Pré-requis sur le pod :
@@ -24,7 +24,7 @@ set -euo pipefail
 
 ADAPTER_DIR="models/lora-adapter"
 MERGED_DIR="models/opencacao-7b"
-BASE_MODEL="mistralai/Mistral-7B-Instruct-v0.3"
+BASE_MODEL="mistralai/Ministral-3-8B-Instruct-2512"
 
 if [[ -z "${HF_TOKEN:-}" ]]; then
   echo "ERREUR : exporte HF_TOKEN (token Hugging Face) avant de lancer." >&2

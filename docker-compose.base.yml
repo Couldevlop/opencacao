@@ -1,4 +1,4 @@
-# Validation du flux complet (GPU) avec le modèle de BASE Mistral-7B-Instruct,
+# Validation du flux complet (GPU) avec le modèle de BASE Ministral-3-8B-Instruct,
 # AVANT tout entraînement LoRA. Chemin identique à la prod : même image vLLM,
 # même `served-model-name` (opencacao-7b) → la bascule vers le modèle affiné
 # (docker-compose.yml) ne touchera que les poids servis, pas l'API.
@@ -9,11 +9,12 @@
 # Lancement : docker compose -f docker-compose.base.yml up --build
 services:
   inference:
-    image: vllm/vllm-openai:v0.6.3
+    # Ministral 3 (déc. 2025) requiert vLLM >= 0.12.
+    image: vllm/vllm-openai:v0.12.0
     # Sert le modèle de base téléchargé depuis Hugging Face, mais sous le même
     # nom logique que le modèle cible : l'API ne voit aucune différence.
     command: >-
-      --model mistralai/Mistral-7B-Instruct-v0.3
+      --model mistralai/Ministral-3-8B-Instruct-2512
       --served-model-name opencacao-7b
       --port 8000
       --max-model-len 8192
