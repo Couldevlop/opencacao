@@ -30,10 +30,11 @@ if [[ -z "${HF_TOKEN:-}" ]]; then
 fi
 
 echo "==> 1/5  Installation de vLLM et des dépendances du corpus"
-pip install --quiet --upgrade pip
+echo "    (vLLM = plusieurs Go : ce premier téléchargement prend 5-15 min)"
+pip install --upgrade pip
 # Ministral 3 (déc. 2025) requiert vLLM >= 0.12 et mistral-common >= 1.8.6.
-pip install --quiet -U "vllm>=0.12.0" "mistral-common>=1.8.6"
-pip install --quiet -r training/requirements-corpus.txt
+pip install -U "vllm>=0.12.0" "mistral-common>=1.8.6"
+pip install -r training/requirements-corpus.txt
 
 echo "==> 2/5  Démarrage du serveur Ministral 3 (vLLM) sur le port ${PORT}"
 export HUGGING_FACE_HUB_TOKEN="${HF_TOKEN}"

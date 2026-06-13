@@ -44,10 +44,11 @@ fi
 echo "==> Corpus d'entraînement : ${CORPUS[*]}"
 
 echo "==> 1/4  Installation des dépendances d'entraînement (PyTorch du pod conservé)"
-pip install --quiet --upgrade pip
+echo "    (premier téléchargement potentiellement long : transformers, peft, etc.)"
+pip install --upgrade pip
 # On retire la ligne torch épinglée pour ne pas downgrader le PyTorch du pod.
-grep -v '^torch==' training/requirements.txt > /tmp/req-train.txt
-pip install --quiet -r /tmp/req-train.txt
+grep -v '^torch' training/requirements.txt > /tmp/req-train.txt
+pip install -r /tmp/req-train.txt
 
 echo "==> 2/4  Validation du corpus (garde-fous)"
 for c in "${CORPUS[@]}"; do
