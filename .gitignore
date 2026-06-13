@@ -1,11 +1,12 @@
-# Modèles générés (poids, adaptateurs, GGUF)
-models/
-!models/.gitkeep
+# Modèles générés (poids, adaptateurs, GGUF) — racine uniquement.
+# (Ancré avec / pour ne PAS exclure api/app/models/.)
+/models/
+!/models/.gitkeep
 
 # Documents officiels téléchargés (sources brutes du corpus RAG) — volumineux,
 # reconstructibles depuis corpus/sources/sources_officielles.yaml
-train/
-!train/.gitkeep
+/train/
+!/train/.gitkeep
 
 # Python
 __pycache__/
