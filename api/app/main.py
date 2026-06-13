@@ -1,0 +1,89 @@
+"""Point d'entrée FastAPI d'OpenCacao-7B (clean architecture + durcissement OWASP)."""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+from app import __version__
+from app.core.cache import CacheClient
+from app.core.config import get_settings
+from app.core.logging import configure_logging, get_logger
+from app.core.security import BodySizeLimitMiddleware, SecurityHeadersMiddleware
+from app.routers import chat, health
+from app.services.inference import InferenceClient
+
+logger = get_logger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Initialise et libère les clients partagés (inférence, cache)."""
+    settings = get_settings()
+    configure_logging(settings.log_level)
+
+    app.state.inference = InferenceClient.from_settings(settings)
+    app.state.cache = CacheClient.from_settings(settings)
+    logger.info("demarrage", version=__version__, backend=settings.inference_backend)
+
+    try:
+        yield
+    finally:
+        await app.state.inference.close()
+        await app.state.cache.close()
+        logger.info("arret")
+
+
+def create_app() -> FastAPI:
+    """Construit et configure l'application FastAPI.
+
+    Returns:
+        L'instance FastAPI prête à servir.
+    """
+    settings = get_settings()
+    app = FastAPI(
+        title="OpenCacao-7B API",
+        description="Conseil agronomique pour les producteurs de cacao ivoiriens.",
+        version=__version__,
+        lifespan=lifespan,
+        docs_url="/docs" if settings.enable_docs else None,
+        redoc_url=None,
+        openapi_url="/openapi.json" if settings.enable_docs else None,
+    )
+
+    # --- Middlewares (ordre : le dernier ajouté s'exécute en premier) ---
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(BodySizeLimitMiddleware, max_body_bytes=settings.max_body_bytes)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
+
+    if settings.cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.cors_origins,
+            allow_methods=["GET", "POST"],
+            allow_headers=["Content-Type"],
+        )
+
+    @app.exception_handler(Exception)
+    async def erreur_non_geree(request: Request, exc: Exception) -> JSONResponse:
+        """Intercepte toute erreur non gérée sans fuiter de détails internes.
+
+        OWASP API8 — Security Misconfiguration : pas de stack trace au client.
+        """
+        logger.error("erreur_non_geree", chemin=request.url.path, error=str(exc))
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": "Erreur interne du serveur."},
+        )
+
+    app.include_router(health.router)
+    app.include_router(chat.router)
+    return app
+
+
+app = create_app()

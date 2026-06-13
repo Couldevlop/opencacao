@@ -1,0 +1,57 @@
+# Validation du flux complet en CPU (sans GPU) avec le modèle de BASE Mistral-7B
+# en GGUF quantifié, AVANT tout entraînement LoRA. Servi sous le même nom logique
+# (opencacao-7b) → bascule transparente vers le modèle affiné plus tard.
+#
+# Prérequis : le fichier GGUF doit être présent dans ./models/ (voir README,
+# section « Valider le flux en CPU »). Aucun token HF nécessaire (quant communautaire).
+# Performance : 3-8 tokens/s sur CPU x86 récent — démo qualitative, pas de prod.
+#
+# Lancement : docker compose -f docker-compose.base-cpu.yml up --build
+services:
+  inference:
+    image: ghcr.io/abetlen/llama-cpp-python:v0.3.1
+    command: >-
+      python3 -m llama_cpp.server
+      --model /models/Mistral-7B-Instruct-v0.3-Q4_K_M.gguf
+      --model_alias opencacao-7b
+      --host 0.0.0.0
+      --port 8000
+      --n_ctx 4096
+    ports:
+      # Publication SUR LOCALHOST UNIQUEMENT : permet au pipeline de
+      # construction du corpus (build_corpus_rag.py) d'atteindre l'inférence
+      # CPU via http://localhost:8000. Non exposé publiquement.
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./models:/models:ro
+    networks:
+      - opencacao-net
+
+  api:
+    build:
+      context: ./api
+    env_file:
+      - .env
+    environment:
+      INFERENCE_BACKEND: llama-cpp
+      INFERENCE_URL: http://inference:8000
+      MODEL_NAME: opencacao-7b
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8080:8080"
+    depends_on:
+      - inference
+      - redis
+    networks:
+      - opencacao-net
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - opencacao-net
+    restart: unless-stopped
+
+networks:
+  opencacao-net:
+    driver: bridge

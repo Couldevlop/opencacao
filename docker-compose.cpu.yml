@@ -1,0 +1,43 @@
+# Variante CPU (fallback sans GPU) : inference via llama-cpp-python (GGUF).
+# Performance dégradée mais utilisable pour une démo qualitative.
+services:
+  inference:
+    image: ghcr.io/abetlen/llama-cpp-python:v0.3.1
+    command: >-
+      python3 -m llama_cpp.server
+      --model /models/opencacao-7b-Q4_K_M.gguf
+      --model_alias opencacao-7b
+      --host 0.0.0.0
+      --port 8000
+    volumes:
+      - ./models:/models:ro
+    networks:
+      - opencacao-net
+
+  api:
+    build:
+      context: ./api
+    env_file:
+      - .env
+    environment:
+      INFERENCE_BACKEND: llama-cpp
+      INFERENCE_URL: http://inference:8000
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8080:8080"
+    depends_on:
+      - inference
+      - redis
+    networks:
+      - opencacao-net
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - opencacao-net
+    restart: unless-stopped
+
+networks:
+  opencacao-net:
+    driver: bridge

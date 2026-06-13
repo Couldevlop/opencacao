@@ -1,0 +1,25 @@
+# Entraînement (GPU loué, ponctuel). Lit corpus/ et écrit models/lora-adapter/.
+services:
+  training:
+    build:
+      context: ./training
+    environment:
+      HF_TOKEN: ${HF_TOKEN}
+    volumes:
+      - ./corpus:/corpus:ro
+      - ./models:/models
+      - hf-cache:/cache/huggingface
+    command: >-
+      python scripts/train_lora.py
+      --corpus /corpus/corpus_cacao_demarrage.jsonl
+      --output /models/lora-adapter
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  hf-cache:

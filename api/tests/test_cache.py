@@ -1,0 +1,140 @@
+"""Tests unitaires du client de cache Redis (CacheClient).
+
+Redis est simulé en mémoire ; un client défaillant permet de couvrir les
+branches de tolérance aux pannes.
+"""
+
+from __future__ import annotations
+
+import redis.asyncio as redis
+
+from app.core.cache import CacheClient
+from app.core.config import Settings
+
+
+class FakeRedis:
+    """Redis asynchrone simulé, suffisant pour CacheClient."""
+
+    def __init__(self) -> None:
+        self.store: dict[str, str] = {}
+        self.counters: dict[str, int] = {}
+        self.expirations: dict[str, int] = {}
+        self.closed = False
+
+    async def get(self, key: str) -> str | None:
+        return self.store.get(key)
+
+    async def set(self, key: str, value: str, ex: int | None = None) -> None:
+        self.store[key] = value
+
+    async def incr(self, key: str) -> int:
+        self.counters[key] = self.counters.get(key, 0) + 1
+        return self.counters[key]
+
+    async def expire(self, key: str, seconds: int) -> None:
+        self.expirations[key] = seconds
+
+    async def ping(self) -> bool:
+        return True
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+class BrokenRedis:
+    """Redis qui échoue sur toutes les opérations (panne simulée)."""
+
+    async def get(self, key: str) -> str:
+        raise redis.RedisError("down")
+
+    async def set(self, key: str, value: str, ex: int | None = None) -> None:
+        raise redis.RedisError("down")
+
+    async def incr(self, key: str) -> int:
+        raise redis.RedisError("down")
+
+    async def expire(self, key: str, seconds: int) -> None:
+        raise redis.RedisError("down")
+
+    async def ping(self) -> bool:
+        raise redis.RedisError("down")
+
+    async def aclose(self) -> None:
+        raise redis.RedisError("down")
+
+
+async def test_set_then_get_cached() -> None:
+    """Une réponse mise en cache est relue à l'identique."""
+    cache = CacheClient(FakeRedis(), rate_limit_per_min=20)
+    await cache.set_cached("Question ?", "fr", '{"reponse": "ok"}')
+    assert await cache.get_cached("Question ?", "fr") == '{"reponse": "ok"}'
+
+
+async def test_get_cached_miss_retourne_none() -> None:
+    """Une clé absente retourne None."""
+    cache = CacheClient(FakeRedis(), rate_limit_per_min=20)
+    assert await cache.get_cached("inconnue", "fr") is None
+
+
+async def test_rate_limit_pose_expiration_au_premier_appel() -> None:
+    """Le premier hit pose une expiration de 60 s sur la clé."""
+    fake = FakeRedis()
+    cache = CacheClient(fake, rate_limit_per_min=3)
+    assert await cache.hit_rate_limit("1.2.3.4") is False
+    assert fake.expirations["rate:1.2.3.4"] == 60
+
+
+async def test_rate_limit_declenche_au_dela_du_seuil() -> None:
+    """Au-delà de la limite, hit_rate_limit renvoie True."""
+    cache = CacheClient(FakeRedis(), rate_limit_per_min=2)
+    resultats = [await cache.hit_rate_limit("9.9.9.9") for _ in range(3)]
+    assert resultats == [False, False, True]
+
+
+async def test_ping_ok() -> None:
+    """ping renvoie True quand Redis répond."""
+    cache = CacheClient(FakeRedis(), rate_limit_per_min=20)
+    assert await cache.ping() is True
+
+
+async def test_close_appelle_aclose() -> None:
+    """close ferme la connexion sous-jacente."""
+    fake = FakeRedis()
+    cache = CacheClient(fake, rate_limit_per_min=20)
+    await cache.close()
+    assert fake.closed is True
+
+
+# --- Tolérance aux pannes : Redis indisponible ---
+
+
+async def test_get_cached_tolere_panne() -> None:
+    cache = CacheClient(BrokenRedis(), rate_limit_per_min=20)
+    assert await cache.get_cached("q", "fr") is None
+
+
+async def test_set_cached_tolere_panne() -> None:
+    cache = CacheClient(BrokenRedis(), rate_limit_per_min=20)
+    assert await cache.set_cached("q", "fr", "payload") is None
+
+
+async def test_rate_limit_tolere_panne_laisse_passer() -> None:
+    """En cas de panne Redis, on n'applique pas le rate-limit (fail-open)."""
+    cache = CacheClient(BrokenRedis(), rate_limit_per_min=20)
+    assert await cache.hit_rate_limit("1.1.1.1") is False
+
+
+async def test_ping_tolere_panne() -> None:
+    cache = CacheClient(BrokenRedis(), rate_limit_per_min=20)
+    assert await cache.ping() is False
+
+
+async def test_close_tolere_panne() -> None:
+    cache = CacheClient(BrokenRedis(), rate_limit_per_min=20)
+    assert await cache.close() is None
+
+
+def test_from_settings_construit_un_client() -> None:
+    """La fabrique construit un CacheClient depuis les paramètres."""
+    cache = CacheClient.from_settings(Settings(redis_url="redis://localhost:6379/0"))
+    assert isinstance(cache, CacheClient)

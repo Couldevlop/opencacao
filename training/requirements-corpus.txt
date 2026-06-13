@@ -1,0 +1,14 @@
+# Dépendances de l'outil d'enrichissement RAG du corpus (ponctuel, hors prod).
+#
+# Séparé de requirements.txt (entraînement) : ces paquets ne sont nécessaires
+# que pour CONSTRUIRE le corpus Q/R à partir des documents officiels, jamais
+# servis en production (cf. CLAUDE §1.3 souveraineté, §13 enrichissement toléré).
+#
+# La génération elle-même appelle un LLM local OpenAI-compatible (vLLM/Mistral)
+# via la bibliothèque standard urllib — aucun SDK propriétaire requis.
+
+pypdf==4.3.1
+sentence-transformers==3.0.1
+numpy==1.26.4
+PyYAML==6.0.2
+certifi==2024.8.30

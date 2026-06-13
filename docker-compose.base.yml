@@ -1,0 +1,72 @@
+# Validation du flux complet (GPU) avec le modèle de BASE Mistral-7B-Instruct,
+# AVANT tout entraînement LoRA. Chemin identique à la prod : même image vLLM,
+# même `served-model-name` (opencacao-7b) → la bascule vers le modèle affiné
+# (docker-compose.yml) ne touchera que les poids servis, pas l'API.
+#
+# Prérequis : GPU NVIDIA ~16 Go + nvidia-container-toolkit, et un token Hugging
+# Face (modèle gated). Renseigner HF_TOKEN dans .env.
+#
+# Lancement : docker compose -f docker-compose.base.yml up --build
+services:
+  inference:
+    image: vllm/vllm-openai:v0.6.3
+    # Sert le modèle de base téléchargé depuis Hugging Face, mais sous le même
+    # nom logique que le modèle cible : l'API ne voit aucune différence.
+    command: >-
+      --model mistralai/Mistral-7B-Instruct-v0.3
+      --served-model-name opencacao-7b
+      --port 8000
+      --max-model-len 8192
+      --gpu-memory-utilization 0.92
+    environment:
+      # vLLM lit ce nom de variable pour accéder aux modèles gated.
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN}
+    ports:
+      # Publication SUR LOCALHOST UNIQUEMENT : permet au pipeline de
+      # construction du corpus (build_corpus_rag.py, exécuté sur l'hôte)
+      # d'atteindre vLLM via http://localhost:8000. Non exposé publiquement.
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # Cache des poids : évite de re-télécharger (~15 Go) à chaque démarrage.
+      - hf-cache:/root/.cache/huggingface
+    networks:
+      - opencacao-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  api:
+    build:
+      context: ./api
+    env_file:
+      - .env
+    environment:
+      INFERENCE_BACKEND: vllm
+      INFERENCE_URL: http://inference:8000
+      MODEL_NAME: opencacao-7b
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8080:8080"
+    depends_on:
+      - inference
+      - redis
+    networks:
+      - opencacao-net
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - opencacao-net
+    restart: unless-stopped
+
+networks:
+  opencacao-net:
+    driver: bridge
+
+volumes:
+  hf-cache:

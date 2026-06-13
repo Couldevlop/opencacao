@@ -1,0 +1,248 @@
+# Manifeste des sources documentaires officielles de la filière cacao ivoirienne.
+#
+# Chaque entrée décrit un document public téléchargé par le pipeline RAG
+# (training/scripts/build_corpus_rag.py) pour ancrer la génération du corpus Q/R.
+#
+# Le champ `source` DOIT correspondre exactement à l'un des noms reconnus par
+# le validateur (training/scripts/enrich_corpus.py → SOURCES) afin que les
+# réponses générées passent le contrôle « source citée » :
+#   "CNRA", "ANADER", "Conseil du Café-Cacao", "FAO".
+#
+# Statut juridique : documents publics diffusés par les institutions de la
+# filière. Le corpus dérivé est publié sous CC BY-NC-SA 4.0 (cf. CLAUDE §1.2).
+# Aucune donnée nominative n'est collectée.
+
+documents:
+  - id: manuel_planteur_cacao
+    source: "Conseil du Café-Cacao"
+    titre: "Manuel du planteur de cacao"
+    url: "http://www.conseilcafecacao.ci/docs/2016/MANUEL_DU_PLANTEUR_DE_CACAO_A524315.pdf"
+    annee: 2015
+    themes: [creation_plantation, entretien, fertilisation, recolte, maladies]
+
+  - id: cacaoculture_durable
+    source: "Conseil du Café-Cacao"
+    titre: "Manuel technique de cacaoculture durable"
+    url: "http://www.conseilcafecacao.ci/docs/2016/MANUEL_CACAOCULTURE_040415.pdf"
+    annee: 2015
+    themes: [sol, ombrage, lutte_integree, post_recolte, champ_ecole]
+
+  - id: guide_formateur_cacaoculture_durable
+    source: "Conseil du Café-Cacao"
+    titre: "Guide du formateur — outils de vulgarisation de la cacaoculture durable"
+    url: "http://www.conseilcafecacao.ci/docs/2016/GUIDE_DU_FORMATEUR_CACAOCULTURE_DURABLE.pdf"
+    annee: 2016
+    themes: [vulgarisation, champ_ecole, bonnes_pratiques, formation]
+
+  - id: problematique_qualite_cacao
+    source: "Conseil du Café-Cacao"
+    titre: "La problématique de la qualité du cacao ivoirien"
+    url: "http://www.conseilcafecacao.ci/docs/LA_PROBLEMATIQUE_DE_LA_QUALITE_DU_CACAO_IVOIRIEN.pdf"
+    annee: 2016
+    themes: [qualite, fermentation, sechage, post_recolte]
+
+  - id: ars1000_guide_formation
+    source: "Conseil du Café-Cacao"
+    titre: "Norme africaine ARS 1000 — Guide de formation pour le cacao durable"
+    url: "https://ars1000.conseilcafecacao.ci/wdocs/ars1000_guide-formation_v1_2023.pdf"
+    annee: 2023
+    themes: [durabilite, tracabilite, bonnes_pratiques, social, environnement]
+
+  - id: programme_cacao_cnra
+    source: "CNRA"
+    titre: "Programme Cacao 2020-2023"
+    url: "https://cnra.ci/wp-content/uploads/2021/12/03-Progr-Cacao-2020-2023-VF.pdf"
+    annee: 2021
+    themes: [recherche, materiel_vegetal, swollen_shoot, phytophthora]
+
+  - id: cnra_greffage_ecusson
+    source: "CNRA"
+    titre: "Production de plants de cacaoyers par la technique de greffage en écusson"
+    url: "https://cnra.ci/wp-content/uploads/2025/07/production-de-plants-de-cacaoyers-par-la-technique-de-greffage-en-ecusson.pdf"
+    annee: 2025
+    themes: [pepiniere, greffage, materiel_vegetal, plants]
+
+  - id: cnra_gestion_durable_sols
+    source: "CNRA"
+    titre: "Programme Gestion durable des sols et maîtrise de l'eau 2020-2023"
+    url: "https://cnra.ci/wp-content/uploads/2021/12/11-Progr-GDSME-2020-2023-VF.pdf"
+    annee: 2021
+    themes: [sol, fertilite, eau, cartographie_pedoclimatique]
+
+  # --- Fiches techniques CNRA dédiées au cacaoyer -------------------------
+  # URLs du gestionnaire de téléchargement WordPress (/download/<slug>/),
+  # résolues automatiquement en lien PDF direct par le téléchargeur.
+  - id: cnra_fiche_cultiver_cacaoyer
+    source: "CNRA"
+    titre: "Bien cultiver le cacaoyer en Côte d'Ivoire"
+    url: "https://cnra.ci/download/bien-cultiver-le-cacaoyer-en-cote-divoire/"
+    annee: 2020
+    themes: [itineraire_technique, plantation, entretien]
+
+  - id: cnra_fiche_swollen_shoot
+    source: "CNRA"
+    titre: "Bien lutter contre la maladie du swollen shoot du cacaoyer"
+    url: "https://cnra.ci/download/bien-lutter-contre-la-maladie-du-swollen-shoot-du-cacaoyer-en-cote-divoire/"
+    annee: 2020
+    themes: [swollen_shoot, maladie_virale, lutte]
+
+  - id: cnra_fiche_pourriture_brune
+    source: "CNRA"
+    titre: "Bien lutter contre la pourriture brune des cabosses du cacaoyer"
+    url: "https://cnra.ci/download/bien-lutter-contre-la-pourriture-brune-des-cabosses-du-cacaoyer-en-cote-divoire/"
+    annee: 2020
+    themes: [pourriture_brune, phytophthora, cabosses, lutte]
+
+  - id: cnra_fiche_insectes_nuisibles
+    source: "CNRA"
+    titre: "Bien lutter contre les insectes nuisibles du cacaoyer"
+    url: "https://cnra.ci/download/bien-lutter-contre-les-insectes-nuisibles-du-cacaoyer-en-cote-divoire/"
+    annee: 2020
+    themes: [insectes, ravageurs, lutte]
+
+  - id: cnra_fiche_maladie_rose
+    source: "CNRA"
+    titre: "Bien diagnostiquer et lutter contre la maladie rose du cacaoyer"
+    url: "https://cnra.ci/download/bien-diagnostiquer-et-lutter-contre-la-maladie-rose-du-cacaoyer-en-cote-divoire/"
+    annee: 2020
+    themes: [maladie_rose, champignon, lutte]
+
+  - id: cnra_fiche_mousse_verte
+    source: "CNRA"
+    titre: "Bien lutter contre la mousse verte du cacaoyer"
+    url: "https://cnra.ci/download/bien-lutter-contre-la-mousse-verte-du-cacaoyer-en-cote-divoire/"
+    annee: 2020
+    themes: [mousse_verte, entretien, lutte]
+
+  - id: cnra_fiche_foreur_tiges
+    source: "CNRA"
+    titre: "Bien lutter contre le foreur de tiges du cacaoyer (Eulophonotus myrmeleon)"
+    url: "https://cnra.ci/download/bien-lutter-contre-le-foreur-de-tiges-du-cacaoyer-eulophonotus-myrmeleon-feld-en-cote-divoire/"
+    annee: 2020
+    themes: [foreur_tiges, ravageurs, lutte]
+
+  - id: cnra_fiche_pourridie
+    source: "CNRA"
+    titre: "Bien lutter contre le pourridié du cacaoyer"
+    url: "https://cnra.ci/download/bien-lutter-contre-le-pourridie-du-cacaoyer-en-cote-divoire/"
+    annee: 2020
+    themes: [pourridie, racines, champignon, lutte]
+
+  - id: cnra_fiche_psylles
+    source: "CNRA"
+    titre: "Bien lutter contre les psylles du cacaoyer dans les jeunes plantations"
+    url: "https://cnra.ci/download/bien-lutter-contre-les-psylles-du-cacaoyer-mesohomotoma-tessmanni-aulmann-dans-les-jeunes-plantations-en-cote-divoire/"
+    annee: 2020
+    themes: [psylles, jeunes_plants, ravageurs, lutte]
+
+  - id: cnra_fiche_cicadelles
+    source: "CNRA"
+    titre: "Bien mener la lutte intégrée contre les cicadelles dans les jeunes plantations de cacaoyers"
+    url: "https://cnra.ci/download/bien-mener-la-lutte-integree-contre-les-cicadelles-empoasca-sp-cicadellidae-dans-les-jeunes-plantations-de-cacaoyers-en-cote-divoire/"
+    annee: 2020
+    themes: [cicadelles, lutte_integree, jeunes_plants]
+
+  - id: cnra_fiche_vers_epineux
+    source: "CNRA"
+    titre: "Bien lutter contre le ver épineux (Earias biplaga) dans les plantations de cacaoyers"
+    url: "https://cnra.ci/download/bien-lutter-contre-le-vers-epineux-earias-biplaga-walker-1866-lepidoptera-nolidae-dans-les-plantations-de-cacaoyers-en-cote-divoire/"
+    annee: 2020
+    themes: [ver_epineux, ravageurs, lutte]
+
+  - id: cnra_fiche_chenille_achaea
+    source: "CNRA"
+    titre: "Bien lutter contre la chenille Achaea catocaloides, nouvelle menace pour la cacaoculture"
+    url: "https://cnra.ci/download/bien-lutter-contre-la-chenille-achaea-catocaloides-nouvelle-menace-pour-la-cacaoculture-en-cote-divoire/"
+    annee: 2020
+    themes: [chenille, defoliateur, ravageurs, lutte]
+
+  - id: cnra_fiche_anomis_leona
+    source: "CNRA"
+    titre: "Bien connaître et lutter contre Anomis leona des cacaoyers"
+    url: "https://cnra.ci/download/bien-connaitre-et-lutter-contre-anomis-leona-schaus-clements-1893-lepidoptera-noctuidae-des-cacaoyers-en-cote-divoire/"
+    annee: 2020
+    themes: [anomis_leona, defoliateur, ravageurs, lutte]
+
+  - id: cnra_fiche_loranthacees
+    source: "CNRA"
+    titre: "Bien lutter contre les loranthacées (plantes parasites) du cacaoyer"
+    url: "https://cnra.ci/download/bien-lutter-contre-les-loranthacees-du-cacaoyer/"
+    annee: 2020
+    themes: [loranthacees, plantes_parasites, entretien]
+
+  - id: cnra_fiche_maladie_verruqueuse
+    source: "CNRA"
+    titre: "Symptômes et lutte préventive contre la maladie verruqueuse des cabosses du cacaoyer"
+    url: "https://cnra.ci/download/description-des-symptomes-et-moyens-de-lutte-preventive-contre-la-maladie-verruqueuse-des-cabosses-du-cacaoyer-en-cote-divoire/"
+    annee: 2020
+    themes: [maladie_verruqueuse, cabosses, lutte_preventive]
+
+  - id: cnra_fiche_fertilisation_adulte
+    source: "CNRA"
+    titre: "Bien fertiliser le cacaoyer adulte en Côte d'Ivoire"
+    url: "https://cnra.ci/download/bien-fertiliser-le-cacaoyer-adulte-en-cote-divoire/"
+    annee: 2020
+    themes: [fertilisation, cacaoyer_adulte, sol]
+
+  - id: cnra_fiche_semences_enrobees
+    source: "CNRA"
+    titre: "Bien utiliser les semences améliorées de cacao sous forme de fèves enrobées"
+    url: "https://cnra.ci/download/bien-utiliser-les-semences-ameliorees-de-cacao-sous-forme-de-feves-enrobees-en-cote-divoire/"
+    annee: 2020
+    themes: [semences, feves_enrobees, materiel_vegetal]
+
+  - id: cnra_fiche_pepiniere_pivot
+    source: "CNRA"
+    titre: "Comment réaliser une pépinière de cacaoyers pour préserver l'intégrité du pivot"
+    url: "https://cnra.ci/download/comment-realiser-une-pepiniere-de-cacaoyers-pour-preserver-lintegrite-du-pivot/"
+    annee: 2020
+    themes: [pepiniere, pivot, plants]
+
+  - id: cnra_fiche_sechage_feves
+    source: "CNRA"
+    titre: "Bien sécher et conserver les fèves de cacaoyer pour une meilleure qualité"
+    url: "https://cnra.ci/download/bien-secher-et-conserver-les-feves-de-caoyer-pour-une-meilleure-qualite-du-cacao-marchand-de-niche/"
+    annee: 2020
+    themes: [post_recolte, sechage, conservation, qualite]
+
+  - id: guide_mondial_systemes_cacao
+    source: "FAO"
+    titre: "Un guide mondial sur les systèmes de culture du cacao (ICCO, version FR)"
+    url: "https://www.icco.org/wp-content/uploads/B27407-Cocoa-Grower-Guide-French-CFW-v7-interactive.pdf"
+    annee: 2022
+    themes: [systemes_culture, agroforesterie, sol, ravageurs, fermentation]
+
+  - id: icco_revue_mondiale_systemes
+    source: "FAO"
+    titre: "Revue mondiale des systèmes de culture du cacao (ICCO, version FR)"
+    url: "https://www.icco.org/wp-content/uploads/Global-Review-of-Cocoa-Farming-Systems_Final-French.pdf"
+    annee: 2022
+    themes: [systemes_culture, agroforesterie, post_recolte, qualite, ravageurs]
+
+  - id: fao_analyse_prospective_filiere
+    source: "FAO"
+    titre: "Analyse prospective de la filière cacao en Côte d'Ivoire"
+    url: "https://openknowledge.fao.org/server/api/core/bitstreams/980ea3ef-4f56-445d-b90a-4d6dfb6efdb2/content"
+    annee: 2023
+    themes: [filiere, durabilite, climat, sol, productivite]
+
+  - id: anader_brochure_institutionnelle
+    source: "ANADER"
+    titre: "Brochure institutionnelle ANADER 2023"
+    url: "https://www.anader.ci/wp-content/uploads/2023/10/Brochure-Institutionnelle-ANADER_2023_digital.pdf"
+    annee: 2023
+    themes: [encadrement, appui_conseil, missions, productivite]
+
+  - id: amelioration_revenu_producteurs
+    source: "Conseil du Café-Cacao"
+    titre: "Amélioration du revenu des producteurs"
+    url: "http://www.conseilcafecacao.ci/docs/2016/AMELIORATION_REVENU_DES_PRODUCTEURS_2018.pdf"
+    annee: 2018
+    themes: [revenu, productivite, diversification, gestion_exploitation]
+
+  - id: manuel_formation_productivite
+    source: "Conseil du Café-Cacao"
+    titre: "Manuel du producteur relais — techniques d'accroissement de la productivité"
+    url: "https://www.dol.gov/sites/dolgov/files/mclean.elizabeth.f@dol.gov/67_Manuel_formation_producteurs_cacao_productivite.pdf"
+    annee: 2017
+    themes: [productivite, taille, fertilisation, lutte_integree, recolte]

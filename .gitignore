@@ -1,0 +1,36 @@
+# Modèles générés (poids, adaptateurs, GGUF)
+models/
+!models/.gitkeep
+
+# Documents officiels téléchargés (sources brutes du corpus RAG) — volumineux,
+# reconstructibles depuis corpus/sources/sources_officielles.yaml
+train/
+!train/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.env
+
+# Outils
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# État local du harness Claude Code
+.claude/
+
+# Système
+.DS_Store
+*.log
+
+# Captures d'écran / documents de travail (non versionnés, peuvent contenir
+# des infos personnelles : facturation, etc.)
+docs/Doc2.*
+~$*

@@ -1,0 +1,66 @@
+.PHONY: help corpus-check corpus-rag corpus-rag-collect train merge build up down test lint format
+
+help:
+	@echo "Cibles disponibles :"
+	@echo "  corpus-check  Valide le corpus (format, garde-fous)"
+	@echo "  corpus-rag    Construit le corpus Q/R via RAG (LLM local requis)"
+	@echo "  corpus-rag-collect Télécharge + découpe les sources (sans LLM)"
+	@echo "  train         Lance l'entraînement LoRA (GPU)"
+	@echo "  merge         Fusionne l'adaptateur LoRA + modèle de base"
+	@echo "  build         Construit les images Docker du service"
+	@echo "  demo-base     Démarre la démo flux complet (Mistral-7B de base, GPU)"
+	@echo "  demo-base-cpu Démarre la démo flux complet (Mistral-7B de base, CPU/GGUF)"
+	@echo "  up            Démarre le service (inference + api + redis)"
+	@echo "  down          Arrête le service"
+	@echo "  test          Lance les tests Python (pytest)"
+	@echo "  lint          Vérifie le style (ruff check)"
+	@echo "  format        Formate le code (ruff format)"
+
+corpus-check:
+	python training/scripts/enrich_corpus.py --check corpus/corpus_cacao_demarrage.jsonl
+
+# Construit le corpus à partir des documents officiels (cf. docs/corpus_rag_guide.md).
+# Nécessite un LLM local OpenAI-compatible : CORPUS_LLM_BASE_URL, CORPUS_LLM_MODEL.
+corpus-rag:
+	python training/scripts/build_corpus_rag.py --target $(or $(TARGET),5000) \
+		--out corpus/corpus_cacao_rag.jsonl
+
+corpus-rag-collect:
+	python training/scripts/build_corpus_rag.py --collect-only
+
+train:
+	docker compose -f docker-compose.training.yml up --build
+
+merge:
+	python training/scripts/merge_and_export.py \
+		--base mistralai/Mistral-7B-Instruct-v0.3 \
+		--adapter models/lora-adapter \
+		--output models/opencacao-7b
+
+build:
+	docker compose build
+
+up:
+	docker compose up -d
+
+demo-base:
+	docker compose -f docker-compose.base.yml up --build
+
+demo-base-cpu:
+	docker compose -f docker-compose.base-cpu.yml up --build
+
+down:
+	docker compose down
+	docker compose -f docker-compose.base.yml down
+	docker compose -f docker-compose.base-cpu.yml down
+
+test:
+	cd api && pytest
+	pytest training/tests -o addopts=""
+
+lint:
+	cd api && ruff check .
+	ruff check training
+
+format:
+	cd api && ruff format .

@@ -1,0 +1,27 @@
+# Référentiel des sources agronomiques citables.
+# Sert à normaliser les noms de sources et à fournir des références fiables.
+
+sources:
+  - id: cnra
+    nom: "CNRA"
+    nom_complet: "Centre National de Recherche Agronomique"
+    pays: "Côte d'Ivoire"
+  - id: anader
+    nom: "ANADER"
+    nom_complet: "Agence Nationale d'Appui au Développement Rural"
+    pays: "Côte d'Ivoire"
+  - id: conseil_cafe_cacao
+    nom: "Conseil du Café-Cacao"
+    nom_complet: "Le Conseil du Café-Cacao"
+    pays: "Côte d'Ivoire"
+  - id: fao_ci
+    nom: "FAO Côte d'Ivoire"
+    nom_complet: "Organisation des Nations Unies pour l'alimentation et l'agriculture"
+    pays: "International"
+
+# Sources reconnues comme fiables pour la pondération de la confiance.
+sources_fiables:
+  - "CNRA"
+  - "ANADER"
+  - "Conseil du Café-Cacao"
+  - "FAO Côte d'Ivoire"

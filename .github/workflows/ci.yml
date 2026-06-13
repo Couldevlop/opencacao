@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Lint, tests et validation du corpus
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Installer Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Installer les dépendances API (+ dev)
+        run: python -m pip install -e "./api[dev]"
+
+      - name: Lint (ruff)
+        run: |
+          ruff check api
+          ruff check training
+
+      - name: Vérifier le format (ruff format)
+        run: ruff format --check api
+
+      - name: Tests API (couverture >= 90 %)
+        working-directory: api
+        run: pytest
+
+      - name: Tests des scripts d'entraînement
+        run: pytest training/tests -o addopts=""
+
+      - name: Validation du corpus
+        run: python training/scripts/enrich_corpus.py --check corpus/corpus_cacao_demarrage.jsonl

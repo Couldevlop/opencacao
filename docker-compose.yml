@@ -1,0 +1,48 @@
+# Service principal (GPU) : inference (vLLM) + api + redis.
+# Aucun port exposé publiquement à part api:8080.
+services:
+  inference:
+    image: vllm/vllm-openai:v0.6.3
+    command: >-
+      --model /models/opencacao-7b
+      --served-model-name opencacao-7b
+      --port 8000
+    volumes:
+      - ./models:/models:ro
+    networks:
+      - opencacao-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  api:
+    build:
+      context: ./api
+    env_file:
+      - .env
+    environment:
+      INFERENCE_BACKEND: vllm
+      INFERENCE_URL: http://inference:8000
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8080:8080"
+    depends_on:
+      - inference
+      - redis
+    networks:
+      - opencacao-net
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - opencacao-net
+    restart: unless-stopped
+
+networks:
+  opencacao-net:
+    driver: bridge
