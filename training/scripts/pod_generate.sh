@@ -38,9 +38,16 @@ pip install -r training/requirements-corpus.txt
 
 echo "==> 2/5  Démarrage du serveur Ministral 3 (vLLM) sur le port ${PORT}"
 export HUGGING_FACE_HUB_TOKEN="${HF_TOKEN}"
+# Chargement au format mistral natif (params.json/tekken.json) : indispensable
+# pour Ministral 3 (archi 'mistral3' que les transformers récents seuls
+# connaissent) — contourne le parseur de config HF. Le modèle est en FP8 (~8 Go),
+# tient dans 20 Go.
 python -m vllm.entrypoints.openai.api_server \
   --model "${MODELE_BASE}" \
   --served-model-name "${NOM_SERVI}" \
+  --tokenizer-mode mistral \
+  --config-format mistral \
+  --load-format mistral \
   --port "${PORT}" \
   --max-model-len 8192 \
   --gpu-memory-utilization 0.92 \

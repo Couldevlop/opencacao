@@ -16,6 +16,9 @@ services:
     command: >-
       --model mistralai/Ministral-3-8B-Instruct-2512
       --served-model-name opencacao-7b
+      --tokenizer-mode mistral
+      --config-format mistral
+      --load-format mistral
       --port 8000
       --max-model-len 8192
       --gpu-memory-utilization 0.92

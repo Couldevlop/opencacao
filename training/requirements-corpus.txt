@@ -7,8 +7,10 @@
 # La génération elle-même appelle un LLM local OpenAI-compatible (vLLM/Mistral)
 # via la bibliothèque standard urllib — aucun SDK propriétaire requis.
 
-pypdf==4.3.1
-sentence-transformers==3.0.1
-numpy==1.26.4
-PyYAML==6.0.2
-certifi==2024.8.30
+pypdf>=4.3
+sentence-transformers>=3.0
+# numpy non épinglé à 1.x : vLLM (multimodal Ministral 3) tire opencv qui exige
+# numpy>=2 ; sentence-transformers et le pipeline fonctionnent en numpy 2.
+numpy>=1.26
+PyYAML>=6.0
+certifi>=2024.8
