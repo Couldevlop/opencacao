@@ -4,7 +4,7 @@ Hyperparamètres épinglés. Exécuté ponctuellement sur GPU 24 Go.
 
 Usage :
     python training/scripts/train_lora.py \
-        --corpus /corpus/corpus_cacao_demarrage.jsonl \
+        --corpus /corpus/corpus_cacao_rag.jsonl /corpus/corpus_cacao_demarrage.jsonl \
         --output /models/lora-adapter
 """
 
@@ -70,11 +70,11 @@ def _format_exemple(exemple: dict[str, str]) -> dict[str, str]:
     return {"text": texte}
 
 
-def entrainer(corpus: Path, output: Path) -> None:
+def entrainer(corpus: list[Path], output: Path) -> None:
     """Lance le fine-tuning LoRA et écrit l'adaptateur dans ``output``.
 
     Args:
-        corpus: Chemin du fichier JSONL d'entraînement.
+        corpus: Un ou plusieurs fichiers JSONL d'entraînement (fusionnés).
         output: Dossier de sortie de l'adaptateur LoRA.
     """
     quantization = BitsAndBytesConfig(
@@ -98,7 +98,7 @@ def entrainer(corpus: Path, output: Path) -> None:
     model = get_peft_model(model, LoraConfig(**LORA_CONFIG))
     model.print_trainable_parameters()
 
-    dataset = load_dataset("json", data_files=str(corpus), split="train")
+    dataset = load_dataset("json", data_files=[str(c) for c in corpus], split="train")
     dataset = dataset.map(_format_exemple, remove_columns=dataset.column_names)
     split = dataset.train_test_split(test_size=0.1, seed=SEED)
 
@@ -121,7 +121,7 @@ def entrainer(corpus: Path, output: Path) -> None:
 def main() -> None:
     """Point d'entrée CLI."""
     parser = argparse.ArgumentParser(description="Fine-tuning LoRA OpenCacao-7B.")
-    parser.add_argument("--corpus", type=Path, required=True)
+    parser.add_argument("--corpus", type=Path, nargs="+", required=True)
     parser.add_argument("--output", type=Path, default=Path("/models/lora-adapter"))
     args = parser.parse_args()
 

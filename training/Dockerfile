@@ -12,7 +12,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY scripts ./scripts
 
-# Par défaut : entraînement LoRA. Surchargé par docker-compose.training.yml si besoin.
+# Par défaut : entraînement LoRA sur le corpus RAG + le corpus de démarrage.
+# Surchargé par docker-compose.training.yml si besoin.
 CMD ["python", "scripts/train_lora.py", \
-     "--corpus", "/corpus/corpus_cacao_demarrage.jsonl", \
+     "--corpus", "/corpus/corpus_cacao_rag.jsonl", "/corpus/corpus_cacao_demarrage.jsonl", \
      "--output", "/models/lora-adapter"]

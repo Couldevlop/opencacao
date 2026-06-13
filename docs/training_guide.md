@@ -6,11 +6,28 @@ libère l'instance.
 
 ## Prérequis
 
-- Un GPU avec au moins **24 Go de VRAM** (RTX 4090, A10G, A100…) — RunPod, Vast.ai,
-  Lambda Labs (~1-2 USD/h).
+- Un GPU **16–20 Go de VRAM suffisent** pour le LoRA 4-bit (QLoRA) — ex. RTX 4000
+  Ada 20 Go, RTX 3090/4090 24 Go. RunPod / Vast.ai (~0,30–0,70 USD/h). 24 Go =
+  plus de confort (contexte/batch), pas une obligation.
 - Un token Hugging Face avec accès à `mistralai/Mistral-7B-Instruct-v0.3`
   (variable `HF_TOKEN`).
-- Un corpus validé d'au moins quelques centaines de paires (objectif : 500+).
+- Le corpus généré `corpus/corpus_cacao_rag.jsonl` (voir
+  [`corpus_rag_guide.md`](corpus_rag_guide.md)), entraîné avec le corpus de
+  démarrage.
+
+## Chemin recommandé sur pod RunPod (sans Docker)
+
+Un pod RunPod est déjà un conteneur CUDA : on n'y lance pas `docker compose`.
+Deux scripts turnkey font tout, après `git clone` du dépôt et `export HF_TOKEN` :
+
+```bash
+bash training/scripts/pod_generate.sh 10000   # 1) génère le corpus (sert Mistral via vLLM)
+bash training/scripts/pod_train.sh            # 2) entraîne le LoRA + fusionne le modèle
+```
+
+Le chemin Docker ci-dessous (`make train`) reste valable sur une **VM GPU**
+disposant de Docker + nvidia-container-runtime (reproductibilité, versions
+PyTorch épinglées).
 
 ## Étapes
 
@@ -28,12 +45,15 @@ dosages phytosanitaires chiffrés, présence d'au moins une source citée.
 ### 2. Lancer l'entraînement (sur l'instance GPU)
 
 ```bash
-git clone <dépôt> && cd opencacao
+git clone https://github.com/Couldevlop/opencacao.git && cd opencacao
 export HF_TOKEN=hf_xxx
 make train
-# ou :
+# ou directement :
 docker compose -f docker-compose.training.yml up --build
 ```
+
+L'entraînement porte sur `corpus/corpus_cacao_rag.jsonl` **+** le corpus de
+démarrage (voir la commande dans `docker-compose.training.yml`).
 
 Configuration LoRA et hyperparamètres : épinglés dans `training/scripts/train_lora.py`
 (r=16, alpha=32, 4-bit nf4, 3 époques, lr=2e-4, scheduler cosine). Découpage

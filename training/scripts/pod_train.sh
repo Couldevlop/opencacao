@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Entraînement LoRA d'OpenCacao-7B sur un pod GPU loué (RunPod, etc.).
+#
+# Tourne ENTIÈREMENT sur le pod : installe les dépendances d'entraînement,
+# affine Mistral 7B en LoRA 4-bit sur le corpus (RAG + démarrage), fusionne
+# l'adaptateur avec le modèle de base, et exporte le modèle prêt pour vLLM.
+#
+# Pré-requis sur le pod :
+#   - Template avec Python + PyTorch + CUDA (ex. « Runpod Pytorch 2.8.0 »)
+#   - Le code du dépôt présent (git clone)
+#   - Le corpus généré : corpus/corpus_cacao_rag.jsonl (via pod_generate.sh)
+#   - Variable HF_TOKEN exportée (Mistral est un modèle gated)
+#
+# Usage (depuis la racine du dépôt, sur le pod) :
+#   export HF_TOKEN=hf_xxx
+#   bash training/scripts/pod_train.sh
+#
+# Remarque reproductibilité : on conserve le PyTorch déjà présent sur le pod
+# (au lieu de réinstaller la version épinglée), car le pod fournit un PyTorch
+# compatible CUDA. Le chemin 100 % épinglé reste docker-compose.training.yml,
+# pour une VM GPU disposant de Docker + nvidia-container-runtime.
+
+set -euo pipefail
+
+ADAPTER_DIR="models/lora-adapter"
+MERGED_DIR="models/opencacao-7b"
+BASE_MODEL="mistralai/Mistral-7B-Instruct-v0.3"
+
+if [[ -z "${HF_TOKEN:-}" ]]; then
+  echo "ERREUR : exporte HF_TOKEN (token Hugging Face) avant de lancer." >&2
+  exit 1
+fi
+export HUGGING_FACE_HUB_TOKEN="${HF_TOKEN}"
+
+# Liste des corpus d'entraînement réellement présents.
+CORPUS=()
+[[ -f corpus/corpus_cacao_rag.jsonl ]] && CORPUS+=("corpus/corpus_cacao_rag.jsonl")
+[[ -f corpus/corpus_cacao_demarrage.jsonl ]] && CORPUS+=("corpus/corpus_cacao_demarrage.jsonl")
+if [[ ${#CORPUS[@]} -eq 0 ]]; then
+  echo "ERREUR : aucun corpus trouvé. Génère d'abord corpus/corpus_cacao_rag.jsonl" >&2
+  echo "  (bash training/scripts/pod_generate.sh)" >&2
+  exit 1
+fi
+echo "==> Corpus d'entraînement : ${CORPUS[*]}"
+
+echo "==> 1/4  Installation des dépendances d'entraînement (PyTorch du pod conservé)"
+pip install --quiet --upgrade pip
+# On retire la ligne torch épinglée pour ne pas downgrader le PyTorch du pod.
+grep -v '^torch==' training/requirements.txt > /tmp/req-train.txt
+pip install --quiet -r /tmp/req-train.txt
+
+echo "==> 2/4  Validation du corpus (garde-fous)"
+for c in "${CORPUS[@]}"; do
+  python training/scripts/enrich_corpus.py --check "${c}" || true
+done
+
+echo "==> 3/4  Fine-tuning LoRA 4-bit"
+python training/scripts/train_lora.py --corpus "${CORPUS[@]}" --output "${ADAPTER_DIR}"
+
+echo "==> 4/4  Fusion de l'adaptateur avec le modèle de base"
+python training/scripts/merge_and_export.py \
+  --base "${BASE_MODEL}" \
+  --adapter "${ADAPTER_DIR}" \
+  --output "${MERGED_DIR}"
+
+echo
+echo "Terminé. Modèle fusionné dans ${MERGED_DIR}/ (prêt pour vLLM)."
+echo "Récupère-le sur ton PC, par exemple :"
+echo "  tar czf opencacao-7b.tar.gz -C models opencacao-7b && runpodctl send opencacao-7b.tar.gz"
+echo
+echo "Export GGUF (optionnel, pour servir en CPU via llama.cpp) :"
+echo "  git clone https://github.com/ggerganov/llama.cpp && pip install -r llama.cpp/requirements.txt"
+echo "  python llama.cpp/convert_hf_to_gguf.py ${MERGED_DIR} --outfile models/opencacao-7b-f16.gguf"
+echo "  ./llama.cpp/llama-quantize models/opencacao-7b-f16.gguf models/opencacao-7b-Q4_K_M.gguf Q4_K_M"

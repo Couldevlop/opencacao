@@ -11,7 +11,7 @@ services:
       - hf-cache:/cache/huggingface
     command: >-
       python scripts/train_lora.py
-      --corpus /corpus/corpus_cacao_demarrage.jsonl
+      --corpus /corpus/corpus_cacao_rag.jsonl /corpus/corpus_cacao_demarrage.jsonl
       --output /models/lora-adapter
     deploy:
       resources:
