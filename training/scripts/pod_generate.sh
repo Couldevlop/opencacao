@@ -34,6 +34,15 @@ echo "    (vLLM = plusieurs Go : ce premier téléchargement prend 5-15 min)"
 pip install --upgrade pip
 # Ministral 3 (déc. 2025) requiert vLLM >= 0.12 et mistral-common >= 1.8.6.
 pip install -U "vllm>=0.12.0" "mistral-common>=1.8.6"
+# Ministral 3 déclare transformers_version 5.0.0.dev0 dans son config.json :
+# l'image du pod embarque une transformers 4.x trop ancienne. Le pré-check
+# vLLM (maybe_override_with_speculators) lit la config via transformers AVANT
+# d'honorer --config-format mistral et échoue ("Can't load the configuration").
+# On installe donc transformers depuis main (instruction officielle Mistral).
+pip install -U "git+https://github.com/huggingface/transformers"
+# numpy 2 forcé : l'image du pod garde un numpy 1.26 que requirements-corpus ne
+# déloge pas toujours ; opencv (tiré par vLLM multimodal) exige numpy>=2.
+pip install -U "numpy>=2"
 pip install -r training/requirements-corpus.txt
 
 echo "==> 2/5  Démarrage du serveur Ministral 3 (vLLM) sur le port ${PORT}"
