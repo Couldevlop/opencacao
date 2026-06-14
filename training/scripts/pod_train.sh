@@ -24,7 +24,8 @@ set -euo pipefail
 
 ADAPTER_DIR="models/lora-adapter"
 MERGED_DIR="models/opencacao-7b"
-BASE_MODEL="mistralai/Ministral-3-8B-Instruct-2512"
+# Variante BF16 (la version Instruct par défaut est en FP8, incompatible QLoRA 4-bit).
+BASE_MODEL="mistralai/Ministral-3-8B-Instruct-2512-BF16"
 
 if [[ -z "${HF_TOKEN:-}" ]]; then
   echo "ERREUR : exporte HF_TOKEN (token Hugging Face) avant de lancer." >&2
@@ -43,22 +44,32 @@ if [[ ${#CORPUS[@]} -eq 0 ]]; then
 fi
 echo "==> Corpus d'entraînement : ${CORPUS[*]}"
 
-echo "==> 1/4  Installation des dépendances d'entraînement (PyTorch du pod conservé)"
+echo "==> 1/5  Installation des dépendances d'entraînement (PyTorch du pod conservé)"
 echo "    (premier téléchargement potentiellement long : transformers, peft, etc.)"
 pip install --upgrade pip
 # On retire la ligne torch épinglée pour ne pas downgrader le PyTorch du pod.
 grep -v '^torch' training/requirements.txt > /tmp/req-train.txt
 pip install -r /tmp/req-train.txt
+# Ministral 3 (config.json -> transformers_version 5.0.0.dev0, archi mistral3)
+# n'est chargeable qu'avec une transformers de la branche main, et opencv (tiré
+# par la pile multimodale) exige numpy>=2. Mêmes correctifs que pod_generate.sh.
+pip install -U "git+https://github.com/huggingface/transformers"
+pip install -U "numpy>=2"
 
-echo "==> 2/4  Validation du corpus (garde-fous)"
+echo "==> 2/5  Validation du corpus (garde-fous)"
 for c in "${CORPUS[@]}"; do
   python training/scripts/enrich_corpus.py --check "${c}" || true
 done
 
-echo "==> 3/4  Fine-tuning LoRA 4-bit"
+echo "==> 3/5  Smoke-test : chargement du modèle + 3 pas (jetable, fail-fast)"
+echo "    (valide la classe multimodale, le ciblage LoRA et l'API TRL avant le run long)"
+python training/scripts/train_lora.py --corpus "${CORPUS[@]}" --output /tmp/lora-smoke --max-steps 3
+rm -rf /tmp/lora-smoke
+
+echo "==> 4/5  Fine-tuning LoRA 4-bit (run complet)"
 python training/scripts/train_lora.py --corpus "${CORPUS[@]}" --output "${ADAPTER_DIR}"
 
-echo "==> 4/4  Fusion de l'adaptateur avec le modèle de base"
+echo "==> 5/5  Fusion de l'adaptateur avec le modèle de base"
 python training/scripts/merge_and_export.py \
   --base "${BASE_MODEL}" \
   --adapter "${ADAPTER_DIR}" \
