@@ -9,8 +9,9 @@
 
 pypdf>=4.3
 sentence-transformers>=3.0
-# numpy non épinglé à 1.x : vLLM (multimodal Ministral 3) tire opencv qui exige
-# numpy>=2 ; sentence-transformers et le pipeline fonctionnent en numpy 2.
-numpy>=1.26
+# numpy 2 imposé : vLLM (multimodal Ministral 3) tire opencv qui exige numpy>=2.
+# Un numpy 1.26 résiduel sur l'image du pod provoque un conflit opencv ; on force
+# la montée de version. sentence-transformers et le pipeline tournent en numpy 2.
+numpy>=2
 PyYAML>=6.0
 certifi>=2024.8
