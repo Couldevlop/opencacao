@@ -29,21 +29,26 @@ if [[ -z "${HF_TOKEN:-}" ]]; then
   exit 1
 fi
 
+# Caches sur le gros volume monté (/workspace sur RunPod) : l'overlay du conteneur
+# (souvent ~5 Go) ne peut contenir ni le modèle (~8-16 Go) ni les caches pip.
+CACHE_ROOT="${CACHE_ROOT:-/workspace}"; [ -d "$CACHE_ROOT" ] || CACHE_ROOT="$HOME"
+export HF_HOME="$CACHE_ROOT/.hf"
+export TMPDIR="$CACHE_ROOT/tmp"
+mkdir -p "$HF_HOME" "$TMPDIR"
+
+# PRÉREQUIS DRIVER : vLLM >= 0.12 (requis par Ministral 3) tire un torch qui exige
+# un driver NVIDIA CUDA >= 12.8. Sur un hôte RunPod trop vieux (ex. CUDA 12.4),
+# vLLM échoue avec "NVIDIA driver too old". Choisis un pod en CUDA >= 12.8.
+
 echo "==> 1/5  Installation de vLLM et des dépendances du corpus"
 echo "    (vLLM = plusieurs Go : ce premier téléchargement prend 5-15 min)"
-pip install --upgrade pip
+pip install --no-cache-dir --upgrade pip
 # Ministral 3 (déc. 2025) requiert vLLM >= 0.12 et mistral-common >= 1.8.6.
-pip install -U "vllm>=0.12.0" "mistral-common>=1.8.6"
-# Ministral 3 déclare transformers_version 5.0.0.dev0 dans son config.json :
-# l'image du pod embarque une transformers 4.x trop ancienne. Le pré-check
-# vLLM (maybe_override_with_speculators) lit la config via transformers AVANT
-# d'honorer --config-format mistral et échoue ("Can't load the configuration").
-# On installe donc transformers depuis main (instruction officielle Mistral).
-pip install -U "git+https://github.com/huggingface/transformers"
-# numpy 2 forcé : l'image du pod garde un numpy 1.26 que requirements-corpus ne
-# déloge pas toujours ; opencv (tiré par vLLM multimodal) exige numpy>=2.
-pip install -U "numpy>=2"
-pip install -r training/requirements-corpus.txt
+pip install --no-cache-dir -U "vllm>=0.12.0" "mistral-common>=1.8.6"
+# transformers depuis main (Ministral 3 = transformers_version 5.0.0.dev0).
+# Fallback si une release suffit : pip install --no-cache-dir -U "transformers>=5.12".
+pip install --no-cache-dir -U "git+https://github.com/huggingface/transformers"
+pip install --no-cache-dir -r training/requirements-corpus.txt
 
 echo "==> 2/5  Démarrage du serveur Ministral 3 (vLLM) sur le port ${PORT}"
 export HUGGING_FACE_HUB_TOKEN="${HF_TOKEN}"
@@ -57,6 +62,7 @@ python -m vllm.entrypoints.openai.api_server \
   --tokenizer-mode mistral \
   --config-format mistral \
   --load-format mistral \
+  --limit-mm-per-prompt '{"image": 0}' \
   --port "${PORT}" \
   --max-model-len 8192 \
   --gpu-memory-utilization 0.92 \
