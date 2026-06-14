@@ -113,7 +113,9 @@ def entrainer(corpus: list[Path], output: Path, max_steps: int = -1) -> None:
         bnb_4bit_use_double_quant=True,
     )
 
-    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
+    # fix_mistral_regex=True : corrige le motif regex du tokenizer tekken
+    # (sinon tokenisation incorrecte, cf. avertissement transformers 5.x).
+    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, fix_mistral_regex=True)
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
 
@@ -121,7 +123,7 @@ def entrainer(corpus: list[Path], output: Path, max_steps: int = -1) -> None:
         BASE_MODEL,
         quantization_config=quantization,
         device_map="auto",
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
     )
     model = prepare_model_for_kbit_training(model)
     model = get_peft_model(model, LoraConfig(**LORA_CONFIG))
@@ -136,7 +138,7 @@ def entrainer(corpus: list[Path], output: Path, max_steps: int = -1) -> None:
     sft_config = SFTConfig(
         output_dir=str(output),
         dataset_text_field="text",
-        max_seq_length=1024,
+        max_length=1024,
         max_steps=max_steps,
         **TRAINING_ARGS,
     )

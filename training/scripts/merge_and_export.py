@@ -45,8 +45,8 @@ def fusionner(base: str, adapter: Path, output: Path) -> None:
         adapter: Dossier de l'adaptateur LoRA.
         output: Dossier de sortie du modèle fusionné.
     """
-    tokenizer = AutoTokenizer.from_pretrained(base)
-    model = AutoModelForImageTextToText.from_pretrained(base, torch_dtype=torch.bfloat16)
+    tokenizer = AutoTokenizer.from_pretrained(base, fix_mistral_regex=True)
+    model = AutoModelForImageTextToText.from_pretrained(base, dtype=torch.bfloat16)
 
     model = PeftModel.from_pretrained(model, str(adapter))
     model = model.merge_and_unload()
