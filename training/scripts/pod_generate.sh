@@ -57,6 +57,10 @@ pip install --no-cache-dir -r training/requirements-corpus.txt
 
 echo "==> 2/5  Démarrage du serveur Ministral 3 (vLLM) sur le port ${PORT}"
 export HUGGING_FACE_HUB_TOKEN="${HF_TOKEN}"
+# Libère d'éventuels vLLM zombies d'un run précédent qui retiennent la VRAM,
+# sinon : "Free memory on device cuda:0 ... less than desired GPU memory util.".
+pkill -9 -f "vllm.entrypoints" 2>/dev/null || true
+sleep 3
 # Chargement au format mistral natif (params.json/tekken.json) : indispensable
 # pour Ministral 3 (archi 'mistral3' que les transformers récents seuls
 # connaissent) — contourne le parseur de config HF. Le modèle est en FP8 (~8 Go),
