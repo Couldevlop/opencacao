@@ -48,6 +48,11 @@ pip install --no-cache-dir -U "vllm>=0.12.0" "mistral-common>=1.8.6"
 # transformers depuis main (Ministral 3 = transformers_version 5.0.0.dev0).
 # Fallback si une release suffit : pip install --no-cache-dir -U "transformers>=5.12".
 pip install --no-cache-dir -U "git+https://github.com/huggingface/transformers"
+# Certaines images (conda) embarquent un prometheus-fastapi-instrumentator trop
+# vieux, incompatible avec la Starlette de vLLM : toutes les requêtes HTTP
+# renvoient alors 500 ("'_IncludedRouter' object has no attribute 'path'") et le
+# serveur paraît injoignable. On le met à jour.
+pip install --no-cache-dir -U prometheus-fastapi-instrumentator
 pip install --no-cache-dir -r training/requirements-corpus.txt
 
 echo "==> 2/5  Démarrage du serveur Ministral 3 (vLLM) sur le port ${PORT}"
@@ -70,19 +75,30 @@ python -m vllm.entrypoints.openai.api_server \
 VLLM_PID=$!
 trap 'kill "${VLLM_PID}" 2>/dev/null || true' EXIT
 
-echo "==> 3/5  Attente du chargement du modèle (peut prendre 1-3 min)"
-for _ in $(seq 1 90); do
-  if curl -sf "http://localhost:${PORT}/v1/models" >/dev/null 2>&1; then
-    echo "    Mistral prêt."
+echo "==> 3/5  Attente du chargement du modèle (vLLM 0.23 compile : jusqu'à ~20 min)"
+# Sonde via python (toujours présent ; pas de dépendance à curl). urlopen lève
+# sur 500 comme sur connexion refusée -> tant que le serveur n'est pas vraiment
+# OK (200), on continue d'attendre.
+PRET=0
+for _ in $(seq 1 240); do
+  if python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT}/v1/models', timeout=3).read()" >/dev/null 2>&1; then
+    echo "    Ministral prêt."
+    PRET=1
     break
   fi
   if ! kill -0 "${VLLM_PID}" 2>/dev/null; then
     echo "ERREUR : vLLM s'est arrêté. Voir /tmp/vllm.log :" >&2
-    tail -n 30 /tmp/vllm.log >&2
+    tail -n 40 /tmp/vllm.log >&2
     exit 1
   fi
   sleep 5
 done
+# Ne JAMAIS lancer la génération si le serveur n'est pas prêt (sinon échec garanti).
+if [ "${PRET}" -ne 1 ]; then
+  echo "ERREUR : vLLM n'a pas répondu à temps (200). Fin de /tmp/vllm.log :" >&2
+  tail -n 40 /tmp/vllm.log >&2
+  exit 1
+fi
 
 echo "==> 4/5  Génération du corpus (cible ${CIBLE})"
 export CORPUS_LLM_BASE_URL="http://localhost:${PORT}"
