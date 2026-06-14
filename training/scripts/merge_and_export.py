@@ -3,9 +3,13 @@
 Produit le modèle fusionné ``opencacao-7b/`` prêt pour vLLM, et écrit un hash
 SHA-256 du modèle pour le versionnement (CLAUDE §11.2).
 
+La base doit être la MÊME variante que celle de l'entraînement : la BF16
+(``…-2512-BF16``), car l'adaptateur a été affiné dessus et le modèle est
+multimodal (chargé via ``AutoModelForImageTextToText``).
+
 Usage :
     python training/scripts/merge_and_export.py \
-        --base mistralai/Ministral-3-8B-Instruct-2512 \
+        --base mistralai/Ministral-3-8B-Instruct-2512-BF16 \
         --adapter models/lora-adapter \
         --output models/opencacao-7b
 """
@@ -18,7 +22,7 @@ from pathlib import Path
 
 import torch
 from peft import PeftModel
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForImageTextToText, AutoTokenizer
 
 
 def _hash_dossier(dossier: Path) -> str:
@@ -42,7 +46,7 @@ def fusionner(base: str, adapter: Path, output: Path) -> None:
         output: Dossier de sortie du modèle fusionné.
     """
     tokenizer = AutoTokenizer.from_pretrained(base)
-    model = AutoModelForCausalLM.from_pretrained(base, torch_dtype=torch.bfloat16)
+    model = AutoModelForImageTextToText.from_pretrained(base, torch_dtype=torch.bfloat16)
 
     model = PeftModel.from_pretrained(model, str(adapter))
     model = model.merge_and_unload()
@@ -60,7 +64,7 @@ def fusionner(base: str, adapter: Path, output: Path) -> None:
 def main() -> None:
     """Point d'entrée CLI."""
     parser = argparse.ArgumentParser(description="Fusion LoRA + modèle de base.")
-    parser.add_argument("--base", default="mistralai/Ministral-3-8B-Instruct-2512")
+    parser.add_argument("--base", default="mistralai/Ministral-3-8B-Instruct-2512-BF16")
     parser.add_argument("--adapter", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=Path("models/opencacao-7b"))
     args = parser.parse_args()

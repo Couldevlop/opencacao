@@ -2,10 +2,22 @@
 
 Hyperparamètres épinglés. Exécuté ponctuellement sur GPU 24 Go.
 
+Ministral 3 8B est un modèle **multimodal** (architecture ``mistral3`` =
+``ministral3`` texte + ``pixtral`` vision) : on le charge donc via
+``AutoModelForImageTextToText`` et non ``AutoModelForCausalLM``. La version
+Instruct officielle est en FP8, incompatible avec la quantification 4-bit de
+bitsandbytes ; on entraîne sur la variante **BF16** (``…-2512-BF16``). Le LoRA
+ne cible que le modèle de langue (pas la tour vision), via une regex sur les
+modules ``language_model``.
+
 Usage :
     python training/scripts/train_lora.py \
-        --corpus /corpus/corpus_cacao_rag.jsonl /corpus/corpus_cacao_demarrage.jsonl \
-        --output /models/lora-adapter
+        --corpus corpus/corpus_cacao_rag.jsonl corpus/corpus_cacao_demarrage.jsonl \
+        --output models/lora-adapter
+
+    # validation rapide du pipeline (charge le modèle + 3 steps, jetable) :
+    python training/scripts/train_lora.py --corpus corpus/*.jsonl \
+        --output /tmp/lora-smoke --max-steps 3
 """
 
 from __future__ import annotations
@@ -17,29 +29,29 @@ import torch
 from datasets import load_dataset
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from transformers import (
-    AutoModelForCausalLM,
+    AutoModelForImageTextToText,
     AutoTokenizer,
     BitsAndBytesConfig,
-    TrainingArguments,
 )
-from trl import SFTTrainer
+from trl import SFTConfig, SFTTrainer
 
-BASE_MODEL = "mistralai/Ministral-3-8B-Instruct-2512"
+# Variante BF16 : la version Instruct par défaut est en FP8, qu'on ne peut pas
+# re-quantifier proprement en 4-bit (QLoRA). La BF16 est la bonne base d'affinage.
+BASE_MODEL = "mistralai/Ministral-3-8B-Instruct-2512-BF16"
 SEED = 42
+
+# Le LoRA ne cible QUE le modèle de langue : regex (fullmatch PEFT) sur les
+# projections d'attention/MLP situées sous ``language_model`` afin d'exclure la
+# tour vision ``pixtral`` (inutile pour un corpus 100 % texte).
+LORA_TARGET_MODULES = (
+    r".*language_model.*\.(q_proj|k_proj|v_proj|o_proj|gate_proj|up_proj|down_proj)"
+)
 
 LORA_CONFIG = {
     "r": 16,
     "lora_alpha": 32,
     "lora_dropout": 0.05,
-    "target_modules": [
-        "q_proj",
-        "k_proj",
-        "v_proj",
-        "o_proj",
-        "gate_proj",
-        "up_proj",
-        "down_proj",
-    ],
+    "target_modules": LORA_TARGET_MODULES,
     "bias": "none",
     "task_type": "CAUSAL_LM",
 }
@@ -85,12 +97,14 @@ def _format_exemple(exemple: dict[str, str], tokenizer: AutoTokenizer) -> dict[s
     return {"text": texte}
 
 
-def entrainer(corpus: list[Path], output: Path) -> None:
+def entrainer(corpus: list[Path], output: Path, max_steps: int = -1) -> None:
     """Lance le fine-tuning LoRA et écrit l'adaptateur dans ``output``.
 
     Args:
         corpus: Un ou plusieurs fichiers JSONL d'entraînement (fusionnés).
         output: Dossier de sortie de l'adaptateur LoRA.
+        max_steps: Si > 0, plafonne le nombre de pas (smoke-test rapide) ;
+            -1 (défaut) entraîne sur le nombre d'epochs configuré.
     """
     quantization = BitsAndBytesConfig(
         load_in_4bit=True,
@@ -103,7 +117,7 @@ def entrainer(corpus: list[Path], output: Path) -> None:
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
 
-    model = AutoModelForCausalLM.from_pretrained(
+    model = AutoModelForImageTextToText.from_pretrained(
         BASE_MODEL,
         quantization_config=quantization,
         device_map="auto",
@@ -119,14 +133,19 @@ def entrainer(corpus: list[Path], output: Path) -> None:
     )
     split = dataset.train_test_split(test_size=0.1, seed=SEED)
 
-    trainer = SFTTrainer(
-        model=model,
-        tokenizer=tokenizer,
-        train_dataset=split["train"],
-        eval_dataset=split["test"],
+    sft_config = SFTConfig(
+        output_dir=str(output),
         dataset_text_field="text",
         max_seq_length=1024,
-        args=TrainingArguments(output_dir=str(output), **TRAINING_ARGS),
+        max_steps=max_steps,
+        **TRAINING_ARGS,
+    )
+    trainer = SFTTrainer(
+        model=model,
+        args=sft_config,
+        train_dataset=split["train"],
+        eval_dataset=split["test"],
+        processing_class=tokenizer,
     )
 
     trainer.train()
@@ -137,13 +156,19 @@ def entrainer(corpus: list[Path], output: Path) -> None:
 
 def main() -> None:
     """Point d'entrée CLI."""
-    parser = argparse.ArgumentParser(description="Fine-tuning LoRA OpenCacao-7B.")
+    parser = argparse.ArgumentParser(description="Fine-tuning LoRA OpenCacao.")
     parser.add_argument("--corpus", type=Path, nargs="+", required=True)
-    parser.add_argument("--output", type=Path, default=Path("/models/lora-adapter"))
+    parser.add_argument("--output", type=Path, default=Path("models/lora-adapter"))
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=-1,
+        help="Plafond de pas (>0 = smoke-test) ; -1 utilise les epochs.",
+    )
     args = parser.parse_args()
 
     args.output.mkdir(parents=True, exist_ok=True)
-    entrainer(args.corpus, args.output)
+    entrainer(args.corpus, args.output, max_steps=args.max_steps)
 
 
 if __name__ == "__main__":
