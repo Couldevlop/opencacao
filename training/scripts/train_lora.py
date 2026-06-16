@@ -144,9 +144,12 @@ def entrainer(corpus: list[Path], output: Path, max_steps: int = -1) -> None:
         output_dir=str(output),
         dataset_text_field="text",
         max_length=1024,
-        # packing : concatène les exemples courts pour remplir les séquences
-        # (paires Q/R brèves) -> ~4x moins de tokens de padding gaspillés.
-        packing=True,
+        # packing désactivé : sans Flash-Attention (indisponible sur ce stack
+        # CUDA 13 / torch 2.11), le packing provoque une cross-contamination de
+        # l'attention entre paires -> dégrade la qualité. Le collateur padde
+        # alors dynamiquement à la longueur réelle (paires courtes) -> rapide ET
+        # propre. Le gain de vitesse vient de gradient_checkpointing.
+        packing=False,
         max_steps=max_steps,
         **TRAINING_ARGS,
     )
