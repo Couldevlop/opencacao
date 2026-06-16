@@ -47,6 +47,9 @@ p = sys.argv[1]
 d = json.load(open(p, encoding="utf-8"))
 d["tokenizer_class"] = "PreTrainedTokenizerFast"
 d.pop("auto_map", None)
+# Champs incompatibles avec ce transformers (liste au lieu de dict, etc.) :
+# inutiles pour la conversion du vocab (lu depuis tokenizer.json).
+d.pop("extra_special_tokens", None)
 json.dump(d, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 print("    tokenizer_config.json -> PreTrainedTokenizerFast")
 PY
