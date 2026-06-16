@@ -1,0 +1,35 @@
+# Contexte de build minimal : exclut le volumineux et l'inutile.
+# (Important : le GGUF ~5 Go et les archives ne doivent JAMAIS partir au daemon.)
+.git/
+.github/
+*.gguf
+*.tar.gz
+runpodctl
+runpodctl*.exe
+runpod
+runpod.pub
+
+# Modèles / données volumineuses
+models/
+train/
+corpus/corpus_cacao_rag.jsonl
+
+# Caches & envs
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+.venv/
+venv/
+.coverage
+
+# Secrets / local
+.env
+docker-compose.local.yml
+.claude/
+
+# Docs lourds / temporaires
+docs/Doc2.*
+~$*
+~WRL*.tmp
