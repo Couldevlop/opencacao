@@ -36,6 +36,11 @@ htmlcov/
 runpodctl
 runpodctl*.exe
 
+# Clés SSH RunPod et archives locales — JAMAIS versionnées (secret / volumineux)
+runpod
+runpod.pub
+*.tar.gz
+
 # Système
 .DS_Store
 *.log
