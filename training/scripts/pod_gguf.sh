@@ -38,6 +38,18 @@ for f in tokenizer.json tokenizer_config.json tekken.json; do
   echo "    récupération ${f}"
   curl -fsSL -o "${MERGED}/${f}" "${BASE}/${f}"
 done
+# tokenizer_config.json déclare la classe "TokenizersBackend" (mistral-common) que
+# AutoTokenizer ne sait pas importer -> on la force à PreTrainedTokenizerFast pour
+# que le convertisseur charge directement tokenizer.json (BPE/tekken).
+python - "${MERGED}/tokenizer_config.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p, encoding="utf-8"))
+d["tokenizer_class"] = "PreTrainedTokenizerFast"
+d.pop("auto_map", None)
+json.dump(d, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+print("    tokenizer_config.json -> PreTrainedTokenizerFast")
+PY
 python llama.cpp/convert_hf_to_gguf.py "${MERGED}" --outfile "${F16}" --outtype f16
 
 echo "==> 4/4  Quantification Q4_K_M (~5 Go)"
