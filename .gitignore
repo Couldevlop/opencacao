@@ -40,6 +40,7 @@ runpodctl*.exe
 runpod
 runpod.pub
 *.tar.gz
+*.gguf
 
 # Système
 .DS_Store
