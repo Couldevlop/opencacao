@@ -1,53 +1,79 @@
 # Interface web OpenCacao
 
-Interface de discussion légère (HTML/CSS/JS, **sans dépendance ni build**) qui
-dialogue avec l'API OpenCacao (`POST /v1/chat`). Design épuré inspiré des
-assistants modernes ; en-tête avec l'**armoirie de la Côte d'Ivoire** (gauche) et
-le logo **OpenLab Consulting** (droite).
+Interface de discussion (HTML/CSS/JS **sans dépendance ni build**) qui dialogue
+avec l'API OpenCacao (`POST /v1/chat`). Design épuré inspiré des assistants
+modernes ; en-tête avec l'**armoirie de la Côte d'Ivoire** (gauche) et le logo
+**OpenLab Consulting** (droite).
+
+## Architecture (Clean Architecture)
+
+Le code (`src/`) suit une séparation en couches, dépendances pointant **vers
+l'intérieur** (le DOM et `fetch` restent en périphérie) :
+
+```
+src/
+  domain/         models.js          # entités + règles pures (Confiance, ConseilError,
+                                     #   validation, normalisation) — aucune dépendance
+  application/    conseil.js         # cas d'usage « demanderConseil » (valide + délègue)
+  infrastructure/ api-client.js      # adaptateur HTTP : fetch /v1/chat, HTTP -> domaine
+  ui/             chat-view.js       # présentation (rendu DOM)
+                  markdown.js        # rendu markdown minimal et sûr
+  main.js         (composition root) # câble client -> cas d'usage -> vue + événements
+```
+
+- **Le domaine ne dépend de rien.** L'application reçoit le client par injection
+  (port) ; on peut donc tester/échanger l'API sans toucher au métier.
+- **L'UI ne connaît ni `fetch` ni l'API** : elle ne manipule que des entités.
+
+## Sécurité (recommandations OWASP)
+
+- **A03 — Injection / XSS** : toute donnée externe est posée en `textContent` ;
+  la seule insertion HTML (réponse du modèle) passe par un rendu markdown qui
+  **échappe d'abord tout le HTML**, puis n'autorise que gras/italique/listes.
+- **CSP** : `Content-Security-Policy` stricte en `<meta>` (`script-src 'self'`,
+  pas de JS/CSS inline, `object-src 'none'`, `frame-ancestors 'none'`,
+  `base-uri 'none'`). Aucun gestionnaire d'événement inline (`onerror`, etc.).
+- **Aucune dépendance tierce / CDN** : 100 % local (souveraineté + surface
+  d'attaque réduite, pas de risque de chaîne d'approvisionnement).
+- **Aucun secret côté client** : seule l'URL de l'API est stockée (localStorage).
+- **Validation** : longueur de question bornée (3–2000) côté UI **et** API.
+- **En déploiement**, servez l'interface en **HTTPS** et ajoutez au serveur les
+  en-têtes `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` et
+  `Strict-Transport-Security` (les en-têtes ne se posent pas via `<meta>`).
+  Restreignez `connect-src` à l'origine réelle de l'API.
 
 ## Logos
 
 | Emplacement | Fichier attendu | Statut |
 |---|---|---|
-| Extrême gauche | `web/assets/armoirie-ci.png` | **À ajouter** (armoiries de la République de Côte d'Ivoire) |
+| Extrême gauche | `web/assets/armoirie-ci.png` | **À ajouter** (armoiries de Côte d'Ivoire) |
 | Extrême droite | `web/assets/openlab.png` | ✅ fourni |
 
-Tant que `armoirie-ci.png` est absent, un cadre gris discret s'affiche à sa place
-(aucune image cassée). Dépose simplement le PNG officiel à ce chemin.
+Si `armoirie-ci.png` est absent, un cadre gris discret s'affiche (géré en JS,
+sans image cassée). Dépose le PNG officiel à ce chemin.
 
 ## Lancer en local
 
-L'interface est statique. Sers-la avec n'importe quel serveur, par ex. :
+Les **modules ES** imposent un service HTTP (pas d'ouverture en `file://`) :
 
 ```bash
 cd web
 python -m http.server 5173
 ```
 
-Puis ouvre http://localhost:5173 et, via l'icône ⚙️ (en haut à droite), renseigne
-l'**URL de l'API** (par défaut `http://localhost:8080`). Elle est mémorisée dans
-le navigateur.
+Ouvre http://localhost:5173, puis via ⚙️ renseigne l'**URL de l'API** (défaut
+`http://localhost:8080`, mémorisée dans le navigateur).
 
-## CORS (important)
+## CORS
 
-L'interface et l'API sont sur des origines différentes : autorise l'origine de
-l'interface côté API, via la variable `CORS_ORIGINS` (cf. `.env`). Exemple :
-
-```
-CORS_ORIGINS=http://localhost:5173
-```
-
-Alternative : servir cette interface depuis la même origine que l'API (montage
-statique FastAPI) pour éviter toute question de CORS.
+Interface et API étant sur des origines différentes, autorise l'origine de
+l'interface côté API via `CORS_ORIGINS` (cf. `.env`), par ex.
+`CORS_ORIGINS=http://localhost:5173`. Ou sers l'interface depuis la même origine
+que l'API.
 
 ## Ce que l'interface affiche
 
-Pour chaque réponse, sous le texte :
-- les **sources** citées (CNRA, ANADER, Conseil du Café-Cacao, FAO) ;
-- un badge **« Voir un agent ANADER »** si la réponse redirige ;
-- le **niveau de confiance** (faible / moyenne / élevée) ;
-- le **disclaimer** obligatoire.
-
-Les garde-fous métier (refus des dosages, etc.) sont appliqués **côté API** : si
-l'API refuse et redirige, l'interface l'affiche tel quel. L'interface n'appelle
+Sous chaque réponse : **sources** citées, badge **« Voir un agent ANADER »** si
+redirection, **niveau de confiance**, et le **disclaimer**. Les garde-fous
+métier (refus des dosages…) sont appliqués **côté API** ; l'interface n'appelle
 jamais le modèle directement.
