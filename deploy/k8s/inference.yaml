@@ -1,19 +1,9 @@
 # Inférence CPU : serveur llama.cpp (OpenAI-compatible) servant le GGUF.
-# JAMAIS exposé publiquement (ClusterIP). Le GGUF est sur un volume persistant.
+# JAMAIS exposé publiquement (ClusterIP).
 #
-# Le serveur officiel llama.cpp expose /v1/chat/completions (compatible OpenAI),
-# ce que consomme l'API. Choisir un tag récent (support de l'archi mistral3).
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: modele-gguf
-spec:
-  accessModes: ["ReadWriteOnce"]
-  storageClassName: hcloud-volumes   # CSI Hetzner ; adapter si autre
-  resources:
-    requests:
-      storage: 10Gi
----
+# Cluster mono-nœud : le GGUF est déposé sur le nœud (/opt/opencacao/models) et
+# monté en hostPath (lecture seule). Le serveur llama.cpp expose
+# /v1/chat/completions (compatible OpenAI), ce que consomme l'API.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -60,8 +50,9 @@ spec:
             failureThreshold: 30   # le 1er chargement du GGUF peut être long
       volumes:
         - name: modele
-          persistentVolumeClaim:
-            claimName: modele-gguf
+          hostPath:
+            path: /opt/opencacao/models
+            type: Directory
 ---
 apiVersion: v1
 kind: Service

@@ -8,10 +8,10 @@ kind: Ingress
 metadata:
   name: opencacao
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod   # <-- ton ClusterIssuer
-    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
 spec:
-  ingressClassName: traefik
+  ingressClassName: nginx
   tls:
     - hosts:
         - opencacao.openlabconsulting.com
