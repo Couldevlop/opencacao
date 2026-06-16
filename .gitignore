@@ -8,6 +8,11 @@
 /train/
 !/train/.gitkeep
 
+# Corpus RAG généré — gardé PRIVÉ (le dépôt est public). On l'amène aux pods
+# via runpodctl (transfert direct), jamais via git. Le corpus de démarrage
+# (corpus_cacao_demarrage.jsonl) reste suivi, lui.
+corpus/corpus_cacao_rag.jsonl
+
 # Python
 __pycache__/
 *.py[cod]
@@ -27,9 +32,14 @@ htmlcov/
 # État local du harness Claude Code
 .claude/
 
+# Binaire CLI RunPod (téléchargé pour les transferts de fichiers, non versionné)
+runpodctl
+runpodctl*.exe
+
 # Système
 .DS_Store
 *.log
+~WRL*.tmp
 
 # Captures d'écran / documents de travail (non versionnés, peuvent contenir
 # des infos personnelles : facturation, etc.)
