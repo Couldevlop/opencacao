@@ -4,15 +4,17 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app import __version__
 from app.core.cache import CacheClient
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging, get_logger
 from app.core.security import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 from app.routers import chat, health
@@ -83,7 +85,26 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(chat.router)
+    _monter_interface(app, settings)
     return app
+
+
+def _monter_interface(app: FastAPI, settings: Settings) -> None:
+    """Sert l'interface web statique à la racine, si un dossier est disponible.
+
+    Permet de servir l'UI et l'API sur la MÊME origine (aucun CORS). Monté en
+    dernier pour ne pas masquer les routes /v1 et /docs. Ignoré si le dossier
+    n'existe pas (ex. image API ne contenant que app/).
+    """
+    candidats: list[Path] = []
+    if settings.web_dir:
+        candidats.append(Path(settings.web_dir))
+    candidats.append(Path(__file__).resolve().parents[2] / "web")
+    for dossier in candidats:
+        if dossier.is_dir() and (dossier / "index.html").is_file():
+            app.mount("/", StaticFiles(directory=str(dossier), html=True), name="web")
+            logger.info("interface_montee", dossier=str(dossier))
+            return
 
 
 app = create_app()
