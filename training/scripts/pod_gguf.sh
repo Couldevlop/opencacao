@@ -29,6 +29,15 @@ if [ ! -x llama.cpp/build/bin/llama-quantize ]; then
 fi
 
 echo "==> 3/4  Conversion HF -> GGUF f16"
+# La fusion HF (save_pretrained) écrit un tokenizer_config.json avec la classe
+# TokenizersBackend que convert_hf_to_gguf ne sait pas relire, et n'écrit pas
+# tekken.json. Le fine-tuning LoRA ne modifie PAS le tokenizer : on restaure les
+# fichiers tokenizer canoniques du dépôt de base (modèle public, sans token).
+BASE="https://huggingface.co/mistralai/Ministral-3-8B-Instruct-2512/resolve/main"
+for f in tokenizer.json tokenizer_config.json tekken.json; do
+  echo "    récupération ${f}"
+  curl -fsSL -o "${MERGED}/${f}" "${BASE}/${f}"
+done
 python llama.cpp/convert_hf_to_gguf.py "${MERGED}" --outfile "${F16}" --outtype f16
 
 echo "==> 4/4  Quantification Q4_K_M (~5 Go)"
