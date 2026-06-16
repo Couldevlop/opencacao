@@ -1,0 +1,25 @@
+# Déploiement OpenCacao sur K3s (Hetzner, CPU/GGUF).
+#   kubectl apply -k deploy/k8s/
+#
+# À PERSONNALISER : DOCKERHUB_USER (ici), ton domaine (api.yaml + ingress.yaml),
+# le ClusterIssuer TLS (ingress.yaml), la storageClass (inference.yaml).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: opencacao
+
+resources:
+  - namespace.yaml
+  - redis.yaml
+  - inference.yaml
+  - api.yaml
+  - web.yaml
+  - ingress.yaml
+  - networkpolicy.yaml
+
+images:
+  - name: opencacao-api
+    newName: docker.io/DOCKERHUB_USER/opencacao-api   # <-- ton compte Docker Hub
+    newTag: "0.1.0"
+  - name: opencacao-web
+    newName: docker.io/DOCKERHUB_USER/opencacao-web    # <-- ton compte Docker Hub
+    newTag: "0.1.0"
