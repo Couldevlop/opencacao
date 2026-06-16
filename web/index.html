@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenCacao — Conseil agronomique cacao</title>
+    <meta
+      name="description"
+      content="Assistant de conseil agronomique souverain pour les producteurs de cacao de Côte d'Ivoire."
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Bandeau drapeau (orange / blanc / vert) -->
+    <div class="flag-strip" aria-hidden="true"></div>
+
+    <header class="app-header">
+      <div class="brand-side left">
+        <img
+          class="logo logo-ci"
+          src="assets/armoirie-ci.png"
+          alt="Armoiries de la République de Côte d'Ivoire"
+          onerror="this.classList.add('logo-missing'); this.alt='Armoiries de Côte d’Ivoire (logo à ajouter)';"
+        />
+      </div>
+
+      <div class="brand-center">
+        <h1 class="wordmark">OpenCacao</h1>
+        <p class="tagline">Conseil agronomique cacao · Côte d'Ivoire</p>
+      </div>
+
+      <div class="brand-side right">
+        <img
+          class="logo logo-openlab"
+          src="assets/openlab.png"
+          alt="OpenLab Consulting"
+          onerror="this.classList.add('logo-missing');"
+        />
+        <button id="settingsBtn" class="icon-btn" title="Paramètres de connexion" aria-label="Paramètres">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="chat" id="chat">
+      <div class="thread" id="thread">
+        <!-- Écran d'accueil -->
+        <section class="welcome" id="welcome">
+          <div class="welcome-emblem">🌱</div>
+          <h2>Bonjour 👋 Comment puis-je vous aider sur votre cacao ?</h2>
+          <p class="welcome-sub">
+            Posez votre question en français. Je m'appuie sur les sources officielles
+            de la filière (CNRA, ANADER, Conseil du Café-Cacao, FAO) et j'oriente vers
+            votre agent ANADER quand c'est nécessaire.
+          </p>
+          <div class="suggestions" id="suggestions">
+            <button class="chip">Mes feuilles jaunissent et les rameaux gonflent, que faire ?</button>
+            <button class="chip">Comment réussir le séchage des fèves ?</button>
+            <button class="chip">À quelle période tailler mes cacaoyers ?</button>
+            <button class="chip">Comment prévenir la pourriture brune des cabosses ?</button>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <div class="composer-wrap">
+      <form class="composer" id="composer" autocomplete="off">
+        <textarea
+          id="input"
+          rows="1"
+          placeholder="Écrivez votre question sur le cacao…"
+          maxlength="2000"
+        ></textarea>
+        <button type="submit" id="send" class="send-btn" aria-label="Envoyer" disabled>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 12h14M13 6l6 6-6 6" />
+          </svg>
+        </button>
+      </form>
+      <p class="composer-note">
+        OpenCacao est un outil d'aide à la décision — il ne remplace pas l'ANADER ni le
+        Conseil du Café-Cacao.
+      </p>
+    </div>
+
+    <!-- Modale paramètres -->
+    <div class="modal-overlay" id="modal" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <h3 id="modalTitle">Connexion à l'API</h3>
+        <label for="apiUrl">URL de l'API OpenCacao</label>
+        <input id="apiUrl" type="url" placeholder="http://localhost:8080" />
+        <p class="modal-hint">
+          Exemple local : <code>http://localhost:8080</code>. L'interface appelle
+          <code>POST /v1/chat</code>. Pensez à autoriser cette origine dans
+          <code>CORS_ORIGINS</code> côté API.
+        </p>
+        <div class="modal-actions">
+          <button class="btn-ghost" id="modalCancel" type="button">Annuler</button>
+          <button class="btn-primary" id="modalSave" type="button">Enregistrer</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
