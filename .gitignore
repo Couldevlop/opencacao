@@ -42,6 +42,11 @@ runpod.pub
 *.tar.gz
 *.gguf
 
+# Kubeconfig (accès cluster) — JAMAIS versionné
+kubeconfig*
+*.kubeconfig
+k3s*.yaml
+
 # Système
 .DS_Store
 *.log
