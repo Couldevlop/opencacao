@@ -57,7 +57,7 @@ LORA_CONFIG = {
 }
 
 TRAINING_ARGS = {
-    "num_train_epochs": 3,
+    "num_train_epochs": 1,
     "per_device_train_batch_size": 4,
     "gradient_accumulation_steps": 4,
     "learning_rate": 2e-4,
@@ -65,7 +65,12 @@ TRAINING_ARGS = {
     "lr_scheduler_type": "cosine",
     "logging_steps": 10,
     "save_strategy": "epoch",
-    "eval_strategy": "epoch",
+    "eval_strategy": "no",
+    # Indispensable sur un GPU 24 Go modeste (ex. L4) : réduit la mémoire
+    # d'activation et évite que paged_adamw_8bit ne swappe (cause d'une lenteur
+    # extrême ~200 s/pas).
+    "gradient_checkpointing": True,
+    "gradient_checkpointing_kwargs": {"use_reentrant": False},
     "bf16": True,
     "optim": "paged_adamw_8bit",
     "report_to": "none",
@@ -139,6 +144,9 @@ def entrainer(corpus: list[Path], output: Path, max_steps: int = -1) -> None:
         output_dir=str(output),
         dataset_text_field="text",
         max_length=1024,
+        # packing : concatène les exemples courts pour remplir les séquences
+        # (paires Q/R brèves) -> ~4x moins de tokens de padding gaspillés.
+        packing=True,
         max_steps=max_steps,
         **TRAINING_ARGS,
     )
