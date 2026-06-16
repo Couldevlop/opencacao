@@ -13,6 +13,10 @@ set -euo pipefail
 MODELE="${1:-models/opencacao-7b}"
 export HF_HOME="${HF_HOME:-/workspace/.hf}"
 
+echo "==> 0/3  Vérification de vLLM (requiert un driver CUDA >= 12.8)"
+python -c "import vllm" 2>/dev/null \
+  || pip install --no-cache-dir -U "vllm>=0.12.0" "mistral-common>=1.8.6"
+
 echo "==> 1/3  Démarrage du modèle (vLLM) sur :8000"
 pkill -9 -f "vllm.entrypoints" 2>/dev/null || true
 sleep 2
