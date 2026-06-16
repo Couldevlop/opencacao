@@ -17,7 +17,7 @@ data:
   TRUST_FORWARDED_FOR: "true"
   # Même origine (servie via l'Ingress) -> CORS inutile. Hôtes autorisés = domaine.
   CORS_ORIGINS: ""
-  ALLOWED_HOSTS: "opencacao.example.ci"   # <-- REMPLACER par ton domaine
+  ALLOWED_HOSTS: "opencacao.openlabconsulting.com"
 ---
 apiVersion: apps/v1
 kind: Deployment

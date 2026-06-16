@@ -14,10 +14,10 @@ spec:
   ingressClassName: traefik
   tls:
     - hosts:
-        - opencacao.example.ci        # <-- REMPLACER par ton domaine
+        - opencacao.openlabconsulting.com
       secretName: opencacao-tls
   rules:
-    - host: opencacao.example.ci      # <-- REMPLACER par ton domaine
+    - host: opencacao.openlabconsulting.com
       http:
         paths:
           - path: /v1

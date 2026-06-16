@@ -23,6 +23,7 @@ pip install --no-cache-dir -r llama.cpp/requirements.txt
 
 echo "==> 2/4  Compilation de llama-quantize"
 if [ ! -x llama.cpp/build/bin/llama-quantize ]; then
+  command -v cmake >/dev/null 2>&1 || pip install --no-cache-dir cmake
   cmake -S llama.cpp -B llama.cpp/build >/dev/null
   cmake --build llama.cpp/build --config Release -j --target llama-quantize
 fi
