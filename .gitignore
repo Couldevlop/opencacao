@@ -50,3 +50,6 @@ runpod.pub
 # des infos personnelles : facturation, etc.)
 docs/Doc2.*
 ~$*
+
+# Override docker local (CORS démo, non versionné)
+docker-compose.local.yml
