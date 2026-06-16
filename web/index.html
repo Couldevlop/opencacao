@@ -3,13 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <!-- OWASP : durcissement navigateur. La politique bloque le JS/CSS inline
-         (aucun script inline dans cette page), restreint les sources, et limite
-         le cadrage (anti-clickjacking). connect-src large car l'URL de l'API est
-         configurable ; à restreindre en déploiement. -->
+    <!-- OWASP : durcissement navigateur. Bloque le JS/CSS inline (aucun script
+         inline ici) et restreint les sources. connect-src large car l'URL de
+         l'API est configurable ; à restreindre en déploiement. L'anti-clickjacking
+         (frame-ancestors) est posé par l'en-tête HTTP X-Frame-Options du serveur
+         (deploy/web.nginx.conf) : ignoré dans une <meta>, on ne le met donc pas ici. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' http: https:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' http: https:; base-uri 'none'; form-action 'none'; object-src 'none'"
     />
     <meta name="referrer" content="no-referrer" />
     <title>OpenCacao — Conseil agronomique cacao</title>
