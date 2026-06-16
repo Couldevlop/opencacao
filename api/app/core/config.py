@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from app import __version__
 
@@ -42,12 +42,14 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_questions: bool = False
 
-    cors_origins: list[str] = Field(default_factory=list)
+    # NoDecode : ne PAS json-décoder la valeur d'env (sinon une liste CSV comme
+    # "a,b" ou "*" lève une erreur). Le validateur _split_csv ci-dessous gère le CSV.
+    cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
     request_timeout_s: float = 60.0
 
     # --- Durcissement (OWASP) ---
     # Hôtes autorisés (TrustedHostMiddleware). "*" = tous (à restreindre en prod).
-    allowed_hosts: list[str] = Field(default_factory=lambda: ["*"])
+    allowed_hosts: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["*"])
     # Ne faire confiance à X-Forwarded-For que derrière un proxy de confiance.
     trust_forwarded_for: bool = False
     # Taille maximale du corps de requête, en octets (anti-DoS).
