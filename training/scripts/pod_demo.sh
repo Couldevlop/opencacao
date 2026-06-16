@@ -23,7 +23,7 @@ sleep 2
 nohup python -m vllm.entrypoints.openai.api_server \
   --model "${MODELE}" \
   --served-model-name opencacao-7b \
-  --limit-mm-per-prompt image=0 \
+  --limit-mm-per-prompt '{"image": 0}' \
   --port 8000 \
   --max-model-len 4096 \
   --gpu-memory-utilization 0.9 \

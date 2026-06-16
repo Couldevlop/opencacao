@@ -21,7 +21,7 @@ echo "    Attends la ligne « Application startup complete » avant de tester."
 python -m vllm.entrypoints.openai.api_server \
   --model "${MODELE}" \
   --served-model-name opencacao \
-  --limit-mm-per-prompt image=0 \
+  --limit-mm-per-prompt '{"image": 0}' \
   --port 8000 \
   --max-model-len 4096 \
   --gpu-memory-utilization 0.9
