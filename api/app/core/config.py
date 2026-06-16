@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
     request_timeout_s: float = 60.0
 
+    # Dossier de l'interface web à servir à la racine (même origine que l'API ->
+    # plus de CORS). Vide = détection auto du dossier web/ du dépôt s'il existe.
+    web_dir: str = ""
+
     # --- Durcissement (OWASP) ---
     # Hôtes autorisés (TrustedHostMiddleware). "*" = tous (à restreindre en prod).
     allowed_hosts: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["*"])

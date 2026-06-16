@@ -8,7 +8,11 @@ import { creerClientApi } from "./infrastructure/api-client.js";
 import { creerVue } from "./ui/chat-view.js";
 
 const CLE_API = "opencacao.apiUrl";
-const API_DEFAUT = "http://localhost:8080";
+// Par défaut, on appelle l'API sur la MÊME origine (cas où l'API sert l'UI ->
+// zéro CORS). En service statique séparé (nginx), régler l'URL via ⚙️.
+const API_DEFAUT = window.location.protocol.startsWith("http")
+  ? window.location.origin
+  : "http://localhost:8080";
 
 const $ = (id) => document.getElementById(id);
 const refs = {
