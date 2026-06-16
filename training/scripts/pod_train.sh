@@ -37,6 +37,10 @@ export HUGGING_FACE_HUB_TOKEN="${HF_TOKEN}"
 CORPUS=()
 [[ -f corpus/corpus_cacao_rag.jsonl ]] && CORPUS+=("corpus/corpus_cacao_rag.jsonl")
 [[ -f corpus/corpus_cacao_demarrage.jsonl ]] && CORPUS+=("corpus/corpus_cacao_demarrage.jsonl")
+# Exemples de REFUS (dosages phytosanitaires, médical, image, hors-filière) :
+# apprend au modèle à refuser et rediriger vers l'ANADER au lieu d'inventer une
+# dose. Cf. constat de test (le modèle nu donnait un dosage halluciné).
+[[ -f corpus/corpus_refus.jsonl ]] && CORPUS+=("corpus/corpus_refus.jsonl")
 if [[ ${#CORPUS[@]} -eq 0 ]]; then
   echo "ERREUR : aucun corpus trouvé. Génère d'abord corpus/corpus_cacao_rag.jsonl" >&2
   echo "  (bash training/scripts/pod_generate.sh)" >&2
