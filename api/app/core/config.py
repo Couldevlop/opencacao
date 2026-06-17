@@ -39,6 +39,15 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     rate_limit_per_min: int = 20
 
+    # --- RAG (génération augmentée par récupération) ---
+    # Désactivé tant que l'index n'est pas construit et le service d'embeddings prêt.
+    rag_enabled: bool = False
+    embeddings_url: str = "http://embeddings:8001"
+    rag_index_path: str = "/data/rag_index.jsonl"
+    rag_top_k: int = 3
+    # Similarité cosinus minimale pour qu'un passage soit injecté (sinon ignoré).
+    rag_min_similarite: float = 0.62
+
     log_level: str = "INFO"
     # Journalisation (anonymisée) des interactions Q/R + retours 👍/👎, pour
     # constituer un jeu de données d'amélioration (boucle humain-dans-la-boucle).

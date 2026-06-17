@@ -1,0 +1,68 @@
+# Service d'EMBEDDINGS (RAG) — llama.cpp en mode embeddings, INTERNE (ClusterIP).
+# Volontairement HORS de la kustomization par défaut : à déployer uniquement à
+# l'activation du RAG, une fois le modèle d'embeddings déposé sur le nœud.
+#
+# Activation :
+#   1) Déposer un GGUF d'embeddings multilingue sur le nœud :
+#        /opt/opencacao/models/embeddings.gguf
+#   2) kubectl -n opencacao apply -f deploy/k8s/embeddings.yaml
+#   3) Construire l'index (cf. docs/REENTRAINEMENT.md / RAG) puis passer
+#        RAG_ENABLED=true dans le ConfigMap api-config et redémarrer l'API.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: embeddings
+  labels: { app: embeddings }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: embeddings }
+  strategy: { type: Recreate }
+  template:
+    metadata:
+      labels: { app: embeddings }
+    spec:
+      containers:
+        - name: llamacpp
+          image: ghcr.io/ggml-org/llama.cpp:server
+          args:
+            - "--embeddings"
+            - "-m"
+            - "/models/embeddings.gguf"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8001"
+            - "-c"
+            - "512"
+            - "-t"
+            - "2"
+          ports:
+            - containerPort: 8001
+          volumeMounts:
+            - name: modele
+              mountPath: /models
+              readOnly: true
+          resources:
+            requests: { cpu: "1", memory: "1Gi" }
+            limits: { cpu: "2", memory: "2Gi" }
+          readinessProbe:
+            httpGet: { path: /health, port: 8001 }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 30
+      volumes:
+        - name: modele
+          hostPath:
+            path: /opt/opencacao/models
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: embeddings
+spec:
+  selector: { app: embeddings }
+  ports:
+    - port: 8001
+      targetPort: 8001

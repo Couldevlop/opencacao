@@ -14,12 +14,22 @@ from typing import Protocol, runtime_checkable
 class InferencePort(Protocol):
     """Contrat d'un moteur d'inférence de langage."""
 
-    async def generer(self, question: str, temperature: float = ..., max_tokens: int = ...) -> str:
+    async def generer(
+        self,
+        question: str,
+        temperature: float = ...,
+        max_tokens: int = ...,
+        contexte: str | None = ...,
+    ) -> str:
         """Génère une réponse pour la question. Lève InferenceUnavailable si KO."""
         ...
 
     def generer_stream(
-        self, question: str, temperature: float = ..., max_tokens: int = ...
+        self,
+        question: str,
+        temperature: float = ...,
+        max_tokens: int = ...,
+        contexte: str | None = ...,
     ) -> AsyncIterator[str]:
         """Génère une réponse en flux (deltas). Lève InferenceUnavailable si KO."""
         ...

@@ -18,17 +18,26 @@ SYSTEM_PROMPT = (
     "- Reste concis : va à l'essentiel, surtout pour une réponse par SMS."
 )
 
+CONTEXTE_PROMPT = (
+    "Voici des extraits pertinents de la base de connaissances OpenCacao "
+    "(sources officielles de la filière). Appuie-toi sur eux EN PRIORITÉ et "
+    "reprends les sources qu'ils citent. S'ils ne suffisent pas, complète "
+    "prudemment sans rien inventer.\n\n{contexte}"
+)
 
-def build_messages(question: str) -> list[dict[str, str]]:
+
+def build_messages(question: str, contexte: str | None = None) -> list[dict[str, str]]:
     """Construit la liste de messages pour l'API d'inférence.
 
     Args:
         question: Question du producteur.
+        contexte: Extraits récupérés (RAG) à injecter, ou None.
 
     Returns:
-        Liste de messages au format chat (system + user).
+        Liste de messages au format chat (system [+ contexte] + user).
     """
-    return [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": question},
-    ]
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    if contexte:
+        messages.append({"role": "system", "content": CONTEXTE_PROMPT.format(contexte=contexte)})
+    messages.append({"role": "user", "content": question})
+    return messages

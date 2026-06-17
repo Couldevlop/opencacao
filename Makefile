@@ -1,5 +1,5 @@
 .PHONY: help corpus-check corpus-rag corpus-rag-collect corpus-cure corpus-assemble \
-	train merge redeploy-model build up down test lint format
+	rag-index train merge redeploy-model build up down test lint format
 
 help:
 	@echo "Cibles disponibles :"
@@ -8,6 +8,7 @@ help:
 	@echo "  corpus-rag-collect Télécharge + découpe les sources (sans LLM)"
 	@echo "  corpus-cure     Récupère le corpus curé depuis le cluster"
 	@echo "  corpus-assemble Assemble + valide + déduplique le corpus d'entraînement"
+	@echo "  rag-index       Construit l'index RAG (embeddings) depuis le corpus"
 	@echo "  train           Lance l'entraînement LoRA (GPU)"
 	@echo "  merge           Fusionne l'adaptateur LoRA + modèle de base"
 	@echo "  redeploy-model  Redéploie un GGUF (GGUF=... [VERSION=...])"
@@ -33,6 +34,14 @@ corpus-assemble:
 		--sources corpus/corpus_cacao_rag.jsonl corpus/corpus_cacao_demarrage.jsonl \
 			corpus/corpus_refus.jsonl corpus/corpus_cure.jsonl \
 		--out corpus/corpus_entrainement.jsonl
+
+# Construit l'index RAG (embeddings). Service d'embeddings requis (EMBEDDINGS_URL).
+rag-index:
+	python training/scripts/build_rag_index.py \
+		--sources corpus/corpus_cacao_rag.jsonl corpus/corpus_cacao_demarrage.jsonl \
+			corpus/corpus_cure.jsonl \
+		--embeddings-url $(or $(EMBEDDINGS_URL),http://localhost:8001) \
+		--out rag_index.jsonl
 
 # Construit le corpus à partir des documents officiels (cf. docs/corpus_rag_guide.md).
 # Nécessite un LLM local OpenAI-compatible : CORPUS_LLM_BASE_URL, CORPUS_LLM_MODEL.

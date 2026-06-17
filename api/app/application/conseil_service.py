@@ -18,6 +18,7 @@ from app.domain.ports import CachePort, InferencePort, JournalPort
 from app.models.chat import DISCLAIMER
 from app.models.domain import Confiance, Langue
 from app.services import guardrails, postprocess
+from app.services.rag import RagRecuperateur
 
 logger = get_logger(__name__)
 
@@ -29,17 +30,31 @@ _FIN_PHRASE = re.compile(r"[.!?…](?=\s)")
 class ConseilService:
     """Cas d'usage central du conseil agronomique."""
 
-    def __init__(self, inference: InferencePort, cache: CachePort, journal: JournalPort) -> None:
+    def __init__(
+        self,
+        inference: InferencePort,
+        cache: CachePort,
+        journal: JournalPort,
+        rag: RagRecuperateur | None = None,
+    ) -> None:
         """Initialise le service avec ses dépendances (ports).
 
         Args:
             inference: Port d'inférence.
             cache: Port de cache/rate-limit.
             journal: Port de journalisation (jeu de données d'amélioration).
+            rag: Récupérateur RAG optionnel (contexte injecté au prompt), ou None.
         """
         self._inference = inference
         self._cache = cache
         self._journal = journal
+        self._rag = rag
+
+    async def _contexte(self, question: str) -> str | None:
+        """Récupère le contexte RAG si activé (best-effort), sinon None."""
+        if self._rag is None:
+            return None
+        return await self._rag.contexte_pour(question)
 
     async def conseiller(self, question: str, langue: Langue, client_ip: str) -> Conseil:
         """Produit un conseil pour la question donnée.
@@ -84,8 +99,9 @@ class ConseilService:
                 ),
             )
 
-        # Inférence (peut lever InferenceUnavailable).
-        texte = await self._inference.generer(question)
+        # Inférence (peut lever InferenceUnavailable), augmentée par RAG si activé.
+        contexte = await self._contexte(question)
+        texte = await self._inference.generer(question, contexte=contexte)
 
         # Garde-fou de SORTIE (défense en profondeur) : ne jamais livrer un dosage.
         if guardrails.verifier_reponse(texte) is not None:
@@ -158,7 +174,8 @@ class ConseilService:
         tampon = ""
         compromis = False
 
-        async for delta in self._inference.generer_stream(question):
+        contexte = await self._contexte(question)
+        async for delta in self._inference.generer_stream(question, contexte=contexte):
             tampon += delta
             while (match := _FIN_PHRASE.search(tampon)) is not None:
                 coupe = match.start() + 1

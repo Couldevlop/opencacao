@@ -52,13 +52,20 @@ class InferenceClient:
             timeout_s=settings.request_timeout_s,
         )
 
-    async def generer(self, question: str, temperature: float = 0.3, max_tokens: int = 512) -> str:
+    async def generer(
+        self,
+        question: str,
+        temperature: float = 0.3,
+        max_tokens: int = 512,
+        contexte: str | None = None,
+    ) -> str:
         """Génère une réponse agronomique pour la question donnée.
 
         Args:
             question: Question du producteur.
             temperature: Température d'échantillonnage.
             max_tokens: Nombre maximum de tokens générés.
+            contexte: Extraits récupérés (RAG) à injecter, ou None.
 
         Returns:
             Le texte de la réponse du modèle.
@@ -68,7 +75,7 @@ class InferenceClient:
         """
         payload = {
             "model": self._model_name,
-            "messages": build_messages(question),
+            "messages": build_messages(question, contexte),
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
@@ -84,7 +91,11 @@ class InferenceClient:
             raise InferenceUnavailable("Service d'inférence indisponible") from exc
 
     async def generer_stream(
-        self, question: str, temperature: float = 0.3, max_tokens: int = 512
+        self,
+        question: str,
+        temperature: float = 0.3,
+        max_tokens: int = 512,
+        contexte: str | None = None,
     ) -> AsyncIterator[str]:
         """Génère une réponse en flux (SSE), morceau par morceau.
 
@@ -92,6 +103,7 @@ class InferenceClient:
             question: Question du producteur.
             temperature: Température d'échantillonnage.
             max_tokens: Nombre maximum de tokens générés.
+            contexte: Extraits récupérés (RAG) à injecter, ou None.
 
         Yields:
             Les fragments de texte (deltas) au fur et à mesure de la génération.
@@ -101,7 +113,7 @@ class InferenceClient:
         """
         payload = {
             "model": self._model_name,
-            "messages": build_messages(question),
+            "messages": build_messages(question, contexte),
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": True,

@@ -13,6 +13,7 @@ dependencies = [
     "redis==5.*",
     "structlog==24.*",
     "pyyaml==6.*",
+    "numpy==1.26.*",
 ]
 
 [project.optional-dependencies]

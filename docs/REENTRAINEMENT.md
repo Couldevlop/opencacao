@@ -68,6 +68,33 @@ Le cache étant vide, repeuple les FAQ pour des réponses instantanées :
 python scripts/prewarm_cache.py https://opencacao.openlabconsulting.com
 ```
 
+## RAG — apprendre des faits sans réentraînement
+
+Le RAG (génération augmentée par récupération) permet d'intégrer un fait validé
+**immédiatement**, sans réentraîner : on récupère à la requête les passages les
+plus proches du corpus et on les injecte dans le prompt. Choix d'architecture :
+**embeddings via llama.cpp** (modèle multilingue local) + **index NumPy en
+mémoire** (pas de base vectorielle externe — souverain et instantané à cette
+échelle). Désactivé par défaut (`RAG_ENABLED=false`).
+
+Activation :
+
+1. **Déposer un modèle d'embeddings GGUF** (multilingue, ~100-150 Mo) sur le nœud :
+   `/opt/opencacao/models/embeddings.gguf`.
+2. **Déployer le service d'embeddings** (interne) :
+   `kubectl -n opencacao apply -f deploy/k8s/embeddings.yaml`
+3. **Construire l'index** (via le service d'embeddings, par port-forward) :
+   ```bash
+   kubectl -n opencacao port-forward svc/embeddings 8001:8001 &
+   make rag-index                       # -> rag_index.jsonl
+   ```
+   Puis déposer `rag_index.jsonl` sur le volume partagé (`/data/rag_index.jsonl`).
+4. **Activer** : `RAG_ENABLED=true` dans le ConfigMap `api-config`, puis
+   `kubectl -n opencacao rollout restart deploy/api`.
+
+À chaque enrichissement du corpus curé, **reconstruire l'index** (étape 3) suffit
+pour que les nouveaux faits soient récupérables — sans réentraînement.
+
 ## Garde-fous (rappel)
 
 - Aucune paire contenant un **dosage phytosanitaire chiffré** n'entre dans le

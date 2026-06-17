@@ -39,6 +39,7 @@ def get_conseil_service(request: Request) -> ConseilService:
         inference=request.app.state.inference,
         cache=request.app.state.cache,
         journal=request.app.state.journal,
+        rag=getattr(request.app.state, "rag", None),
     )
 
 

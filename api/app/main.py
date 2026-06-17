@@ -33,6 +33,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.inference = InferenceClient.from_settings(settings)
     app.state.cache = CacheClient.from_settings(settings)
     app.state.journal = JournalFichier.from_settings(settings)
+    app.state.embeddings, app.state.rag = _construire_rag(settings)
     logger.info("demarrage", version=__version__, backend=settings.inference_backend)
 
     try:
@@ -40,7 +41,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         await app.state.inference.close()
         await app.state.cache.close()
+        if app.state.embeddings is not None:
+            await app.state.embeddings.close()
         logger.info("arret")
+
+
+def _construire_rag(settings: Settings) -> tuple[object | None, object | None]:
+    """Charge l'index + le récupérateur RAG si activé/disponible.
+
+    Returns:
+        (client_embeddings, recuperateur), ou (None, None) si RAG désactivé/indisponible.
+    """
+    if not settings.rag_enabled:
+        return None, None
+    from app.services.embeddings import EmbeddingsClient
+    from app.services.rag import RagIndex, RagRecuperateur
+
+    index = RagIndex.charger(Path(settings.rag_index_path))
+    if index is None:
+        logger.warning("rag_active_mais_index_absent", chemin=settings.rag_index_path)
+        return None, None
+    embeddings = EmbeddingsClient.from_settings(settings)
+    logger.info("rag_actif", entrees=index.taille)
+    return embeddings, RagRecuperateur(
+        embeddings, index, settings.rag_top_k, settings.rag_min_similarite
+    )
 
 
 def create_app() -> FastAPI:

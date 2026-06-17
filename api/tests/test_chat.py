@@ -177,6 +177,39 @@ async def test_stream_bloque_un_dosage_en_sortie(fake_cache, fake_journal) -> No
     assert finaux and finaux[0]["redirection_anader"] is True
 
 
+async def test_rag_injecte_le_contexte_a_l_inference(fake_cache, fake_journal) -> None:
+    """Quand le RAG est branché, le contexte récupéré est passé à l'inférence."""
+
+    class _InferenceCapture:
+        def __init__(self) -> None:
+            self.contexte = None
+
+        async def generer(self, question: str, **kw: object) -> str:
+            self.contexte = kw.get("contexte")
+            return "Réponse fondée sur le contexte. Sources : CNRA."
+
+        async def generer_stream(self, question: str, **kw: object):
+            self.contexte = kw.get("contexte")
+            yield "Réponse. "
+
+        async def ready(self) -> bool:
+            return True
+
+    class _RagStub:
+        async def contexte_pour(self, question: str) -> str:
+            return "[1] (source : CNRA) Récoltez les cabosses mûres."
+
+    capture = _InferenceCapture()
+    service = ConseilService(
+        inference=capture, cache=fake_cache, journal=fake_journal, rag=_RagStub()
+    )
+    _ = [
+        e
+        async for e in service.conseiller_stream("Quand récolter le cacao ?", Langue.FR, "1.2.3.4")
+    ]
+    assert capture.contexte == "[1] (source : CNRA) Récoltez les cabosses mûres."
+
+
 def test_chat_stream_indisponible(client, fake_inference) -> None:
     """Si l'inférence échoue, le flux émet un événement d'erreur 'indisponible'."""
     fake_inference.disponible = False
