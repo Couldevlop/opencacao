@@ -138,3 +138,25 @@ def test_from_settings_construit_un_client() -> None:
     """La fabrique construit un CacheClient depuis les paramètres."""
     cache = CacheClient.from_settings(Settings(redis_url="redis://localhost:6379/0"))
     assert isinstance(cache, CacheClient)
+
+
+def test_cache_key_normalise_casse_accents_ponctuation() -> None:
+    """Des formulations proches (casse/accents/ponctuation) tapent la même clé."""
+    cle = CacheClient._cache_key
+    reference = cle("Quand récolter les cabosses ?", "fr")
+    assert cle("quand recolter les cabosses", "fr") == reference
+    assert cle("  Quand   RÉCOLTER les cabosses ?!  ", "fr") == reference
+
+
+def test_cache_key_distingue_questions_et_langues() -> None:
+    """Deux questions distinctes — ou deux langues — ont des clés différentes."""
+    cle = CacheClient._cache_key
+    assert cle("Quand récolter ?", "fr") != cle("Comment tailler ?", "fr")
+    assert cle("Quand récolter ?", "fr") != cle("Quand récolter ?", "en")
+
+
+async def test_cache_hit_malgre_variation_de_forme() -> None:
+    """Une réponse mise en cache est relue même si la question varie en forme."""
+    cache = CacheClient(FakeRedis(), rate_limit_per_min=20)
+    await cache.set_cached("Quand récolter ?", "fr", '{"reponse": "ok"}')
+    assert await cache.get_cached("quand  RECOLTER !", "fr") == '{"reponse": "ok"}'

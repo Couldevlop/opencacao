@@ -6,6 +6,7 @@ concrets (httpx, redis). C'est l'inversion de dépendance de la clean architectu
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import Protocol, runtime_checkable
 
 
@@ -15,6 +16,12 @@ class InferencePort(Protocol):
 
     async def generer(self, question: str, temperature: float = ..., max_tokens: int = ...) -> str:
         """Génère une réponse pour la question. Lève InferenceUnavailable si KO."""
+        ...
+
+    def generer_stream(
+        self, question: str, temperature: float = ..., max_tokens: int = ...
+    ) -> AsyncIterator[str]:
+        """Génère une réponse en flux (deltas). Lève InferenceUnavailable si KO."""
         ...
 
     async def ready(self) -> bool:

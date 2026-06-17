@@ -81,3 +81,35 @@ def test_from_settings_construit_un_client() -> None:
     """La fabrique construit un InferenceClient depuis les paramètres."""
     client = InferenceClient.from_settings(Settings())
     assert isinstance(client, InferenceClient)
+
+
+# --- Streaming (generer_stream) ---
+
+_SSE = (
+    'data: {"choices":[{"delta":{"content":"Étalez"}}]}\n\n'
+    'data: {"choices":[{"delta":{"content":" les fèves"}}]}\n\n'
+    'data: {"choices":[{"delta":{"content":" au soleil."}}]}\n\n'
+    "data: [DONE]\n\n"
+)
+
+
+async def test_generer_stream_assemble_les_deltas() -> None:
+    """Les fragments SSE sont restitués dans l'ordre, [DONE] arrête le flux."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, content=_SSE.encode(), headers={"content-type": "text/event-stream"}
+        )
+
+    client = _client(handler)
+    morceaux = [m async for m in client.generer_stream("Comment sécher mes fèves ?")]
+    assert "".join(morceaux) == "Étalez les fèves au soleil."
+    await client.close()
+
+
+async def test_generer_stream_erreur_http_leve_indisponible() -> None:
+    """Une erreur HTTP pendant le flux lève InferenceUnavailable."""
+    client = _client(lambda req: httpx.Response(500, json={"error": "boom"}))
+    with pytest.raises(InferenceUnavailable):
+        _ = [m async for m in client.generer_stream("Question ?")]
+    await client.close()

@@ -3,10 +3,34 @@
 from __future__ import annotations
 
 import hashlib
+import re
+import unicodedata
 
 import redis.asyncio as redis
 
 from app.core.config import Settings
+
+_ESPACES = re.compile(r"\s+")
+_PONCTUATION = re.compile(r"[^\w\s]")
+
+
+def _normaliser_question(question: str) -> str:
+    """Normalise une question pour maximiser les correspondances de cache.
+
+    Insensible à la casse, aux accents, à la ponctuation et aux espaces multiples :
+    « Quand récolter ? » et « quand recolter » tapent ainsi la même entrée.
+
+    Args:
+        question: Question brute du producteur.
+
+    Returns:
+        Forme canonique servant de base à la clé de cache.
+    """
+    sans_accents = "".join(
+        c for c in unicodedata.normalize("NFKD", question) if not unicodedata.combining(c)
+    )
+    sans_ponctuation = _PONCTUATION.sub(" ", sans_accents.lower())
+    return _ESPACES.sub(" ", sans_ponctuation).strip()
 
 
 class CacheClient:
@@ -19,7 +43,7 @@ class CacheClient:
 
     _CACHE_PREFIX = "cache:chat:"
     _RATE_PREFIX = "rate:"
-    _CACHE_TTL_S = 3600
+    _CACHE_TTL_S = 604_800  # 7 jours : les conseils agronomiques sont stables.
 
     def __init__(self, client: redis.Redis, rate_limit_per_min: int) -> None:
         """Initialise le client de cache.
@@ -39,7 +63,8 @@ class CacheClient:
 
     @staticmethod
     def _cache_key(question: str, langue: str) -> str:
-        digest = hashlib.sha256(f"{langue}:{question}".encode()).hexdigest()
+        base = f"{langue}:{_normaliser_question(question)}"
+        digest = hashlib.sha256(base.encode()).hexdigest()
         return f"{CacheClient._CACHE_PREFIX}{digest}"
 
     async def get_cached(self, question: str, langue: str) -> str | None:

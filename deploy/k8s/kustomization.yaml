@@ -19,7 +19,7 @@ resources:
 images:
   - name: opencacao-api
     newName: docker.io/thomcoul/opencacao-api   # <-- ton compte Docker Hub
-    newTag: "0.1.0"
+    newTag: "0.1.1"
   - name: opencacao-web
     newName: docker.io/thomcoul/opencacao-web    # <-- ton compte Docker Hub
-    newTag: "0.1.1"
+    newTag: "0.1.2"

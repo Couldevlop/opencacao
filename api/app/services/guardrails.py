@@ -225,3 +225,33 @@ _VALEUR_DOSEE = re.compile(r"\d+\s?(ml|l|cl|g|kg|grammes?|litres?|cc|cm3)\b")
 def _contient_valeur_dosee(texte: str) -> bool:
     """Détecte un nombre suivi d'une unité de dose (ex. '50 ml', '2 litres')."""
     return bool(_VALEUR_DOSEE.search(texte))
+
+
+# Taux de dose : nombre + unité de masse/volume PAR unité de volume/surface/plant.
+# Signature non équivoque d'une prescription phytosanitaire (ex. « 1,25 g/L »,
+# « 2 l/ha », « 50 ml par litre »), à bannir des réponses du modèle.
+_TAUX_DOSE = re.compile(
+    r"\d+(?:[.,]\d+)?\s?(?:mg|g|kg|ml|cl|l|cc)\s*(?:/|\bpar\b)\s*"
+    r"(?:l|ml|litres?|ha|hectares?|m2|m²|plant|plants|pied|pieds|arbres?)\b"
+)
+
+
+def verifier_reponse(reponse: str) -> Refus | None:
+    """Garde-fou de SORTIE : bloque une réponse contenant un dosage phytosanitaire.
+
+    Défense en profondeur : même si la question a passé l'entrée, le modèle ne doit
+    jamais livrer de dosage chiffré. Déclenche sur un taux de dose explicite (g/L,
+    ml/ha…) ou sur une valeur dosée associée à un terme phytosanitaire.
+
+    Args:
+        reponse: Texte généré par le modèle.
+
+    Returns:
+        Un Refus PHYTOSANITAIRE si la réponse est compromise, sinon None.
+    """
+    texte = _normaliser(reponse)
+    if _TAUX_DOSE.search(texte) or (
+        _contient_valeur_dosee(texte) and _contient(texte, _TERMES_PHYTO)
+    ):
+        return Refus(CategorieRefus.PHYTOSANITAIRE)
+    return None

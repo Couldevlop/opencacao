@@ -52,13 +52,8 @@ export function creerVue(refs) {
     if (t) t.remove();
   }
 
-  function ajouterBot(conseil) {
-    const m = document.createElement("div");
-    m.className = "msg bot";
-    const b = document.createElement("div");
-    b.className = "bubble";
-    b.innerHTML = rendreMarkdown(conseil.reponse); // markdown déjà échappé
-
+  /** Construit le bloc de métadonnées (sources, ANADER, confiance, disclaimer). */
+  function construireMeta(conseil) {
     const meta = document.createElement("div");
     meta.className = "meta";
     const row = document.createElement("div");
@@ -97,11 +92,54 @@ export function creerVue(refs) {
       d.textContent = conseil.disclaimer;
       meta.appendChild(d);
     }
+    return meta;
+  }
 
-    b.appendChild(meta);
+  function ajouterBot(conseil) {
+    const m = document.createElement("div");
+    m.className = "msg bot";
+    const b = document.createElement("div");
+    b.className = "bubble";
+    b.innerHTML = rendreMarkdown(conseil.reponse); // markdown déjà échappé
+    b.appendChild(construireMeta(conseil));
     m.append(avatar("bot", "🌱"), b);
     refs.thread.appendChild(m);
     defiler();
+  }
+
+  /**
+   * Démarre une bulle « bot » alimentée au fil de l'eau (streaming).
+   * Retourne { append(texte), finaliser(conseil) } :
+   *  - append : ajoute du texte brut affiché en direct (sûr, textContent) ;
+   *  - finaliser : rend la réponse complète en markdown + ajoute les métadonnées.
+   */
+  function demarrerBot() {
+    cacherAccueil();
+    const m = document.createElement("div");
+    m.className = "msg bot";
+    const b = document.createElement("div");
+    b.className = "bubble";
+    const corps = document.createElement("div");
+    corps.className = "stream-corps";
+    corps.classList.add("curseur");
+    b.appendChild(corps);
+    m.append(avatar("bot", "🌱"), b);
+    refs.thread.appendChild(m);
+    defiler();
+
+    let texte = "";
+    function append(t) {
+      texte += t;
+      corps.textContent = texte; // direct : texte brut (le markdown vient à la fin)
+      defiler();
+    }
+    function finaliser(conseil) {
+      corps.classList.remove("curseur");
+      corps.innerHTML = rendreMarkdown(conseil.reponse || texte); // markdown échappé
+      b.appendChild(construireMeta(conseil));
+      defiler();
+    }
+    return { append, finaliser };
   }
 
   function ajouterErreur(message) {
@@ -123,6 +161,7 @@ export function creerVue(refs) {
     montrerSaisie,
     cacherSaisie,
     ajouterBot,
+    demarrerBot,
     ajouterErreur,
   });
 }

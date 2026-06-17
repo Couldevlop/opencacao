@@ -2,7 +2,7 @@
 // C'est le seul module qui touche au DOM concret et qui injecte les dépendances
 // (client API -> cas d'usage -> vue). Aucune logique métier ici.
 
-import { creerCasUsageConseil } from "./application/conseil.js";
+import { creerCasUsageConseilStream } from "./application/conseil.js";
 import { ConseilError, ErreurKind } from "./domain/models.js";
 import { creerClientApi } from "./infrastructure/api-client.js";
 import { creerVue } from "./ui/chat-view.js";
@@ -34,21 +34,26 @@ let enCours = false;
 
 // Injection de dépendances (dépendances pointant vers l'intérieur).
 const client = creerClientApi(() => baseUrl);
-const demanderConseil = creerCasUsageConseil(client);
+const demanderConseilStream = creerCasUsageConseilStream(client);
 const vue = creerVue(refs);
 
+// Message doux et orienté producteur quand le modèle ne peut pas répondre.
+const MESSAGE_SANS_REPONSE =
+  "Les données dont je dispose ne me permettent pas de répondre à votre question pour le moment. Reformulez-la ou réessayez dans un instant.";
+
 const MESSAGES_ERREUR = {
-  [ErreurKind.VALIDATION]: "Question invalide (entre 3 et 2000 caractères).",
-  [ErreurKind.RATE_LIMIT]: "Trop de requêtes. Patientez une minute avant de réessayer.",
-  [ErreurKind.INDISPONIBLE]: "Le service de conseil est momentanément indisponible.",
-  [ErreurKind.HTTP]: "Erreur du service. Vérifiez l'URL de l'API (⚙️).",
-  [ErreurKind.RESEAU]:
-    "Impossible de joindre l'API. Vérifiez l'URL (⚙️), que le service tourne et que CORS autorise cette origine.",
+  [ErreurKind.VALIDATION]: "Votre question doit faire entre 3 et 2000 caractères.",
+  [ErreurKind.RATE_LIMIT]: "Trop de questions à la suite. Patientez une minute avant de réessayer.",
+  [ErreurKind.INDISPONIBLE]:
+    "Le service est momentanément indisponible. Merci de réessayer dans un instant.",
+  [ErreurKind.HTTP]: MESSAGE_SANS_REPONSE,
+  // RESEAU n'arrive qu'en cas d'API réellement injoignable (config ⚙️ en mode séparé).
+  [ErreurKind.RESEAU]: "Service injoignable pour le moment. Vérifiez votre connexion, puis réessayez.",
 };
 
 function messageErreur(e) {
   if (e instanceof ConseilError && MESSAGES_ERREUR[e.kind]) return MESSAGES_ERREUR[e.kind];
-  return "Une erreur inattendue est survenue.";
+  return MESSAGE_SANS_REPONSE;
 }
 
 async function envoyer(question) {
@@ -61,10 +66,21 @@ async function envoyer(question) {
   autogrow();
   vue.montrerSaisie();
 
+  let bulle = null;
   try {
-    const conseil = await demanderConseil(q);
-    vue.cacherSaisie();
-    vue.ajouterBot(conseil);
+    const conseil = await demanderConseilStream(q, (texte) => {
+      if (!bulle) {
+        vue.cacherSaisie();
+        bulle = vue.demarrerBot();
+      }
+      bulle.append(texte);
+    });
+    if (!bulle) {
+      // Aucun token reçu (cas limite) : on rend la réponse d'un bloc.
+      vue.cacherSaisie();
+      bulle = vue.demarrerBot();
+    }
+    bulle.finaliser(conseil);
   } catch (e) {
     vue.cacherSaisie();
     vue.ajouterErreur(messageErreur(e));

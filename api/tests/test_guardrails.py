@@ -63,3 +63,34 @@ def test_questions_legitimes_passent(question: str) -> None:
 def test_culture_connexe_autorisee() -> None:
     """Une question sur une culture connexe (anacarde) reste dans le périmètre."""
     assert guardrails.evaluer("Comment entretenir mes anacardiers en saison sèche ?") is None
+
+
+# --- Garde-fou de SORTIE (verifier_reponse) ---
+
+
+@pytest.mark.parametrize(
+    "reponse",
+    [
+        "Appliquez 2 l/ha de bouillie sur les cabosses atteintes.",
+        "Diluez a 1,25 g/L puis pulverisez.",
+        "Utilisez 50 ml par litre d'eau pour le traitement.",
+    ],
+)
+def test_verifier_reponse_bloque_un_dosage(reponse: str) -> None:
+    """Une réponse contenant un dosage chiffré est bloquée (redirection ANADER)."""
+    refus = guardrails.verifier_reponse(reponse)
+    assert refus is not None
+    assert refus.categorie is CategorieRefus.PHYTOSANITAIRE
+
+
+@pytest.mark.parametrize(
+    "reponse",
+    [
+        "Récoltez les cabosses bien mûres, fermes et colorées. Sources : CNRA.",
+        "Espacez les cacaoyers d'environ 3 mètres pour une bonne aération.",
+        "La fermentation dure 5 à 7 jours en caisse.",
+    ],
+)
+def test_verifier_reponse_laisse_passer_le_legitime(reponse: str) -> None:
+    """Une réponse agronomique normale (sans dosage phyto) passe."""
+    assert guardrails.verifier_reponse(reponse) is None

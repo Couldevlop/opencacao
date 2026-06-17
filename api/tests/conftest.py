@@ -56,6 +56,17 @@ class FakeInference:
         self.appels.append(question)
         return self.reponse
 
+    async def generer_stream(self, question: str, **_: object):
+        """Émet la réponse en plusieurs fragments, comme un flux SSE."""
+        from app.services.inference import InferenceUnavailable
+
+        if not self.disponible:
+            raise InferenceUnavailable("indisponible")
+        self.appels.append(question)
+        pas = max(1, len(self.reponse) // 3)
+        for debut in range(0, len(self.reponse), pas):
+            yield self.reponse[debut : debut + pas]
+
     async def ready(self) -> bool:
         return self.disponible
 

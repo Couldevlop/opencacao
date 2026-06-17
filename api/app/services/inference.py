@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import AsyncIterator
+
 import httpx
 
 from app.core.config import Settings
@@ -78,6 +81,50 @@ class InferenceClient:
             return data["choices"][0]["message"]["content"].strip()
         except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
             logger.error("inference_error", error=str(exc))
+            raise InferenceUnavailable("Service d'inférence indisponible") from exc
+
+    async def generer_stream(
+        self, question: str, temperature: float = 0.3, max_tokens: int = 512
+    ) -> AsyncIterator[str]:
+        """Génère une réponse en flux (SSE), morceau par morceau.
+
+        Args:
+            question: Question du producteur.
+            temperature: Température d'échantillonnage.
+            max_tokens: Nombre maximum de tokens générés.
+
+        Yields:
+            Les fragments de texte (deltas) au fur et à mesure de la génération.
+
+        Raises:
+            InferenceUnavailable: Si l'inférence échoue ou répond mal.
+        """
+        payload = {
+            "model": self._model_name,
+            "messages": build_messages(question),
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+        try:
+            async with self._client.stream(
+                "POST", f"{self._base_url}/v1/chat/completions", json=payload
+            ) as response:
+                response.raise_for_status()
+                async for ligne in response.aiter_lines():
+                    if not ligne.startswith("data:"):
+                        continue
+                    donnees = ligne[len("data:") :].strip()
+                    if donnees == "[DONE]":
+                        break
+                    try:
+                        delta = json.loads(donnees)["choices"][0]["delta"].get("content")
+                    except (json.JSONDecodeError, KeyError, IndexError):
+                        continue
+                    if delta:
+                        yield delta
+        except httpx.HTTPError as exc:
+            logger.error("inference_stream_error", error=str(exc))
             raise InferenceUnavailable("Service d'inférence indisponible") from exc
 
     async def ready(self) -> bool:

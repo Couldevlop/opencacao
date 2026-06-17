@@ -359,6 +359,17 @@ body {
 .btn-primary { background: var(--cocoa); color: #fff; border-color: var(--cocoa); }
 .btn-primary:hover { background: var(--cocoa-dark); }
 
+/* Réponse en streaming : texte brut pendant la frappe + curseur clignotant. */
+.stream-corps.curseur { white-space: pre-wrap; }
+.stream-corps.curseur::after {
+  content: "▋";
+  display: inline-block;
+  margin-left: 2px;
+  color: var(--cocoa);
+  animation: clignote 1s steps(2, start) infinite;
+}
+@keyframes clignote { to { visibility: hidden; } }
+
 @media (max-width: 600px) {
   .logo { height: 36px; }
   .logo-caption { font-size: 9px; }
