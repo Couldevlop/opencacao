@@ -23,3 +23,10 @@ class RejetRequest(BaseModel):
     """Rejet d'une interaction (écartée de la curation)."""
 
     interaction_id: str = Field(min_length=8, max_length=64)
+
+
+class LoginRequest(BaseModel):
+    """Identifiants de connexion à la console."""
+
+    utilisateur: str = Field(min_length=1, max_length=64)
+    mot_de_passe: str = Field(min_length=1, max_length=128)

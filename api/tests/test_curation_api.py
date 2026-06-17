@@ -6,8 +6,6 @@ import json
 from pathlib import Path
 
 import pytest
-from fastapi import HTTPException
-from fastapi.security import HTTPBasicCredentials
 from fastapi.testclient import TestClient
 
 import app.curation.main as cur
@@ -94,22 +92,47 @@ def test_erreur_interne_renvoie_500(monkeypatch) -> None:
     assert client.get("/api/a-curer").status_code == 500
 
 
-# --- Authentification HTTP Basic optionnelle ---
+# --- Authentification par session (cookie signé) ---
 
 
-def test_auth_desactivee_par_defaut(monkeypatch) -> None:
-    monkeypatch.setattr(cur, "_MOT_DE_PASSE", "")
-    assert cur._verifier_acces(None) is None
+def test_token_signe_round_trip() -> None:
+    token = cur._creer_token()
+    assert cur._token_valide(token) is True
+    assert cur._token_valide(None) is False
+    assert cur._token_valide("12345.signaturebidon") is False
+    assert cur._token_valide(token + "x") is False  # signature altérée
 
 
-def test_auth_refuse_sans_identifiants(monkeypatch) -> None:
-    monkeypatch.setattr(cur, "_MOT_DE_PASSE", "secret")
-    with pytest.raises(HTTPException):
-        cur._verifier_acces(None)
+def test_session_endpoint_sans_mot_de_passe(console) -> None:
+    client, _ = console  # fixture: _MOT_DE_PASSE = ""
+    etat = client.get("/api/session").json()
+    assert etat == {"auth_requise": False, "authentifie": True}
 
 
-def test_auth_accepte_les_bons_identifiants(monkeypatch) -> None:
+def _client_protege(tmp_path, monkeypatch) -> TestClient:
+    monkeypatch.setattr(cur, "_store", CurationStore(tmp_path, tmp_path / "c.jsonl"))
     monkeypatch.setattr(cur, "_MOT_DE_PASSE", "secret")
     monkeypatch.setattr(cur, "_UTILISATEUR", "curateur")
-    creds = HTTPBasicCredentials(username="curateur", password="secret")
-    assert cur._verifier_acces(creds) is None
+    return TestClient(cur.app)
+
+
+def test_acces_protege_sans_session_401(tmp_path, monkeypatch) -> None:
+    client = _client_protege(tmp_path, monkeypatch)
+    assert client.get("/api/stats").status_code == 401
+    assert client.get("/api/session").json()["authentifie"] is False
+
+
+def test_login_mauvais_identifiants_401(tmp_path, monkeypatch) -> None:
+    client = _client_protege(tmp_path, monkeypatch)
+    resp = client.post("/api/login", json={"utilisateur": "curateur", "mot_de_passe": "faux"})
+    assert resp.status_code == 401
+
+
+def test_login_pose_un_cookie_et_donne_acces(tmp_path, monkeypatch) -> None:
+    client = _client_protege(tmp_path, monkeypatch)
+    resp = client.post("/api/login", json={"utilisateur": "curateur", "mot_de_passe": "secret"})
+    assert resp.status_code == 200
+    assert "curation_session" in resp.headers.get("set-cookie", "")
+    # Accès autorisé avec un cookie de session valide.
+    cookies = {"curation_session": cur._creer_token()}
+    assert client.get("/api/stats", cookies=cookies).status_code == 200

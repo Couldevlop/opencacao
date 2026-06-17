@@ -8,14 +8,44 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <header class="topbar">
-      <h1>🧪 Console de curation — OpenCacao</h1>
-      <div class="stats" id="stats" aria-live="polite"></div>
-    </header>
+    <div class="flag-strip" aria-hidden="true"></div>
 
-    <main class="liste" id="liste">
-      <p class="vide" id="chargement">Chargement…</p>
+    <!-- Écran de connexion -->
+    <main class="login-wrap" id="login" hidden>
+      <form class="login-card" id="login-form" autocomplete="on">
+        <div class="login-emblem" aria-hidden="true">🌱</div>
+        <h1 class="login-title">Console de curation</h1>
+        <p class="login-sub">OpenCacao — espace réservé</p>
+
+        <label class="champ">
+          <span>Utilisateur</span>
+          <input id="utilisateur" name="username" type="text" autocomplete="username" required />
+        </label>
+        <label class="champ">
+          <span>Mot de passe</span>
+          <input id="mot_de_passe" name="password" type="password" autocomplete="current-password" required />
+        </label>
+
+        <button class="login-btn" type="submit" id="login-btn">Se connecter</button>
+        <p class="login-erreur" id="login-erreur" role="alert" aria-live="assertive"></p>
+      </form>
+      <footer class="login-pied">OpenLab Consulting · IA souveraine pour la Côte d'Ivoire</footer>
     </main>
+
+    <!-- Console (après authentification) -->
+    <div id="console" hidden>
+      <header class="topbar">
+        <h1>🧪 Console de curation — OpenCacao</h1>
+        <div class="topbar-droite">
+          <span class="stats" id="stats" aria-live="polite"></span>
+          <button type="button" class="logout" id="logout">Se déconnecter</button>
+        </div>
+      </header>
+
+      <main class="liste" id="liste">
+        <p class="vide" id="chargement">Chargement…</p>
+      </main>
+    </div>
 
     <template id="modele-carte">
       <article class="carte">
