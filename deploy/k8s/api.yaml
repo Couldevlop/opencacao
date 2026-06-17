@@ -15,9 +15,11 @@ data:
   ENABLE_DOCS: "false"
   # Derrière l'Ingress Traefik : on fait confiance à X-Forwarded-For.
   TRUST_FORWARDED_FOR: "true"
-  # Même origine (servie via l'Ingress) -> CORS inutile. Hôtes autorisés = domaine.
+  # Même origine (servie via l'Ingress) -> CORS inutile.
   CORS_ORIGINS: ""
-  ALLOWED_HOSTS: "opencacao.openlabconsulting.com"
+  # "*" : le filtrage d'hôte est fait par l'Ingress (ne route que le domaine vers
+  # l'API) ; "*" évite que TrustedHost rejette les sondes k8s (Host = IP du pod).
+  ALLOWED_HOSTS: "*"
 ---
 apiVersion: apps/v1
 kind: Deployment
