@@ -42,5 +42,6 @@ export function versConseil(brut) {
     confiance,
     redirectionAnader: Boolean(brut?.redirection_anader),
     disclaimer: typeof brut?.disclaimer === "string" ? brut.disclaimer : "",
+    interactionId: typeof brut?.interaction_id === "string" ? brut.interaction_id : null,
   });
 }

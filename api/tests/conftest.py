@@ -7,7 +7,12 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api_deps import get_cache_client, get_conseil_service, get_inference_client
+from app.api_deps import (
+    get_cache_client,
+    get_conseil_service,
+    get_inference_client,
+    get_journal,
+)
 from app.application.conseil_service import ConseilService
 from app.main import create_app
 
@@ -74,6 +79,32 @@ class FakeInference:
         return None
 
 
+class FakeJournal:
+    """Journal en mémoire : enregistre interactions et retours, sans fichier."""
+
+    def __init__(self) -> None:
+        self.interactions: list[dict] = []
+        self.feedbacks: list[dict] = []
+
+    async def enregistrer_interaction(
+        self,
+        question: str,
+        langue: str,
+        reponse: str,
+        confiance: str,
+        sources: list[str],
+        redirection_anader: bool,
+    ) -> str:
+        identifiant = f"test{len(self.interactions):08d}"
+        self.interactions.append(
+            {"id": identifiant, "question": question, "reponse": reponse, "vote": None}
+        )
+        return identifiant
+
+    async def enregistrer_feedback(self, interaction_id: str, vote: str) -> None:
+        self.feedbacks.append({"id": interaction_id, "vote": vote})
+
+
 @pytest.fixture
 def fake_cache() -> FakeCache:
     return FakeCache()
@@ -85,12 +116,20 @@ def fake_inference() -> FakeInference:
 
 
 @pytest.fixture
-def client(fake_cache: FakeCache, fake_inference: FakeInference) -> Iterator[TestClient]:
-    """Client de test avec inférence et cache surchargés."""
+def fake_journal() -> FakeJournal:
+    return FakeJournal()
+
+
+@pytest.fixture
+def client(
+    fake_cache: FakeCache, fake_inference: FakeInference, fake_journal: FakeJournal
+) -> Iterator[TestClient]:
+    """Client de test avec inférence, cache et journal surchargés."""
     app = create_app()
-    service = ConseilService(inference=fake_inference, cache=fake_cache)
+    service = ConseilService(inference=fake_inference, cache=fake_cache, journal=fake_journal)
     app.dependency_overrides[get_cache_client] = lambda: fake_cache
     app.dependency_overrides[get_inference_client] = lambda: fake_inference
+    app.dependency_overrides[get_journal] = lambda: fake_journal
     app.dependency_overrides[get_conseil_service] = lambda: service
     with TestClient(app) as test_client:
         yield test_client

@@ -1,7 +1,7 @@
 """Cas d'usage : produire un conseil agronomique.
 
-Orchestre rate-limit, garde-fous, cache et inférence en ne dépendant que des
-ports du domaine. Cette classe est testable sans FastAPI ni Redis.
+Orchestre rate-limit, garde-fous, cache, inférence et journalisation en ne
+dépendant que des ports du domaine. Testable sans FastAPI ni Redis.
 """
 
 from __future__ import annotations
@@ -9,11 +9,12 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import AsyncIterator
+from dataclasses import replace
 
 from app.core.logging import get_logger
 from app.domain.entities import Conseil
 from app.domain.exceptions import RateLimitDepasse
-from app.domain.ports import CachePort, InferencePort
+from app.domain.ports import CachePort, InferencePort, JournalPort
 from app.models.chat import DISCLAIMER
 from app.models.domain import Confiance, Langue
 from app.services import guardrails, postprocess
@@ -28,15 +29,17 @@ _FIN_PHRASE = re.compile(r"[.!?…](?=\s)")
 class ConseilService:
     """Cas d'usage central du conseil agronomique."""
 
-    def __init__(self, inference: InferencePort, cache: CachePort) -> None:
+    def __init__(self, inference: InferencePort, cache: CachePort, journal: JournalPort) -> None:
         """Initialise le service avec ses dépendances (ports).
 
         Args:
             inference: Port d'inférence.
             cache: Port de cache/rate-limit.
+            journal: Port de journalisation (jeu de données d'amélioration).
         """
         self._inference = inference
         self._cache = cache
+        self._journal = journal
 
     async def conseiller(self, question: str, langue: Langue, client_ip: str) -> Conseil:
         """Produit un conseil pour la question donnée.
@@ -47,7 +50,7 @@ class ConseilService:
             client_ip: IP cliente, pour le rate-limit.
 
         Returns:
-            Un objet Conseil.
+            Un objet Conseil (avec son interaction_id de journalisation).
 
         Raises:
             RateLimitDepasse: Si le quota par IP est dépassé.
@@ -60,22 +63,25 @@ class ConseilService:
         refus = guardrails.evaluer(question)
         if refus is not None:
             logger.info("garde_fou_declenche", categorie=refus.categorie.value)
-            return Conseil(
-                reponse=refus.message,
-                confiance=Confiance.ELEVEE,
-                sources=[],
-                redirection_anader=True,
+            return await self._journaliser(
+                question,
+                langue,
+                Conseil(refus.message, Confiance.ELEVEE, [], redirection_anader=True),
             )
 
         # Cache de réponses.
         cached = await self._cache.get_cached(question, langue.value)
         if cached is not None:
             donnees = json.loads(cached)
-            return Conseil(
-                reponse=donnees["reponse"],
-                confiance=Confiance(donnees["confiance"]),
-                sources=donnees["sources"],
-                redirection_anader=donnees["redirection_anader"],
+            return await self._journaliser(
+                question,
+                langue,
+                Conseil(
+                    reponse=donnees["reponse"],
+                    confiance=Confiance(donnees["confiance"]),
+                    sources=donnees["sources"],
+                    redirection_anader=donnees["redirection_anader"],
+                ),
             )
 
         # Inférence (peut lever InferenceUnavailable).
@@ -84,11 +90,10 @@ class ConseilService:
         # Garde-fou de SORTIE (défense en profondeur) : ne jamais livrer un dosage.
         if guardrails.verifier_reponse(texte) is not None:
             logger.warning("garde_fou_sortie_declenche")
-            return Conseil(
-                reponse=guardrails.REFUS_PHYTO,
-                confiance=Confiance.ELEVEE,
-                sources=[],
-                redirection_anader=True,
+            return await self._journaliser(
+                question,
+                langue,
+                Conseil(guardrails.REFUS_PHYTO, Confiance.ELEVEE, [], redirection_anader=True),
             )
 
         sources = postprocess.extraire_sources(texte)
@@ -98,20 +103,8 @@ class ConseilService:
             sources=sources,
             redirection_anader=False,
         )
-
-        await self._cache.set_cached(
-            question,
-            langue.value,
-            json.dumps(
-                {
-                    "reponse": conseil.reponse,
-                    "confiance": conseil.confiance.value,
-                    "sources": conseil.sources,
-                    "redirection_anader": conseil.redirection_anader,
-                }
-            ),
-        )
-        return conseil
+        await self._cache.set_cached(question, langue.value, _serialiser(conseil))
+        return await self._journaliser(question, langue, conseil)
 
     async def conseiller_stream(
         self, question: str, langue: Langue, client_ip: str
@@ -119,9 +112,9 @@ class ConseilService:
         """Produit un conseil en flux, pour un rendu progressif côté client.
 
         Émet des événements ``{"type": "token", "text": ...}`` au fil de l'eau, puis
-        un ``{"type": "done", ...}`` final (sources, confiance, disclaimer). Le
-        garde-fou de sortie est appliqué phrase par phrase AVANT émission : aucune
-        phrase contenant un dosage n'est diffusée.
+        un ``{"type": "done", ...}`` final (sources, confiance, disclaimer,
+        interaction_id). Le garde-fou de sortie est appliqué phrase par phrase AVANT
+        émission : aucune phrase contenant un dosage n'est diffusée.
 
         Args:
             question: Question du producteur (déjà validée par le DTO).
@@ -142,14 +135,19 @@ class ConseilService:
         if refus is not None:
             logger.info("garde_fou_declenche", categorie=refus.categorie.value)
             yield {"type": "token", "text": refus.message}
-            yield self._evenement_final([], Confiance.ELEVEE, redirection=True)
+            yield await self._evenement_final(
+                question, langue, refus.message, [], Confiance.ELEVEE, redirection=True
+            )
             return
 
         cached = await self._cache.get_cached(question, langue.value)
         if cached is not None:
             donnees = json.loads(cached)
             yield {"type": "token", "text": donnees["reponse"]}
-            yield self._evenement_final(
+            yield await self._evenement_final(
+                question,
+                langue,
+                donnees["reponse"],
                 donnees["sources"],
                 Confiance(donnees["confiance"]),
                 redirection=donnees["redirection_anader"],
@@ -184,33 +182,63 @@ class ConseilService:
             logger.warning("garde_fou_sortie_declenche")
             redirection = " " + guardrails.REFUS_PHYTO
             yield {"type": "token", "text": redirection}
-            yield self._evenement_final([], Confiance.ELEVEE, redirection=True)
+            yield await self._evenement_final(
+                question, langue, redirection, [], Confiance.ELEVEE, redirection=True
+            )
             return
 
         texte = "".join(emis)
         sources = postprocess.extraire_sources(texte)
         confiance = postprocess.estimer_confiance(sources)
-        await self._cache.set_cached(
+        conseil = Conseil(texte, confiance, sources, redirection_anader=False)
+        await self._cache.set_cached(question, langue.value, _serialiser(conseil))
+        yield await self._evenement_final(
+            question, langue, texte, sources, confiance, redirection=False
+        )
+
+    async def _journaliser(self, question: str, langue: Langue, conseil: Conseil) -> Conseil:
+        """Journalise l'interaction et renvoie le conseil enrichi de son id."""
+        interaction_id = await self._journal.enregistrer_interaction(
             question,
             langue.value,
-            json.dumps(
-                {
-                    "reponse": texte,
-                    "confiance": confiance.value,
-                    "sources": sources,
-                    "redirection_anader": False,
-                }
-            ),
+            conseil.reponse,
+            conseil.confiance.value,
+            conseil.sources,
+            conseil.redirection_anader,
         )
-        yield self._evenement_final(sources, confiance, redirection=False)
+        return replace(conseil, interaction_id=interaction_id)
 
-    @staticmethod
-    def _evenement_final(sources: list[str], confiance: Confiance, *, redirection: bool) -> dict:
-        """Construit l'événement terminal du flux (métadonnées de la réponse)."""
+    async def _evenement_final(
+        self,
+        question: str,
+        langue: Langue,
+        reponse: str,
+        sources: list[str],
+        confiance: Confiance,
+        *,
+        redirection: bool,
+    ) -> dict:
+        """Journalise puis construit l'événement terminal du flux (métadonnées)."""
+        interaction_id = await self._journal.enregistrer_interaction(
+            question, langue.value, reponse, confiance.value, sources, redirection
+        )
         return {
             "type": "done",
             "sources": sources,
             "confiance": confiance.value,
             "redirection_anader": redirection,
             "disclaimer": DISCLAIMER,
+            "interaction_id": interaction_id,
         }
+
+
+def _serialiser(conseil: Conseil) -> str:
+    """Sérialise un conseil pour le cache (sans l'id de journalisation)."""
+    return json.dumps(
+        {
+            "reponse": conseil.reponse,
+            "confiance": conseil.confiance.value,
+            "sources": conseil.sources,
+            "redirection_anader": conseil.redirection_anader,
+        }
+    )

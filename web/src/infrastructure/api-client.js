@@ -105,5 +105,23 @@ export function creerClientApi(lireBaseUrl) {
     return versConseil({ ...(meta || {}), reponse: texte });
   }
 
-  return Object.freeze({ demander, demanderStream });
+  /**
+   * Envoie un retour 👍/👎 (best-effort : les erreurs sont silencieuses).
+   * @param {string} interactionId
+   * @param {"up"|"down"} vote
+   */
+  async function envoyerFeedback(interactionId, vote) {
+    if (!interactionId) return;
+    try {
+      await fetch(baseCourante() + "/v1/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ interaction_id: interactionId, vote }),
+      });
+    } catch {
+      /* retour non bloquant : on n'interrompt jamais l'expérience */
+    }
+  }
+
+  return Object.freeze({ demander, demanderStream, envoyerFeedback });
 }

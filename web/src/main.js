@@ -35,7 +35,9 @@ let enCours = false;
 // Injection de dépendances (dépendances pointant vers l'intérieur).
 const client = creerClientApi(() => baseUrl);
 const demanderConseilStream = creerCasUsageConseilStream(client);
-const vue = creerVue(refs);
+const vue = creerVue(refs, {
+  onFeedback: (interactionId, vote) => client.envoyerFeedback(interactionId, vote),
+});
 
 // Message doux et orienté producteur quand le modèle ne peut pas répondre.
 const MESSAGE_SANS_REPONSE =

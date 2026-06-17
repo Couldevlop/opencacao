@@ -49,6 +49,7 @@ async def chat(
         sources=conseil.sources,
         confiance=conseil.confiance,
         redirection_anader=conseil.redirection_anader,
+        interaction_id=conseil.interaction_id,
     )
 
 

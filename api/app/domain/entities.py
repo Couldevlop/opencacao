@@ -16,9 +16,11 @@ class Conseil:
         sources: Sources fiables citées.
         confiance: Niveau de confiance estimé.
         redirection_anader: Vrai si la réponse oriente vers l'ANADER.
+        interaction_id: Identifiant de journalisation (pour rattacher un retour).
     """
 
     reponse: str
     confiance: Confiance
     sources: list[str] = field(default_factory=list)
     redirection_anader: bool = False
+    interaction_id: str | None = None

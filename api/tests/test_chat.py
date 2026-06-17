@@ -84,6 +84,33 @@ def test_health(client) -> None:
     assert client.get("/v1/health").status_code == 200
 
 
+# --- Journalisation & retour utilisateur (boucle d'amélioration) ---
+
+
+def test_chat_renvoie_un_interaction_id(client) -> None:
+    """La réponse porte un interaction_id, support du retour 👍/👎."""
+    resp = client.post(
+        "/v1/chat", json={"question": "Comment tailler un cacaoyer ?", "canal": "web"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["interaction_id"]
+
+
+def test_feedback_enregistre_le_vote(client, fake_journal) -> None:
+    """Un retour 👍/👎 valide est accepté (204) et journalisé."""
+    chat = client.post("/v1/chat", json={"question": "Comment greffer le cacaoyer ?"})
+    interaction_id = chat.json()["interaction_id"]
+    resp = client.post("/v1/feedback", json={"interaction_id": interaction_id, "vote": "up"})
+    assert resp.status_code == 202
+    assert fake_journal.feedbacks == [{"id": interaction_id, "vote": "up"}]
+
+
+def test_feedback_vote_invalide_rejete(client) -> None:
+    """Un vote hors {up, down} est rejeté par la validation (422)."""
+    resp = client.post("/v1/feedback", json={"interaction_id": "test00000000", "vote": "peut-etre"})
+    assert resp.status_code == 422
+
+
 # --- Streaming (/v1/chat/stream) ---
 
 
@@ -100,6 +127,7 @@ def test_chat_stream_nominale(client) -> None:
     assert tokens.strip()
     assert finaux and finaux[0]["disclaimer"] == DISCLAIMER
     assert "CNRA" in finaux[0]["sources"]
+    assert finaux[0]["interaction_id"]
 
 
 def test_chat_stream_garde_fou_phyto(client) -> None:
@@ -115,7 +143,7 @@ def test_chat_stream_garde_fou_phyto(client) -> None:
     assert finaux and finaux[0]["redirection_anader"] is True
 
 
-async def test_stream_bloque_un_dosage_en_sortie(fake_cache) -> None:
+async def test_stream_bloque_un_dosage_en_sortie(fake_cache, fake_journal) -> None:
     """Si le modèle émet un dosage, il n'est JAMAIS diffusé (garde-fou de sortie)."""
 
     class _FluxAvecDosage:
@@ -135,7 +163,7 @@ async def test_stream_bloque_un_dosage_en_sortie(fake_cache) -> None:
         async def ready(self) -> bool:
             return True
 
-    service = ConseilService(inference=_FluxAvecDosage(), cache=fake_cache)
+    service = ConseilService(inference=_FluxAvecDosage(), cache=fake_cache, journal=fake_journal)
     evts = [
         e
         async for e in service.conseiller_stream(

@@ -15,9 +15,10 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app import __version__
 from app.core.cache import CacheClient
 from app.core.config import Settings, get_settings
+from app.core.journal import JournalFichier
 from app.core.logging import configure_logging, get_logger
 from app.core.security import BodySizeLimitMiddleware, SecurityHeadersMiddleware
-from app.routers import chat, health
+from app.routers import chat, feedback, health
 from app.services.inference import InferenceClient
 
 logger = get_logger(__name__)
@@ -31,6 +32,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     app.state.inference = InferenceClient.from_settings(settings)
     app.state.cache = CacheClient.from_settings(settings)
+    app.state.journal = JournalFichier.from_settings(settings)
     logger.info("demarrage", version=__version__, backend=settings.inference_backend)
 
     try:
@@ -85,6 +87,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(chat.router)
+    app.include_router(feedback.router)
     _monter_interface(app, settings)
     return app
 

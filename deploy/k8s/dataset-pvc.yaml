@@ -1,0 +1,13 @@
+# Volume persistant du jeu de données d'amélioration (journal JSONL).
+# Conserve interactions.jsonl / feedback.jsonl entre redéploiements de l'API.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dataset
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from app.models.domain import Canal, Confiance, Langue
@@ -35,6 +37,7 @@ class ChatResponse(BaseModel):
         confiance: Niveau de confiance de la réponse.
         redirection_anader: Vrai si la réponse oriente vers l'ANADER.
         disclaimer: Mention légale obligatoire.
+        interaction_id: Identifiant pour rattacher un retour 👍/👎 (si journalisé).
     """
 
     reponse: str
@@ -42,6 +45,19 @@ class ChatResponse(BaseModel):
     confiance: Confiance = Confiance.MOYENNE
     redirection_anader: bool = False
     disclaimer: str = DISCLAIMER
+    interaction_id: str | None = None
+
+
+class FeedbackRequest(BaseModel):
+    """Retour d'un utilisateur sur une réponse (pour la boucle d'amélioration).
+
+    Attributes:
+        interaction_id: Identifiant de l'interaction concernée.
+        vote: Avis de l'utilisateur (positif ou négatif).
+    """
+
+    interaction_id: str = Field(min_length=8, max_length=64)
+    vote: Literal["up", "down"]
 
 
 class VersionResponse(BaseModel):

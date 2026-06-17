@@ -10,7 +10,7 @@ from fastapi import Request
 
 from app.application.conseil_service import ConseilService
 from app.core.config import Settings, get_settings
-from app.domain.ports import CachePort, InferencePort
+from app.domain.ports import CachePort, InferencePort, JournalPort
 
 
 def get_app_settings() -> Settings:
@@ -28,11 +28,17 @@ def get_cache_client(request: Request) -> CachePort:
     return request.app.state.cache
 
 
+def get_journal(request: Request) -> JournalPort:
+    """Retourne le port de journalisation stocké dans l'état de l'application."""
+    return request.app.state.journal
+
+
 def get_conseil_service(request: Request) -> ConseilService:
     """Construit le cas d'usage à partir des ports en état d'application."""
     return ConseilService(
         inference=request.app.state.inference,
         cache=request.app.state.cache,
+        journal=request.app.state.journal,
     )
 
 

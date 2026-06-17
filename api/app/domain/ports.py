@@ -48,3 +48,24 @@ class CachePort(Protocol):
     async def ping(self) -> bool:
         """Indique si le cache est disponible."""
         ...
+
+
+@runtime_checkable
+class JournalPort(Protocol):
+    """Contrat de journalisation des interactions (jeu de données d'amélioration)."""
+
+    async def enregistrer_interaction(
+        self,
+        question: str,
+        langue: str,
+        reponse: str,
+        confiance: str,
+        sources: list[str],
+        redirection_anader: bool,
+    ) -> str:
+        """Enregistre une interaction (anonymisée) et retourne son identifiant."""
+        ...
+
+    async def enregistrer_feedback(self, interaction_id: str, vote: str) -> None:
+        """Enregistre un retour utilisateur (👍/👎) pour une interaction."""
+        ...

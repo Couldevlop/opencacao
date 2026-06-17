@@ -5,8 +5,33 @@
 
 import { rendreMarkdown } from "./markdown.js";
 
-export function creerVue(refs) {
+export function creerVue(refs, { onFeedback } = {}) {
   const defiler = () => refs.chat.scrollTo({ top: refs.chat.scrollHeight, behavior: "smooth" });
+
+  /** Boutons de retour 👍/👎 (un seul vote, désactivés après clic). */
+  function construireRetour(interactionId) {
+    const barre = document.createElement("div");
+    barre.className = "feedback";
+    barre.append(document.createTextNode("Cette réponse vous a-t-elle aidé ? "));
+    const voter = (vote, libelle) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "fb-btn";
+      btn.textContent = libelle;
+      btn.addEventListener("click", () => {
+        if (typeof onFeedback === "function") onFeedback(interactionId, vote);
+        barre.querySelectorAll(".fb-btn").forEach((b) => (b.disabled = true));
+        btn.classList.add("choisi");
+        const merci = document.createElement("span");
+        merci.className = "fb-merci";
+        merci.textContent = " Merci !";
+        barre.appendChild(merci);
+      });
+      return btn;
+    };
+    barre.append(voter("up", "👍"), voter("down", "👎"));
+    return barre;
+  }
 
   function cacherAccueil() {
     const w = document.getElementById("welcome");
@@ -91,6 +116,10 @@ export function creerVue(refs) {
       d.className = "disclaimer";
       d.textContent = conseil.disclaimer;
       meta.appendChild(d);
+    }
+
+    if (conseil.interactionId) {
+      meta.appendChild(construireRetour(conseil.interactionId));
     }
     return meta;
   }

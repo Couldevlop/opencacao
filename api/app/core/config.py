@@ -40,7 +40,11 @@ class Settings(BaseSettings):
     rate_limit_per_min: int = 20
 
     log_level: str = "INFO"
+    # Journalisation (anonymisée) des interactions Q/R + retours 👍/👎, pour
+    # constituer un jeu de données d'amélioration (boucle humain-dans-la-boucle).
     log_questions: bool = False
+    # Dossier où écrire le journal JSONL (interactions.jsonl, feedback.jsonl).
+    dataset_dir: str = "/data"
 
     # NoDecode : ne PAS json-décoder la valeur d'env (sinon une liste CSV comme
     # "a,b" ou "*" lève une erreur). Le validateur _split_csv ci-dessous gère le CSV.

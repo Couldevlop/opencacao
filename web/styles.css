@@ -359,6 +359,30 @@ body {
 .btn-primary { background: var(--cocoa); color: #fff; border-color: var(--cocoa); }
 .btn-primary:hover { background: var(--cocoa-dark); }
 
+/* Retour utilisateur 👍/👎 sous chaque réponse. */
+.feedback {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted, #6b6b6b);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.fb-btn {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.fb-btn:hover:not(:disabled) { background: var(--surface-2); }
+.fb-btn:disabled { cursor: default; opacity: 0.5; }
+.fb-btn.choisi { opacity: 1; border-color: var(--cocoa); background: var(--surface-2); }
+.fb-merci { color: var(--cocoa); font-weight: 600; }
+
 /* Réponse en streaming : texte brut pendant la frappe + curseur clignotant. */
 .stream-corps.curseur { white-space: pre-wrap; }
 .stream-corps.curseur::after {
