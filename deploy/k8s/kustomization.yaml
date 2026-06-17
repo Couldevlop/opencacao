@@ -13,6 +13,7 @@ resources:
   - inference.yaml
   - dataset-pvc.yaml
   - api.yaml
+  - curation.yaml
   - web.yaml
   - ingress.yaml
   - networkpolicy.yaml
@@ -20,7 +21,7 @@ resources:
 images:
   - name: opencacao-api
     newName: docker.io/thomcoul/opencacao-api   # <-- ton compte Docker Hub
-    newTag: "0.1.2"
+    newTag: "0.1.3"
   - name: opencacao-web
     newName: docker.io/thomcoul/opencacao-web    # <-- ton compte Docker Hub
     newTag: "0.1.4"

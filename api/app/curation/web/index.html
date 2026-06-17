@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>OpenCacao — Console de curation</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>🧪 Console de curation — OpenCacao</h1>
+      <div class="stats" id="stats" aria-live="polite"></div>
+    </header>
+
+    <main class="liste" id="liste">
+      <p class="vide" id="chargement">Chargement…</p>
+    </main>
+
+    <template id="modele-carte">
+      <article class="carte">
+        <div class="meta-ligne">
+          <span class="badge confiance"></span>
+          <span class="badge votes"></span>
+          <span class="badge sources"></span>
+        </div>
+        <p class="question"></p>
+        <label class="lab">Réponse à valider (corrigez si besoin) :</label>
+        <textarea class="reponse" rows="6"></textarea>
+        <div class="actions">
+          <button type="button" class="btn valider">✓ Valider au corpus</button>
+          <button type="button" class="btn rejeter">✕ Rejeter</button>
+          <span class="etat" aria-live="polite"></span>
+        </div>
+      </article>
+    </template>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

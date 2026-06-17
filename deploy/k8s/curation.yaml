@@ -1,0 +1,61 @@
+# Console de curation — INTERNE uniquement (jamais dans l'Ingress).
+# Réutilise l'image de l'API mais lance une app ASGI distincte
+# (app.curation.main:app). Accès par : kubectl -n opencacao port-forward
+#   svc/curation 8090:8090  ->  http://localhost:8090
+#
+# Auth HTTP Basic optionnelle : définir CURATION_PASSWORD (via un Secret) pour
+# l'activer. Par défaut, la protection repose sur l'accès cluster (port-forward).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: curation
+  labels: { app: curation }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: curation }
+  strategy: { type: Recreate } # volume RWO mono-attache (partagé avec l'API, même nœud)
+  template:
+    metadata:
+      labels: { app: curation }
+    spec:
+      securityContext:
+        fsGroup: 10001
+      containers:
+        - name: curation
+          image: opencacao-api # tag/registre fixés par kustomization.yaml
+          command:
+            ["uvicorn", "app.curation.main:app", "--host", "0.0.0.0", "--port", "8090"]
+          ports:
+            - containerPort: 8090
+          env:
+            - { name: DATASET_DIR, value: "/data" }
+            - { name: LOG_LEVEL, value: "INFO" }
+          volumeMounts:
+            - name: dataset
+              mountPath: /data
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits: { cpu: "500m", memory: "256Mi" }
+          readinessProbe:
+            httpGet: { path: /api/sante, port: 8090 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/sante, port: 8090 }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+      volumes:
+        - name: dataset
+          persistentVolumeClaim:
+            claimName: dataset
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: curation
+spec:
+  selector: { app: curation }
+  ports:
+    - port: 8090
+      targetPort: 8090
