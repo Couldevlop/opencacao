@@ -139,7 +139,17 @@ body {
 
 /* Accueil */
 .welcome { text-align: center; padding: 36px 8px 12px; }
-.welcome-emblem { font-size: 40px; }
+.welcome-photo {
+  width: 100%;
+  max-width: 420px;
+  height: 200px;
+  object-fit: cover;
+  border-radius: 16px;
+  box-shadow: 0 6px 20px rgba(60, 40, 20, 0.18);
+  border: 1px solid var(--border);
+  display: block;
+  margin: 0 auto;
+}
 .welcome h2 {
   font-family: var(--serif);
   font-weight: 600;
