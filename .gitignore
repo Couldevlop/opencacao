@@ -59,3 +59,6 @@ docs/Doc2.*
 
 # Override docker local (CORS démo, non versionné)
 docker-compose.local.yml
+
+# Identifiants / secrets locaux — JAMAIS versionnés
+.credentials-local.md
