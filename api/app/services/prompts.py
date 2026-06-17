@@ -36,8 +36,13 @@ def build_messages(question: str, contexte: str | None = None) -> list[dict[str,
     Returns:
         Liste de messages au format chat (system [+ contexte] + user).
     """
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    # Le template de Ministral 3 n'accepte qu'UN seul message système : on injecte
+    # donc le contexte RAG dans le message utilisateur (et non en 2e system).
     if contexte:
-        messages.append({"role": "system", "content": CONTEXTE_PROMPT.format(contexte=contexte)})
-    messages.append({"role": "user", "content": question})
-    return messages
+        contenu_user = f"{CONTEXTE_PROMPT.format(contexte=contexte)}\n\nQuestion : {question}"
+    else:
+        contenu_user = question
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": contenu_user},
+    ]

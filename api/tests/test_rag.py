@@ -111,9 +111,12 @@ def test_build_messages_avec_contexte() -> None:
     from app.services.prompts import build_messages
 
     messages = build_messages("Quand récolter ?", contexte="[1] (source : CNRA) ...")
-    assert len(messages) == 3
-    assert messages[1]["role"] == "system"
-    assert "CNRA" in messages[1]["content"]
+    # Un SEUL message système (contrainte du template Ministral 3) ; le contexte
+    # est injecté dans le message utilisateur.
+    assert len(messages) == 2
+    assert sum(1 for m in messages if m["role"] == "system") == 1
+    assert "CNRA" in messages[-1]["content"]
+    assert "Quand récolter ?" in messages[-1]["content"]
 
 
 # --- Construction du RAG au démarrage (_construire_rag) ---
