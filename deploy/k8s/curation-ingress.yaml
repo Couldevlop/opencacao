@@ -1,0 +1,28 @@
+# Ingress de la console de curation — sous-domaine dédié, HTTPS, protégé par
+# l'auth HTTP Basic de l'application (Secret curation-auth).
+#
+# DNS requis : enregistrement A « curation.opencacao » -> 62.238.11.20 (Cloudflare).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: curation
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - curation.opencacao.openlabconsulting.com
+      secretName: curation-tls
+  rules:
+    - host: curation.opencacao.openlabconsulting.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: curation
+                port:
+                  number: 8090

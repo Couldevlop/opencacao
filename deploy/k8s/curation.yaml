@@ -31,6 +31,13 @@ spec:
           env:
             - { name: DATASET_DIR, value: "/data" }
             - { name: LOG_LEVEL, value: "INFO" }
+            # Auth HTTP Basic (Secret curation-auth) — la console est exposée sur le web.
+            - name: CURATION_USER
+              valueFrom:
+                secretKeyRef: { name: curation-auth, key: CURATION_USER }
+            - name: CURATION_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: curation-auth, key: CURATION_PASSWORD }
           volumeMounts:
             - name: dataset
               mountPath: /data
