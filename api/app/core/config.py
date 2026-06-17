@@ -32,8 +32,8 @@ class Settings(BaseSettings):
 
     inference_backend: Literal["vllm", "llama-cpp"] = "vllm"
     inference_url: str = "http://inference:8000"
-    model_path: str = "/models/opencacao-7b"
-    model_name: str = "opencacao-7b"
+    model_path: str = "/models/opencacao-8b"
+    model_name: str = "opencacao-8b"
     model_version: str = "0.1.0"
 
     redis_url: str = "redis://redis:6379/0"

@@ -1,4 +1,4 @@
-"""Point d'entrée FastAPI d'OpenCacao-7B (clean architecture + durcissement OWASP)."""
+"""Point d'entrée FastAPI d'OpenCacao-8B (clean architecture + durcissement OWASP)."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ def create_app() -> FastAPI:
     """
     settings = get_settings()
     app = FastAPI(
-        title="OpenCacao-7B API",
+        title="OpenCacao-8B API",
         description="Conseil agronomique pour les producteurs de cacao ivoiriens.",
         version=__version__,
         lifespan=lifespan,

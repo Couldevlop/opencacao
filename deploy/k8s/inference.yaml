@@ -23,9 +23,9 @@ spec:
           image: ghcr.io/ggml-org/llama.cpp:server
           args:
             - "-m"
-            - "/models/opencacao-7b-Q4_K_M.gguf"
+            - "/models/opencacao-8b-Q4_K_M.gguf"   # GGUF déposé sur le nœud (hostPath)
             - "--alias"
-            - "opencacao-7b"
+            - "opencacao-8b"
             - "--host"
             - "0.0.0.0"
             - "--port"
@@ -33,7 +33,7 @@ spec:
             - "-c"
             - "4096"
             - "-t"
-            - "6"          # threads CPU — adapter au nœud
+            - "12"         # threads CPU (nœud 16 vCPU, on laisse 4 pour prod+système)
           ports:
             - containerPort: 8000
           volumeMounts:
@@ -42,7 +42,7 @@ spec:
               readOnly: true
           resources:
             requests: { cpu: "4", memory: "8Gi" }
-            limits: { cpu: "8", memory: "12Gi" }
+            limits: { cpu: "12", memory: "12Gi" }
           readinessProbe:
             httpGet: { path: /v1/models, port: 8000 }
             initialDelaySeconds: 20
