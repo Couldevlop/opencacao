@@ -44,11 +44,21 @@ spec:
             requests: { cpu: "100m", memory: "192Mi" }
             limits: { cpu: "1", memory: "512Mi" }
           readinessProbe:
-            httpGet: { path: /v1/health, port: 8080 }
+            httpGet:
+              path: /v1/health
+              port: 8080
+              httpHeaders:
+                - name: Host
+                  value: opencacao.openlabconsulting.com
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
-            httpGet: { path: /v1/health, port: 8080 }
+            httpGet:
+              path: /v1/health
+              port: 8080
+              httpHeaders:
+                - name: Host
+                  value: opencacao.openlabconsulting.com
             initialDelaySeconds: 10
             periodSeconds: 20
 ---
