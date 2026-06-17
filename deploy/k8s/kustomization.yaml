@@ -22,4 +22,4 @@ images:
     newTag: "0.1.0"
   - name: opencacao-web
     newName: docker.io/thomcoul/opencacao-web    # <-- ton compte Docker Hub
-    newTag: "0.1.0"
+    newTag: "0.1.1"
