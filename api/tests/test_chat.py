@@ -74,7 +74,7 @@ def test_version(client) -> None:
     """L'endpoint version expose les métadonnées du modèle."""
     resp = client.get("/v1/version")
     assert resp.status_code == 200
-    assert resp.json()["model_name"] == "opencacao-7b"
+    assert resp.json()["model_name"] == "opencacao-8b"
 
 
 def test_headers_securite(client) -> None:

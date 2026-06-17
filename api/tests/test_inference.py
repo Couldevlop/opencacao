@@ -17,7 +17,7 @@ def _client(handler) -> InferenceClient:
     """Construit un InferenceClient dont le transport HTTP est simulé."""
     transport = httpx.MockTransport(handler)
     http = httpx.AsyncClient(transport=transport, base_url="http://inference:8000")
-    return InferenceClient("http://inference:8000", "opencacao-7b", 10.0, client=http)
+    return InferenceClient("http://inference:8000", "opencacao-8b", 10.0, client=http)
 
 
 async def test_generer_reponse_nominale() -> None:
