@@ -85,6 +85,8 @@ def construire(sources: list[Path], embeddings_url: str, sortie: Path) -> int:
     sortie.parent.mkdir(parents=True, exist_ok=True)
     with sortie.open("w", encoding="utf-8") as handle:
         for (_, output), vecteur in zip(paires, vecteurs, strict=True):
+            # Arrondi à 6 décimales : index ~2x plus léger, sans impact sur le cosinus.
+            vecteur = [round(x, 6) for x in vecteur]
             handle.write(
                 json.dumps(
                     {"texte": output, "source": _source(output), "vecteur": vecteur},

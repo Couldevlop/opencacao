@@ -26,6 +26,8 @@ data:
   # Journalisation (anonymisée) des interactions + retours 👍/👎 -> jeu de données.
   LOG_QUESTIONS: "true"
   DATASET_DIR: "/data"
+  # RAG activé : embeddings (service interne) + index /data/rag_index.jsonl.
+  RAG_ENABLED: "true"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -54,8 +56,8 @@ spec:
             - name: dataset
               mountPath: /data
           resources:
-            requests: { cpu: "100m", memory: "192Mi" }
-            limits: { cpu: "1", memory: "512Mi" }
+            requests: { cpu: "100m", memory: "320Mi" }
+            limits: { cpu: "1", memory: "1Gi" }   # marge pour charger l'index RAG en mémoire
           readinessProbe:
             httpGet:
               path: /v1/health

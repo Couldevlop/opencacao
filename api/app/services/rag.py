@@ -50,22 +50,26 @@ class RagIndex:
             return None
         textes: list[str] = []
         sources: list[str] = []
-        vecteurs: list[list[float]] = []
-        for ligne in chemin.read_text(encoding="utf-8").splitlines():
-            ligne = ligne.strip()
-            if not ligne:
-                continue
-            try:
-                enr = json.loads(ligne)
-                vecteur = enr["vecteur"]
-            except (json.JSONDecodeError, KeyError):
-                continue
-            textes.append(str(enr.get("texte", "")))
-            sources.append(str(enr.get("source", "")))
-            vecteurs.append(vecteur)
+        # Lecture EN FLUX (ligne à ligne) + conversion immédiate en float32 :
+        # évite de garder en mémoire le fichier entier et les listes de floats Python
+        # (sinon pic mémoire >> à la taille de l'index -> OOM).
+        vecteurs: list[np.ndarray] = []
+        with chemin.open(encoding="utf-8") as handle:
+            for ligne in handle:
+                ligne = ligne.strip()
+                if not ligne:
+                    continue
+                try:
+                    enr = json.loads(ligne)
+                    vecteur = enr["vecteur"]
+                except (json.JSONDecodeError, KeyError):
+                    continue
+                textes.append(str(enr.get("texte", "")))
+                sources.append(str(enr.get("source", "")))
+                vecteurs.append(np.asarray(vecteur, dtype=np.float32))
         if not vecteurs:
             return None
-        matrice = np.asarray(vecteurs, dtype=np.float32)
+        matrice = np.vstack(vecteurs)
         normes = np.linalg.norm(matrice, axis=1, keepdims=True)
         normes[normes == 0] = 1.0
         matrice = matrice / normes
