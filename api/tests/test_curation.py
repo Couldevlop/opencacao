@@ -95,7 +95,9 @@ async def test_valider_refuse_un_dosage(tmp_path: Path) -> None:
     store = _store(tmp_path)
     with pytest.raises(DosageRefuse):
         await store.valider(
-            "a" * 8, "Comment traiter ?", "Appliquez 2 l/ha de bouillie bordelaise."
+            "a" * 8,
+            "Comment traiter la pourriture brune ?",
+            "Pour traiter efficacement, appliquez 2 l/ha de bouillie bordelaise sur les cabosses.",
         )
     assert not (tmp_path / "corpus_cure.jsonl").exists()
 
@@ -105,6 +107,17 @@ async def test_valider_refuse_hors_bornes(tmp_path: Path) -> None:
     store = _store(tmp_path)
     with pytest.raises(ValidationInvalide):
         await store.valider("a" * 8, "Question valable ?", "trop court")
+
+
+async def test_valider_refuse_sans_source(tmp_path: Path) -> None:
+    """Une réponse sans source reconnue est rejetée (alignement corpus)."""
+    store = _store(tmp_path)
+    with pytest.raises(ValidationInvalide):
+        await store.valider(
+            "a" * 8,
+            "Quand récolter le cacao ?",
+            "Récoltez les cabosses bien mûres et colorées au bon moment de la saison sèche.",
+        )
 
 
 async def test_rejeter_retire_de_la_liste(tmp_path: Path) -> None:

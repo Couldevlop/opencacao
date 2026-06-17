@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="OpenCacao">
+  <rect width="64" height="64" rx="14" fill="#2f7a4f"/>
+  <ellipse cx="32" cy="33" rx="15" ry="22" fill="#b5651d"/>
+  <ellipse cx="32" cy="33" rx="15" ry="22" fill="none" stroke="#8a4c14" stroke-width="2"/>
+  <path d="M32 12 V54" stroke="#8a4c14" stroke-width="2"/>
+  <path d="M23 15 Q20 33 23 51" stroke="#8a4c14" stroke-width="1.6" fill="none"/>
+  <path d="M41 15 Q44 33 41 51" stroke="#8a4c14" stroke-width="1.6" fill="none"/>
+  <path d="M32 12 q5 -5 10 -3 q-2 6 -10 5 z" fill="#3a9a63"/>
+</svg>

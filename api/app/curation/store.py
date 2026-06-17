@@ -20,9 +20,11 @@ from app.services import guardrails
 
 logger = get_logger(__name__)
 
-# Bornes de longueur alignées sur la validation du corpus (enrich_corpus.py).
-_MIN_INSTRUCTION, _MAX_INSTRUCTION = 8, 600
-_MIN_OUTPUT, _MAX_OUTPUT = 20, 4000
+# Règles alignées sur la validation du corpus (enrich_corpus.py) : toute paire
+# validée ici doit passer la validation d'entraînement, sans surprise à l'assemblage.
+_MIN_INSTRUCTION, _MAX_INSTRUCTION = 10, 500
+_MIN_OUTPUT, _MAX_OUTPUT = 50, 2000
+_SOURCES = ("CNRA", "ANADER", "Conseil du Café-Cacao", "FAO")
 
 
 class DosageRefuse(Exception):
@@ -141,12 +143,17 @@ class CurationStore:
         """
         instruction, output = instruction.strip(), output.strip()
         if not _MIN_INSTRUCTION <= len(instruction) <= _MAX_INSTRUCTION:
-            raise ValidationInvalide(f"instruction hors bornes ({len(instruction)})")
+            raise ValidationInvalide(
+                f"instruction hors bornes ({len(instruction)}, attendu 10-500)"
+            )
         if not _MIN_OUTPUT <= len(output) <= _MAX_OUTPUT:
-            raise ValidationInvalide(f"réponse hors bornes ({len(output)})")
+            raise ValidationInvalide(f"réponse hors bornes ({len(output)}, attendu 50-2000)")
         # Garde-fou réutilisé : jamais de dosage dans le corpus.
         if guardrails.verifier_reponse(output) is not None:
             raise DosageRefuse("la réponse contient un dosage phytosanitaire")
+        # Comme le corpus : une source reconnue doit être citée.
+        if not any(source.lower() in output.lower() for source in _SOURCES):
+            raise ValidationInvalide("aucune source reconnue citée (CNRA, ANADER, etc.)")
 
         await self._ajouter(
             self._corpus_cure, {"instruction": instruction, "input": "", "output": output}
