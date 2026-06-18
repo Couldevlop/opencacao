@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 import app.curation.main as cur
 from app.curation.jobs import JobsRegistry
+from app.curation.ratelimit import LimiteurConnexion
 from app.curation.store import CurationStore
 
 
@@ -114,6 +115,8 @@ def _client_protege(tmp_path, monkeypatch) -> TestClient:
     monkeypatch.setattr(cur, "_store", CurationStore(tmp_path, tmp_path / "c.jsonl"))
     monkeypatch.setattr(cur, "_MOT_DE_PASSE", "secret")
     monkeypatch.setattr(cur, "_UTILISATEUR", "curateur")
+    # Limiteur neuf par test (l'état est en mémoire au niveau module).
+    monkeypatch.setattr(cur, "_LIMITEUR_LOGIN", LimiteurConnexion(max_echecs=5))
     return TestClient(cur.app)
 
 
@@ -137,6 +140,33 @@ def test_login_pose_un_cookie_et_donne_acces(tmp_path, monkeypatch) -> None:
     # Accès autorisé avec un cookie de session valide.
     cookies = {"curation_session": cur._creer_token()}
     assert client.get("/api/stats", cookies=cookies).status_code == 200
+
+
+def test_login_brute_force_bloque_429(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(cur, "_store", CurationStore(tmp_path, tmp_path / "c.jsonl"))
+    monkeypatch.setattr(cur, "_MOT_DE_PASSE", "secret")
+    monkeypatch.setattr(cur, "_UTILISATEUR", "curateur")
+    monkeypatch.setattr(cur, "_LIMITEUR_LOGIN", LimiteurConnexion(max_echecs=3))
+    client = TestClient(cur.app)
+    mauvais = {"utilisateur": "curateur", "mot_de_passe": "faux"}
+    for _ in range(3):
+        assert client.post("/api/login", json=mauvais).status_code == 401
+    # Au-delà du seuil : blocage, même avec les bons identifiants.
+    assert client.post("/api/login", json=mauvais).status_code == 429
+    bons = {"utilisateur": "curateur", "mot_de_passe": "secret"}
+    assert client.post("/api/login", json=bons).status_code == 429
+
+
+def test_login_reussi_reinitialise_le_compteur(tmp_path, monkeypatch) -> None:
+    client = _client_protege(tmp_path, monkeypatch)  # max_echecs=5
+    mauvais = {"utilisateur": "curateur", "mot_de_passe": "faux"}
+    for _ in range(3):
+        client.post("/api/login", json=mauvais)
+    # Une connexion réussie remet le compteur à zéro.
+    bons = {"utilisateur": "curateur", "mot_de_passe": "secret"}
+    assert client.post("/api/login", json=bons).status_code == 200
+    for _ in range(4):
+        assert client.post("/api/login", json=mauvais).status_code == 401
 
 
 # --- Sécurité OWASP : en-têtes ---

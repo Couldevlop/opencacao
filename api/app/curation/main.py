@@ -28,6 +28,7 @@ from app.core.security import BodySizeLimitMiddleware
 from app.curation.jobs import JobsRegistry
 from app.curation.models import LoginRequest, RejetRequest, ValidationRequest
 from app.curation.pipeline import PipelineService
+from app.curation.ratelimit import LimiteurConnexion
 from app.curation.store import CurationStore, DosageRefuse, ValidationInvalide
 
 logger = get_logger(__name__)
@@ -44,6 +45,20 @@ _MOT_DE_PASSE = os.environ.get("CURATION_PASSWORD", "")
 _SECRET = hashlib.sha256(f"opencacao-curation:{_MOT_DE_PASSE}".encode()).digest()
 _COOKIE = "curation_session"
 _DUREE_S = 8 * 3600
+
+# Anti-brute-force du login (OWASP API2) : blocage par IP après N échecs.
+_LIMITEUR_LOGIN = LimiteurConnexion(
+    max_echecs=int(os.environ.get("CURATION_LOGIN_MAX_ECHECS", "5")),
+    fenetre_s=float(os.environ.get("CURATION_LOGIN_FENETRE_S", "300")),
+)
+
+
+def _ip_client(request: Request) -> str:
+    """IP cliente (1ᵉʳ hop X-Forwarded-For posé par l'ingress, sinon IP TCP)."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "inconnu"
 
 
 def _creer_token() -> str:
@@ -126,12 +141,22 @@ async def session_etat(request: Request) -> dict[str, bool]:
 
 
 @app.post("/api/login")
-async def login(payload: LoginRequest, response: Response) -> dict[str, bool]:
+async def login(payload: LoginRequest, request: Request, response: Response) -> dict[str, bool]:
     """Vérifie les identifiants et pose un cookie de session signé.
 
     Les valeurs sont nettoyées (strip) pour tolérer un espace/retour-ligne
-    introduit par un copier-coller.
+    introduit par un copier-coller. Le login est protégé contre le brute-force
+    par un blocage par IP après plusieurs échecs.
+
+    Raises:
+        HTTPException: 429 si trop de tentatives, 401 si identifiants invalides.
     """
+    ip = _ip_client(request)
+    if _LIMITEUR_LOGIN.bloque(ip):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Trop de tentatives de connexion. Réessayez dans quelques minutes.",
+        )
     utilisateur = payload.utilisateur.strip()
     mot_de_passe = payload.mot_de_passe.strip()
     valide = bool(_MOT_DE_PASSE) and (
@@ -139,9 +164,11 @@ async def login(payload: LoginRequest, response: Response) -> dict[str, bool]:
         and secrets.compare_digest(mot_de_passe, _MOT_DE_PASSE)
     )
     if not valide:
+        _LIMITEUR_LOGIN.echec(ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Identifiants invalides."
         )
+    _LIMITEUR_LOGIN.succes(ip)
     response.set_cookie(
         _COOKIE,
         _creer_token(),

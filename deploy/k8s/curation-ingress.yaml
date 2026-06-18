@@ -9,6 +9,11 @@ metadata:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # Durcissement recommandé (OWASP) : restreindre l'accès aux IP de l'équipe.
+    # La console a un accès en ÉCRITURE au corpus d'entraînement ; combiné au
+    # blocage anti-brute-force applicatif, restreindre l'ingress par IP réduit
+    # encore la surface. Décommenter et renseigner les CIDR autorisés :
+    # nginx.ingress.kubernetes.io/whitelist-source-range: "203.0.113.0/24,198.51.100.7/32"
 spec:
   ingressClassName: nginx
   tls:
