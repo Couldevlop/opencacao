@@ -86,6 +86,19 @@ async def test_lecture_tolere_lignes_corrompues(registre: JobsRegistry) -> None:
     assert len(liste) == 1
 
 
+async def test_reconcilier_orphelins(registre: JobsRegistry) -> None:
+    en_cours = await registre.creer("rag_reindex")
+    fini = await registre.creer("finetuning_prepare")
+    await registre.maj(fini["id"], statut="reussi")
+    n = registre.reconcilier_orphelins()
+    assert n == 1  # seul le job en_cours est réconcilié
+    relu = await registre.obtenir(en_cours["id"])
+    assert relu["statut"] == "echec"
+    assert await registre.actif("rag_reindex") is False  # ne bloque plus
+    # Idempotent : un 2e appel ne touche plus rien.
+    assert registre.reconcilier_orphelins() == 0
+
+
 async def test_from_env(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("DATASET_DIR", str(tmp_path))
     registre = JobsRegistry.from_env()

@@ -155,6 +155,30 @@ class JobsRegistry:
                     return job
         return None
 
+    def reconcilier_orphelins(self) -> int:
+        """Marque en échec les jobs restés ``en_cours`` (orphelins après un crash).
+
+        Synchrone, à appeler **au démarrage** avant de servir : la console étant
+        mono-réplica, aucun job ne peut légitimement être en cours à ce moment. Un
+        job laissé ``en_cours`` par un pod tué (OOM, redémarrage) ne doit pas
+        bloquer indéfiniment les actions anti-concurrence.
+
+        Returns:
+            Le nombre de jobs réconciliés.
+        """
+        jobs = self._lire()
+        n = 0
+        for job in jobs:
+            if job.get("statut") == "en_cours":
+                job["statut"] = "echec"
+                job["message"] = "Interrompu (redémarrage de la console)."
+                job["maj_le"] = _maintenant()
+                n += 1
+        if n:
+            self._ecrire(jobs)
+            logger.info("jobs_reconcilies", nombre=n)
+        return n
+
     async def actif(self, type_: str) -> bool:
         """Indique si un job de ce type est déjà en cours (anti-concurrence)."""
         async with self._verrou:

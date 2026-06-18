@@ -35,6 +35,9 @@ logger = get_logger(__name__)
 
 _store = CurationStore.from_env()
 _jobs = JobsRegistry.from_env()
+# Au démarrage (console mono-réplica) : tout job resté "en_cours" est orphelin
+# (pod tué/redémarré) -> on le marque en échec pour ne pas bloquer l'anti-concurrence.
+_jobs.reconcilier_orphelins()
 _pipeline = PipelineService.from_env(_jobs)
 # Référence forte vers les tâches de fond (sinon le GC peut les annuler).
 _taches: set[asyncio.Task] = set()
