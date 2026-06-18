@@ -102,6 +102,7 @@ function carte(item) {
 
 async function charger() {
   await rafraichirStats();
+  await rafraichirDocuments();
   await rafraichirJobs();
   try {
     const items = await api("/api/a-curer");
@@ -118,11 +119,16 @@ async function charger() {
   }
 }
 
-/* ---------- Pipeline (RAG, fine-tuning, jobs) ---------- */
+/* ---------- Pipeline (documents, RAG, fine-tuning, jobs) ---------- */
 const STATUT_LIB = {
-  en_cours: { txt: "⏳ En cours", cls: "muted" },
-  reussi: { txt: "✓ Réussi", cls: "ok" },
-  echec: { txt: "✕ Échec", cls: "err" },
+  en_cours: { txt: "⏳ en cours", cls: "muted" },
+  reussi: { txt: "✓ réussi", cls: "ok" },
+  echec: { txt: "✕ échec", cls: "err" },
+};
+const TYPE_LIB = {
+  rag_constitution: "Constitution RAG",
+  rag_reindex: "RAG (faits curés)",
+  finetuning_prepare: "Fine-tuning",
 };
 let sondageJobs = null;
 
@@ -130,7 +136,7 @@ function ligneJob(job) {
   const div = document.createElement("div");
   div.className = "job";
   const s = STATUT_LIB[job.statut] || { txt: job.statut, cls: "muted" };
-  const type = job.type === "rag_reindex" ? "RAG" : "Fine-tuning";
+  const type = TYPE_LIB[job.type] || job.type;
   div.innerHTML = `<span class="job-type">${type}</span><span class="etat ${s.cls}">${s.txt}</span>`;
   const msg = document.createElement("p");
   msg.className = "job-msg";
@@ -143,6 +149,19 @@ function ligneJob(job) {
     proc.hidden = false;
   }
   return div;
+}
+
+function badgeEtape(id, job) {
+  const el = $(id);
+  if (!el) return;
+  if (!job) {
+    el.textContent = "à faire";
+    el.className = "badge-etat";
+    return;
+  }
+  const s = STATUT_LIB[job.statut] || { txt: job.statut, cls: "muted" };
+  el.textContent = s.txt;
+  el.className = "badge-etat " + s.cls;
 }
 
 async function rafraichirJobs() {
@@ -160,6 +179,10 @@ async function rafraichirJobs() {
   } else {
     jobs.slice(0, 8).forEach((job) => conteneur.appendChild(ligneJob(job)));
   }
+  // Badges d'état par étape (le 1er job d'un type est le plus récent).
+  const dernier = (type) => jobs.find((j) => j.type === type);
+  badgeEtape("etat-constituer", dernier("rag_constitution"));
+  badgeEtape("etat-ft-badge", dernier("finetuning_prepare"));
   // Sonde tant qu'un job est en cours, sinon arrête.
   const actif = jobs.some((j) => j.statut === "en_cours");
   if (actif && !sondageJobs) sondageJobs = setInterval(rafraichirJobs, 4000);
@@ -189,9 +212,98 @@ async function lancerAction(boutonId, etatId, chemin, libelle) {
   }
 }
 
-$("btn-rag").addEventListener("click", () =>
-  lancerAction("btn-rag", "etat-rag", "/api/rag/reindex", "Reindex RAG")
+/* ---------- Étape ① Documents ---------- */
+function lireBase64(fichier) {
+  return new Promise((resoudre, rejeter) => {
+    const lecteur = new FileReader();
+    lecteur.onload = () => resoudre(String(lecteur.result).split(",")[1] || "");
+    lecteur.onerror = () => rejeter(new Error("lecture du fichier impossible"));
+    lecteur.readAsDataURL(fichier);
+  });
+}
+
+function ligneDoc(doc) {
+  const li = document.createElement("li");
+  li.className = "doc";
+  const nom = document.createElement("span");
+  nom.className = "doc-nom";
+  nom.textContent = doc.nom;
+  const taille = document.createElement("span");
+  taille.className = "doc-taille";
+  taille.textContent = Math.max(1, Math.round(doc.taille / 1024)) + " Ko";
+  const suppr = document.createElement("button");
+  suppr.type = "button";
+  suppr.className = "doc-suppr";
+  suppr.textContent = "✕";
+  suppr.title = "Supprimer";
+  suppr.addEventListener("click", async () => {
+    try {
+      await api("/api/documents/" + encodeURIComponent(doc.nom), { method: "DELETE" });
+      await rafraichirDocuments();
+    } catch (e) {
+      if (e instanceof NonAutorise) montrerLogin();
+    }
+  });
+  li.append(nom, taille, suppr);
+  return li;
+}
+
+async function rafraichirDocuments() {
+  let docs;
+  try {
+    docs = await api("/api/documents");
+  } catch (e) {
+    if (e instanceof NonAutorise) montrerLogin();
+    return;
+  }
+  const ul = $("docs-liste");
+  ul.innerHTML = "";
+  const badge = $("etat-docs");
+  if (!docs.length) {
+    ul.innerHTML = '<li class="vide-doc">Aucun document pour l\'instant.</li>';
+    badge.textContent = "à faire";
+    badge.className = "badge-etat";
+  } else {
+    docs.forEach((d) => ul.appendChild(ligneDoc(d)));
+    badge.textContent = docs.length + " document(s)";
+    badge.className = "badge-etat ok";
+  }
+}
+
+$("fichier").addEventListener("change", async (e) => {
+  const fichiers = Array.from(e.target.files || []);
+  const etat = $("etat-upload");
+  for (const f of fichiers) {
+    etat.textContent = "Envoi de " + f.name + "…";
+    etat.className = "etat muted";
+    try {
+      const contenu = await lireBase64(f);
+      await api("/api/documents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nom: f.name, contenu_base64: contenu }),
+      });
+      etat.textContent = "✓ " + f.name;
+      etat.className = "etat ok";
+    } catch (err) {
+      if (err instanceof NonAutorise) return montrerLogin();
+      etat.textContent = "⚠ " + f.name + " : " + err.message;
+      etat.className = "etat err";
+    }
+  }
+  e.target.value = ""; // permet de re-téléverser le même fichier
+  await rafraichirDocuments();
+});
+
+/* ---------- Étape ② Constitution RAG ---------- */
+$("btn-constituer").addEventListener("click", () =>
+  lancerAction("btn-constituer", "etat-rag", "/api/rag/constituer", "Constitution")
 );
+$("btn-rag").addEventListener("click", () =>
+  lancerAction("btn-rag", "etat-rag", "/api/rag/reindex", "Reindex des faits curés")
+);
+
+/* ---------- Étape ③ Fine-tuning ---------- */
 $("btn-ft").addEventListener("click", () =>
   lancerAction("btn-ft", "etat-ft", "/api/finetuning/prepare", "Préparation")
 );

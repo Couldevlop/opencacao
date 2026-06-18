@@ -14,6 +14,8 @@ dependencies = [
     "structlog==24.*",
     "pyyaml==6.*",
     "numpy==1.26.*",
+    # Extraction de texte des PDF uploadés dans la console de curation (pure-Python).
+    "pypdf==5.*",
 ]
 
 [project.optional-dependencies]

@@ -30,3 +30,18 @@ class LoginRequest(BaseModel):
 
     utilisateur: str = Field(min_length=1, max_length=64)
     mot_de_passe: str = Field(min_length=1, max_length=128)
+
+
+class DocumentUpload(BaseModel):
+    """Téléversement d'un document source (contenu encodé en base64).
+
+    L'encodage base64 évite la dépendance ``python-multipart`` : le navigateur lit
+    le fichier et envoie son contenu en JSON.
+
+    Attributes:
+        nom: Nom du fichier (validé/assaini côté serveur).
+        contenu_base64: Contenu binaire du fichier encodé en base64.
+    """
+
+    nom: str = Field(min_length=1, max_length=255)
+    contenu_base64: str = Field(min_length=1)

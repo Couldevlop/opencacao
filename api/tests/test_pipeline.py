@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from app.curation import pipeline as pipeline_module
+from app.curation.documents import DocumentStore
 from app.curation.jobs import JobsRegistry
 from app.curation.k8s import ClusterIndisponible
 from app.curation.pipeline import PipelineService
@@ -62,6 +63,7 @@ def _service(
         embeddings=embeddings or FakeEmbeddings(),
         api_deployment="api",
         cluster_factory=lambda: cluster,
+        documents=DocumentStore(tmp_path / "documents"),
     )
     return service, jobs
 
@@ -176,6 +178,65 @@ async def test_demarrer_reindex_anti_concurrence(tmp_path: Path) -> None:
     premier = await service.demarrer_reindex()
     assert premier is not None
     assert await service.demarrer_reindex() is None  # déjà en cours
+
+
+# --- Constitution RAG depuis les documents ---
+
+_DOC_TEXTE = (
+    "Le cacaoyer prospère à l'ombre dans les zones humides de Côte d'Ivoire. "
+    "Un ombrage léger protège les jeunes plants du soleil direct et limite le "
+    "stress hydrique pendant la première année de plantation."
+)
+
+
+def _doc(tmp_path: Path, nom: str, texte: str) -> None:
+    docs = tmp_path / "documents"
+    docs.mkdir(parents=True, exist_ok=True)
+    (docs / nom).write_text(texte, encoding="utf-8")
+
+
+async def test_constituer_aucun_document(tmp_path: Path) -> None:
+    service, jobs = _service(tmp_path)
+    job = await jobs.creer("rag_constitution")
+    await service.constituer_rag(job["id"])
+    relu = await jobs.obtenir(job["id"])
+    assert relu["statut"] == "echec"
+    assert "document" in relu["message"].lower()
+
+
+async def test_constituer_succes_indexe_et_redemarre(tmp_path: Path) -> None:
+    cluster = FakeCluster()
+    service, jobs = _service(tmp_path, FakeEmbeddings(), cluster)
+    _doc(tmp_path, "guide.txt", _DOC_TEXTE)
+    job = await jobs.creer("rag_constitution")
+
+    await service.constituer_rag(job["id"])
+
+    relu = await jobs.obtenir(job["id"])
+    assert relu["statut"] == "reussi"
+    assert relu["details"]["ajoutees"] >= 1
+    assert cluster.restarts == ["api"]
+    # Les extraits sont indexés avec le nom du document comme source.
+    from app.services.rag_index_builder import lire_index
+
+    entrees = lire_index(tmp_path / "rag_index.jsonl")
+    assert entrees and entrees[0]["source"] == "guide.txt"
+
+
+async def test_constituer_embeddings_en_panne(tmp_path: Path) -> None:
+    service, jobs = _service(tmp_path, FakeEmbeddings(en_panne=True))
+    _doc(tmp_path, "guide.txt", _DOC_TEXTE)
+    job = await jobs.creer("rag_constitution")
+    await service.constituer_rag(job["id"])
+    relu = await jobs.obtenir(job["id"])
+    assert relu["statut"] == "echec"
+    assert not (tmp_path / "rag_index.jsonl").exists()
+
+
+async def test_constituer_anti_concurrence(tmp_path: Path) -> None:
+    service, _ = _service(tmp_path)
+    assert await service.demarrer_constitution() is not None
+    assert await service.demarrer_constitution() is None
 
 
 # --- Préparation fine-tuning ---

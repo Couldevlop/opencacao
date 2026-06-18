@@ -182,20 +182,78 @@ body {
 /* ---------- Pipeline ---------- */
 .pipeline { max-width: 820px; margin: 22px auto 0; padding: 0 16px; }
 .pipeline-titre { font-family: var(--serif); color: var(--cocoa-dark); font-size: 18px; margin: 0 0 12px; }
-.pipeline-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-@media (max-width: 640px) { .pipeline-actions { grid-template-columns: 1fr; } }
-.pipeline-carte {
+.pipeline-aide { font-size: 13px; color: var(--muted); margin: 0 0 12px; }
+
+/* Étapes (stepper) */
+.etape {
+  position: relative;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 16px;
+  padding: 16px 16px 16px 52px;
+  margin-bottom: 14px;
   box-shadow: 0 2px 6px rgba(60, 40, 20, 0.06);
 }
-.pipeline-carte h3 { margin: 0 0 6px; font-size: 15px; color: var(--cocoa-dark); }
-.pipeline-aide { font-size: 13px; color: var(--muted); margin: 0 0 12px; }
-.pipeline-carte .btn { background: var(--cocoa); color: #fff; border-color: var(--cocoa); }
-.pipeline-carte .btn:hover:not(:disabled) { background: var(--cocoa-dark); }
-.pipeline-carte .etat { display: block; margin-top: 8px; }
+.etape-tete { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.etape-tete h3 { margin: 0; font-size: 15px; color: var(--cocoa-dark); flex: 1; }
+.etape-num {
+  position: absolute;
+  left: 14px;
+  top: 16px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--cocoa);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.badge-etat {
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 10px;
+  color: var(--muted);
+  background: var(--bg);
+  white-space: nowrap;
+}
+.badge-etat.ok { color: var(--ok); border-color: var(--ok); }
+.badge-etat.err { color: var(--err); border-color: var(--err); }
+.badge-etat.muted { color: var(--cocoa); border-color: var(--cocoa); }
+.etape-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.etape .btn { background: var(--cocoa); color: #fff; border-color: var(--cocoa); }
+.etape .btn:hover:not(:disabled) { background: var(--cocoa-dark); }
+.etape .btn.secondaire { background: transparent; color: var(--cocoa); }
+.etape .btn.secondaire:hover:not(:disabled) { background: var(--bg); }
+.etape .btn.fichier { cursor: pointer; display: inline-block; }
+.etape .etat { display: inline-block; }
+
+/* Liste de documents */
+.docs-liste { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+.docs-liste .vide-doc { color: var(--muted); font-size: 13px; padding: 4px 0; }
+.doc {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.doc-nom { flex: 1; color: var(--ink); word-break: break-all; }
+.doc-taille { color: var(--muted); font-size: 12px; }
+.doc-suppr {
+  border: none;
+  background: transparent;
+  color: var(--err);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
 .procedure {
   background: var(--cocoa-dark);
   color: #f7f4ef;

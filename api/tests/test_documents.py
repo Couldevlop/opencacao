@@ -1,0 +1,67 @@
+"""Tests de la gestion des documents (stockage, découpage, validation)."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from app.curation.documents import DocumentInvalide, DocumentStore, decouper, nom_sur
+
+
+def test_nom_sur_neutralise_chemin() -> None:
+    assert nom_sur("rapport.pdf") == "rapport.pdf"
+    assert nom_sur("../../etc/passwd.txt") == "passwd.txt"  # pas de traversée
+    assert nom_sur("  mon doc.md ") == "mon_doc.md"  # espaces -> _
+
+
+def test_nom_sur_refuse_format_et_vide() -> None:
+    with pytest.raises(DocumentInvalide):
+        nom_sur("virus.exe")
+    with pytest.raises(DocumentInvalide):
+        nom_sur("   ")
+
+
+def test_decouper_extraits_et_filtre_court() -> None:
+    texte = ("Phrase de cacao numéro. " * 80).strip()
+    extraits = decouper(texte, taille=300, chevauchement=50)
+    assert len(extraits) >= 2
+    assert all(len(e) >= 50 for e in extraits)
+    assert decouper("court") == []  # trop court -> écarté
+    assert decouper("   ") == []
+
+
+def test_store_enregistrer_lister_supprimer(tmp_path: Path) -> None:
+    store = DocumentStore(tmp_path / "documents")
+    store.enregistrer("guide.txt", b"Contenu agronomique du cacao.")
+    items = store.lister()
+    assert items == [{"nom": "guide.txt", "taille": 29}]
+    assert store.supprimer("guide.txt") is True
+    assert store.lister() == []
+    assert store.supprimer("guide.txt") is False  # déjà absent
+
+
+def test_store_refuse_vide_et_mauvais_format(tmp_path: Path) -> None:
+    store = DocumentStore(tmp_path / "documents")
+    with pytest.raises(DocumentInvalide):
+        store.enregistrer("vide.txt", b"")
+    with pytest.raises(DocumentInvalide):
+        store.enregistrer("image.png", b"data")
+
+
+def test_store_extraits_par_document(tmp_path: Path) -> None:
+    store = DocumentStore(tmp_path / "documents")
+    long_texte = "Le cacaoyer aime l'ombre et l'humidité en Côte d'Ivoire. " * 10
+    store.enregistrer("a.txt", long_texte.encode("utf-8"))
+    store.enregistrer("b.md", long_texte.encode("utf-8"))
+    extraits = store.extraits()
+    assert extraits  # au moins un extrait
+    sources = {nom for nom, _ in extraits}
+    assert sources == {"a.txt", "b.md"}
+
+
+def test_from_env(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("DATASET_DIR", str(tmp_path))
+    store = DocumentStore.from_env()
+    store.enregistrer("x.txt", b"abc")
+    assert (tmp_path / "documents" / "x.txt").exists()

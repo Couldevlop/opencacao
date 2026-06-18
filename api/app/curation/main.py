@@ -10,6 +10,8 @@ désactivée.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import hashlib
 import hmac
 import os
@@ -25,8 +27,14 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.logging import configure_logging, get_logger
 from app.core.security import BodySizeLimitMiddleware
+from app.curation.documents import DocumentInvalide, DocumentStore
 from app.curation.jobs import JobsRegistry
-from app.curation.models import LoginRequest, RejetRequest, ValidationRequest
+from app.curation.models import (
+    DocumentUpload,
+    LoginRequest,
+    RejetRequest,
+    ValidationRequest,
+)
 from app.curation.pipeline import PipelineService
 from app.curation.ratelimit import LimiteurConnexion
 from app.curation.store import CurationStore, DosageRefuse, ValidationInvalide
@@ -39,6 +47,7 @@ _jobs = JobsRegistry.from_env()
 # (pod tué/redémarré) -> on le marque en échec pour ne pas bloquer l'anti-concurrence.
 _jobs.reconcilier_orphelins()
 _pipeline = PipelineService.from_env(_jobs)
+_documents = DocumentStore.from_env()
 # Référence forte vers les tâches de fond (sinon le GC peut les annuler).
 _taches: set[asyncio.Task] = set()
 _UTILISATEUR = os.environ.get("CURATION_USER", "curateur")
@@ -127,8 +136,9 @@ async def _entetes_securite(request: Request, call_next) -> Response:
     return response
 
 
-# Anti-DoS : la console ne reçoit que de petits payloads JSON.
-app.add_middleware(BodySizeLimitMiddleware, max_body_bytes=16_384)
+# Anti-DoS : plafond du corps de requête. Relevé pour l'upload de documents
+# (contenu base64) ; reste borné pour éviter les abus. ~12 Mo de body ≈ ~9 Mo de fichier.
+app.add_middleware(BodySizeLimitMiddleware, max_body_bytes=12_000_000)
 
 
 @app.get("/api/sante")
@@ -222,7 +232,64 @@ async def rejeter(payload: RejetRequest, _: Session) -> dict[str, str]:
     return {"status": "rejete"}
 
 
-# --- Pipeline : reindex RAG, préparation fine-tuning, suivi des jobs ---
+# --- Étape ① Documents (upload) ---
+
+
+@app.get("/api/documents")
+async def documents_liste(_: Session) -> list[dict]:
+    """Liste les documents sources téléversés (nom, taille)."""
+    return _documents.lister()
+
+
+@app.post("/api/documents", status_code=status.HTTP_201_CREATED)
+async def documents_upload(payload: DocumentUpload, _: Session) -> list[dict]:
+    """Téléverse un document (PDF/TXT/MD, contenu base64) et retourne la liste.
+
+    Raises:
+        HTTPException: 422 si le nom/format est invalide ou le contenu illisible.
+    """
+    try:
+        donnees = base64.b64decode(payload.contenu_base64, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Contenu base64 invalide."
+        ) from exc
+    try:
+        _documents.enregistrer(payload.nom, donnees)
+    except DocumentInvalide as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return _documents.lister()
+
+
+@app.delete("/api/documents/{nom}")
+async def documents_suppr(nom: str, _: Session) -> list[dict]:
+    """Supprime un document téléversé et retourne la liste mise à jour."""
+    try:
+        _documents.supprimer(nom)
+    except DocumentInvalide as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return _documents.lister()
+
+
+# --- Pipeline : constitution RAG, reindex, préparation fine-tuning, suivi des jobs ---
+
+
+@app.post("/api/rag/constituer", status_code=status.HTTP_202_ACCEPTED)
+async def rag_constituer(_: Session) -> dict[str, str]:
+    """Lance (tâche de fond) la constitution du RAG depuis les documents téléversés.
+
+    Raises:
+        HTTPException: 409 si une constitution est déjà en cours.
+    """
+    job = await _pipeline.demarrer_constitution()
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Une constitution est déjà en cours."
+        )
+    tache = asyncio.create_task(_pipeline.constituer_rag(job["id"]))
+    _taches.add(tache)
+    tache.add_done_callback(_taches.discard)
+    return {"job_id": job["id"], "statut": job["statut"]}
 
 
 @app.post("/api/rag/reindex", status_code=status.HTTP_202_ACCEPTED)

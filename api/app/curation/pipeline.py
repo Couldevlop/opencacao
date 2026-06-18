@@ -24,6 +24,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from app.core.logging import get_logger
+from app.curation.documents import DocumentStore
 from app.curation.jobs import JobsRegistry
 from app.curation.k8s import ClusterClient, ClusterIndisponible
 from app.services import guardrails
@@ -82,6 +83,7 @@ class PipelineService:
         embeddings: EmbeddingsClient,
         api_deployment: str,
         cluster_factory: Callable[[], ClusterClient],
+        documents: DocumentStore,
     ) -> None:
         """Initialise le service.
 
@@ -93,6 +95,7 @@ class PipelineService:
             embeddings: Client d'embeddings (vectorisation).
             api_deployment: Nom du déploiement API à redémarrer.
             cluster_factory: Fabrique du client cluster (injectable pour tests).
+            documents: Store des documents sources (upload).
         """
         self._dataset_dir = dataset_dir
         self._corpus_cure = corpus_cure
@@ -101,6 +104,7 @@ class PipelineService:
         self._embeddings = embeddings
         self._api_deployment = api_deployment
         self._cluster_factory = cluster_factory
+        self._documents = documents
 
     @classmethod
     def from_env(cls, jobs: JobsRegistry) -> PipelineService:
@@ -124,6 +128,7 @@ class PipelineService:
             embeddings=embeddings,
             api_deployment=os.environ.get("API_DEPLOYMENT", "api"),
             cluster_factory=ClusterClient.from_serviceaccount,
+            documents=DocumentStore.from_env(),
         )
 
     # --- Reindex RAG (à chaud) ---
@@ -216,6 +221,137 @@ class PipelineService:
             await self._jobs.maj(
                 job_id, statut="echec", message="Erreur interne (voir les journaux)."
             )
+
+    # --- Constitution RAG depuis les documents (upload) ---
+
+    async def demarrer_constitution(self) -> dict | None:
+        """Crée un job de constitution, sauf si un est déjà en cours."""
+        if await self._jobs.actif("rag_constitution"):
+            return None
+        return await self._jobs.creer("rag_constitution")
+
+    async def constituer_rag(self, job_id: str) -> None:
+        """Découpe les documents en extraits, les vectorise et les ajoute à l'index.
+
+        Embedding direct des extraits (souverain, sans LLM). Additif et économe :
+        ne réindexe que les extraits absents, par lots, puis redémarre l'API.
+
+        Args:
+            job_id: Identifiant du job à suivre.
+        """
+        try:
+            extraits = self._documents.extraits()
+            if not extraits:
+                await self._jobs.maj(
+                    job_id,
+                    statut="echec",
+                    message="Aucun document exploitable. Téléversez d'abord des fichiers.",
+                )
+                return
+
+            connus = lire_textes_indexes(self._index_path)
+            total_actuel = len(connus)
+            nouveaux: list[tuple[str, str]] = []  # (source, extrait)
+            for source, extrait in extraits:
+                cle = extrait.strip()
+                if cle in connus:
+                    continue
+                connus.add(cle)
+                nouveaux.append((source, extrait))
+            await self._jobs.maj(
+                job_id,
+                log=f"{len(extraits)} extrait(s) dans {self._nb_documents()} doc(s) — "
+                f"{len(nouveaux)} nouveau(x)",
+            )
+            if not nouveaux:
+                await self._jobs.maj(
+                    job_id,
+                    statut="reussi",
+                    message="Index déjà à jour (aucun nouvel extrait).",
+                    details={"ajoutees": 0, "total": total_actuel},
+                )
+                return
+
+            entrees = await self._vectoriser_extraits(job_id, nouveaux)
+            if entrees is None:
+                return  # embeddings indisponibles (job déjà marqué en échec)
+
+            ajouter_entrees(self._index_path, entrees)
+            total = total_actuel + len(entrees)
+            await self._jobs.maj(job_id, log=f"{len(entrees)} extrait(s) ajouté(s) — total {total}")
+
+            try:
+                cluster = self._cluster_factory()
+                await cluster.rollout_restart(self._api_deployment)
+                await cluster.close()
+            except ClusterIndisponible as exc:
+                await self._jobs.maj(
+                    job_id,
+                    statut="echec",
+                    message=(
+                        f"Index enrichi (+{len(entrees)}, {total} au total) mais "
+                        f"redémarrage de l'API échoué : {exc}. Relancez le rollout."
+                    ),
+                    details={"ajoutees": len(entrees), "total": total},
+                )
+                return
+
+            await self._jobs.maj(
+                job_id,
+                statut="reussi",
+                message=(
+                    f"RAG enrichi : +{len(entrees)} extrait(s), {total} au total. "
+                    "API redémarrée (sans coupure)."
+                ),
+                details={"ajoutees": len(entrees), "total": total},
+            )
+        except Exception as exc:  # noqa: BLE001 - journalisé, statut d'échec propre
+            logger.error("constitution_rag_echec", job_id=job_id, error=str(exc))
+            await self._jobs.maj(
+                job_id, statut="echec", message="Erreur interne (voir les journaux)."
+            )
+
+    def _nb_documents(self) -> int:
+        """Nombre de documents stockés (pour les messages de progression)."""
+        return len(self._documents.lister())
+
+    async def _vectoriser_extraits(
+        self, job_id: str, nouveaux: list[tuple[str, str]], lot: int = 32
+    ) -> list[dict] | None:
+        """Vectorise les extraits par lots. Retourne les entrées d'index, ou None si KO.
+
+        Args:
+            job_id: Job à informer de la progression.
+            nouveaux: Couples ``(source, extrait)`` à indexer.
+            lot: Taille des lots envoyés au service d'embeddings.
+
+        Returns:
+            La liste d'entrées ``{"texte", "source", "vecteur"}``, ou ``None`` si le
+            service d'embeddings est indisponible (le job est alors marqué en échec).
+        """
+        entrees: list[dict] = []
+        for debut in range(0, len(nouveaux), lot):
+            morceau = nouveaux[debut : debut + lot]
+            vecteurs = await self._embeddings.embed([ex for _, ex in morceau])
+            if not vecteurs:
+                await self._jobs.maj(
+                    job_id,
+                    statut="echec",
+                    message="Service d'embeddings indisponible — index inchangé.",
+                )
+                return None
+            for (source, extrait), vecteur in zip(morceau, vecteurs, strict=True):
+                entrees.append(
+                    {
+                        "texte": extrait,
+                        "source": source,
+                        "vecteur": [round(float(x), 6) for x in vecteur],
+                    }
+                )
+            await self._jobs.maj(
+                job_id, log=f"vectorisation {min(debut + lot, len(nouveaux))}/{len(nouveaux)}"
+            )
+        return entrees
 
     # --- Préparation fine-tuning ---
 

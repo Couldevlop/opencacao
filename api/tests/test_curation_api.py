@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.curation.main as cur
+from app.curation.documents import DocumentStore
 from app.curation.jobs import JobsRegistry
 from app.curation.ratelimit import LimiteurConnexion
 from app.curation.store import CurationStore
@@ -208,6 +210,14 @@ class FakePipeline:
             job["id"], statut="reussi", message="prêt", details={"procedure": "pod_train.sh"}
         )
 
+    async def demarrer_constitution(self) -> dict | None:
+        if getattr(self, "constitution_conflit", False):
+            return None
+        return await self._jobs.creer("rag_constitution")
+
+    async def constituer_rag(self, job_id: str) -> None:
+        await self._jobs.maj(job_id, statut="reussi", message="ok")
+
 
 @pytest.fixture
 def pipeline_console(tmp_path: Path, monkeypatch) -> tuple[TestClient, FakePipeline]:
@@ -215,6 +225,7 @@ def pipeline_console(tmp_path: Path, monkeypatch) -> tuple[TestClient, FakePipel
     faux = FakePipeline(registre)
     monkeypatch.setattr(cur, "_jobs", registre)
     monkeypatch.setattr(cur, "_pipeline", faux)
+    monkeypatch.setattr(cur, "_documents", DocumentStore(tmp_path / "documents"))
     monkeypatch.setattr(cur, "_MOT_DE_PASSE", "")
     return TestClient(cur.app), faux
 
@@ -277,3 +288,44 @@ def test_pipeline_protege_sans_session_401(tmp_path, monkeypatch) -> None:
     assert client.post("/api/rag/reindex").status_code == 401
     assert client.post("/api/finetuning/prepare").status_code == 401
     assert client.get("/api/jobs").status_code == 401
+
+
+# --- Documents (upload) + constitution RAG ---
+
+
+def test_documents_upload_liste_suppr(pipeline_console) -> None:
+    client, _ = pipeline_console
+    contenu = base64.b64encode(b"Conseils agronomiques cacao.").decode()
+    resp = client.post("/api/documents", json={"nom": "guide.txt", "contenu_base64": contenu})
+    assert resp.status_code == 201
+    assert resp.json() == [{"nom": "guide.txt", "taille": 28}]
+    # Liste.
+    assert client.get("/api/documents").json()[0]["nom"] == "guide.txt"
+    # Suppression.
+    assert client.request("DELETE", "/api/documents/guide.txt").json() == []
+
+
+def test_documents_upload_format_refuse_422(pipeline_console) -> None:
+    client, _ = pipeline_console
+    contenu = base64.b64encode(b"data").decode()
+    resp = client.post("/api/documents", json={"nom": "virus.exe", "contenu_base64": contenu})
+    assert resp.status_code == 422
+
+
+def test_documents_upload_base64_invalide_422(pipeline_console) -> None:
+    client, _ = pipeline_console
+    resp = client.post("/api/documents", json={"nom": "x.txt", "contenu_base64": "pas du base64!"})
+    assert resp.status_code == 422
+
+
+def test_rag_constituer_202(pipeline_console) -> None:
+    client, _ = pipeline_console
+    resp = client.post("/api/rag/constituer")
+    assert resp.status_code == 202
+    assert resp.json()["job_id"]
+
+
+def test_rag_constituer_conflit_409(pipeline_console) -> None:
+    client, faux = pipeline_console
+    faux.constitution_conflit = True
+    assert client.post("/api/rag/constituer").status_code == 409

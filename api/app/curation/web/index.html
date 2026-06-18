@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
     <title>OpenCacao — Console de curation</title>
-    <link rel="stylesheet" href="styles.css?v=4" />
+    <link rel="stylesheet" href="styles.css?v=5" />
   </head>
   <body>
     <div class="flag-strip" aria-hidden="true"></div>
@@ -46,28 +46,66 @@
       </header>
 
       <section class="pipeline" id="pipeline">
-        <h2 class="pipeline-titre">⚙️ Pipeline</h2>
-        <div class="pipeline-actions">
-          <div class="pipeline-carte">
-            <h3>🔁 Reconstruire le RAG</h3>
-            <p class="pipeline-aide">
-              Ajoute les faits validés à l'index puis redémarre l'API (sans coupure).
-              Les nouveaux faits deviennent récupérables en quelques minutes, sans réentraînement.
-            </p>
-            <button type="button" class="btn" id="btn-rag">Reconstruire le RAG</button>
+        <h2 class="pipeline-titre">⚙️ Pipeline d'enrichissement</h2>
+
+        <!-- Étape ① Documents -->
+        <article class="etape" id="etape-docs">
+          <header class="etape-tete">
+            <span class="etape-num">1</span>
+            <h3>Documents</h3>
+            <span class="badge-etat" id="etat-docs">à faire</span>
+          </header>
+          <p class="pipeline-aide">
+            Téléversez vos documents (PDF, TXT, Markdown) ou lancez la recherche des
+            sources officielles. Ils alimenteront le RAG à l'étape 2.
+          </p>
+          <div class="etape-actions">
+            <label class="btn fichier">
+              📎 Téléverser
+              <input type="file" id="fichier" accept=".pdf,.txt,.md,.csv" multiple hidden />
+            </label>
+            <button type="button" class="btn secondaire" id="btn-recherche" disabled
+              title="Bientôt : téléchargement des sources officielles">🔎 Lancer la recherche (bientôt)</button>
+            <span class="etat" id="etat-upload" aria-live="polite"></span>
+          </div>
+          <ul class="docs-liste" id="docs-liste"></ul>
+        </article>
+
+        <!-- Étape ② Constitution RAG -->
+        <article class="etape" id="etape-rag">
+          <header class="etape-tete">
+            <span class="etape-num">2</span>
+            <h3>Constitution du RAG</h3>
+            <span class="badge-etat" id="etat-constituer">à faire</span>
+          </header>
+          <p class="pipeline-aide">
+            Découpe les documents en extraits, les vectorise et les ajoute à l'index
+            RAG — à chaud, sans réentraînement (l'API redémarre sans coupure).
+          </p>
+          <div class="etape-actions">
+            <button type="button" class="btn" id="btn-constituer">⚙️ Constituer le RAG</button>
+            <button type="button" class="btn secondaire" id="btn-rag"
+              title="Ajoute les réponses validées en curation à l'index">+ Faits curés</button>
             <span class="etat" id="etat-rag" aria-live="polite"></span>
           </div>
-          <div class="pipeline-carte">
-            <h3>🎓 Préparer le fine-tuning</h3>
-            <p class="pipeline-aide">
-              Assemble le corpus curé et fournit la procédure exacte à lancer
-              sur un pod GPU externe (le serveur de prod ne peut pas entraîner).
-            </p>
-            <button type="button" class="btn" id="btn-ft">Préparer le fine-tuning</button>
-            <span class="etat" id="etat-ft" aria-live="polite"></span>
-          </div>
-        </div>
-        <pre class="procedure" id="procedure" hidden></pre>
+        </article>
+
+        <!-- Étape ③ Fine-tuning -->
+        <article class="etape" id="etape-ft">
+          <header class="etape-tete">
+            <span class="etape-num">3</span>
+            <h3>Fine-tuning</h3>
+            <span class="badge-etat" id="etat-ft-badge">à faire</span>
+          </header>
+          <p class="pipeline-aide">
+            Assemble le corpus curé et fournit la procédure exacte à lancer sur un
+            pod GPU externe (le serveur de prod, CPU, ne peut pas entraîner).
+          </p>
+          <button type="button" class="btn" id="btn-ft">🎓 Préparer le fine-tuning</button>
+          <span class="etat" id="etat-ft" aria-live="polite"></span>
+          <pre class="procedure" id="procedure" hidden></pre>
+        </article>
+
         <h3 class="jobs-titre">📋 Jobs récents</h3>
         <div class="jobs" id="jobs"><p class="vide">Aucun job pour l'instant.</p></div>
       </section>
@@ -95,6 +133,6 @@
       </article>
     </template>
 
-    <script type="module" src="app.js?v=4"></script>
+    <script type="module" src="app.js?v=5"></script>
   </body>
 </html>
