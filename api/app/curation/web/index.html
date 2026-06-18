@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
     <title>OpenCacao — Console de curation</title>
-    <link rel="stylesheet" href="styles.css?v=2" />
+    <link rel="stylesheet" href="styles.css?v=3" />
   </head>
   <body>
     <div class="flag-strip" aria-hidden="true"></div>
@@ -45,6 +45,33 @@
         </div>
       </header>
 
+      <section class="pipeline" id="pipeline">
+        <h2 class="pipeline-titre">⚙️ Pipeline</h2>
+        <div class="pipeline-actions">
+          <div class="pipeline-carte">
+            <h3>🔁 Reconstruire le RAG</h3>
+            <p class="pipeline-aide">
+              Ajoute les faits validés à l'index puis redémarre l'API (sans coupure).
+              Les nouveaux faits deviennent récupérables en quelques minutes, sans réentraînement.
+            </p>
+            <button type="button" class="btn" id="btn-rag">Reconstruire le RAG</button>
+            <span class="etat" id="etat-rag" aria-live="polite"></span>
+          </div>
+          <div class="pipeline-carte">
+            <h3>🎓 Préparer le fine-tuning</h3>
+            <p class="pipeline-aide">
+              Assemble le corpus curé et fournit la procédure exacte à lancer
+              sur un pod GPU externe (le serveur de prod ne peut pas entraîner).
+            </p>
+            <button type="button" class="btn" id="btn-ft">Préparer le fine-tuning</button>
+            <span class="etat" id="etat-ft" aria-live="polite"></span>
+          </div>
+        </div>
+        <pre class="procedure" id="procedure" hidden></pre>
+        <h3 class="jobs-titre">📋 Jobs récents</h3>
+        <div class="jobs" id="jobs"><p class="vide">Aucun job pour l'instant.</p></div>
+      </section>
+
       <main class="liste" id="liste">
         <p class="vide" id="chargement">Chargement…</p>
       </main>
@@ -68,6 +95,6 @@
       </article>
     </template>
 
-    <script type="module" src="app.js?v=2"></script>
+    <script type="module" src="app.js?v=3"></script>
   </body>
 </html>

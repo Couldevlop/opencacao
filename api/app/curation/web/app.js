@@ -97,6 +97,7 @@ function carte(item) {
 
 async function charger() {
   await rafraichirStats();
+  await rafraichirJobs();
   try {
     const items = await api("/api/a-curer");
     const liste = $("liste");
@@ -111,6 +112,84 @@ async function charger() {
     else $("liste").innerHTML = '<p class="vide err">Erreur : ' + e.message + "</p>";
   }
 }
+
+/* ---------- Pipeline (RAG, fine-tuning, jobs) ---------- */
+const STATUT_LIB = {
+  en_cours: { txt: "⏳ En cours", cls: "muted" },
+  reussi: { txt: "✓ Réussi", cls: "ok" },
+  echec: { txt: "✕ Échec", cls: "err" },
+};
+let sondageJobs = null;
+
+function ligneJob(job) {
+  const div = document.createElement("div");
+  div.className = "job";
+  const s = STATUT_LIB[job.statut] || { txt: job.statut, cls: "muted" };
+  const type = job.type === "rag_reindex" ? "RAG" : "Fine-tuning";
+  div.innerHTML = `<span class="job-type">${type}</span><span class="etat ${s.cls}">${s.txt}</span>`;
+  const msg = document.createElement("p");
+  msg.className = "job-msg";
+  msg.textContent = job.message || "…";
+  div.appendChild(msg);
+  // Procédure d'entraînement (fine-tuning) : affichée telle quelle.
+  if (job.details && job.details.procedure) {
+    const proc = $("procedure");
+    proc.textContent = job.details.procedure;
+    proc.hidden = false;
+  }
+  return div;
+}
+
+async function rafraichirJobs() {
+  let jobs;
+  try {
+    jobs = await api("/api/jobs");
+  } catch (e) {
+    if (e instanceof NonAutorise) montrerLogin();
+    return;
+  }
+  const conteneur = $("jobs");
+  conteneur.innerHTML = "";
+  if (!jobs.length) {
+    conteneur.innerHTML = '<p class="vide">Aucun job pour l\'instant.</p>';
+  } else {
+    jobs.slice(0, 8).forEach((job) => conteneur.appendChild(ligneJob(job)));
+  }
+  // Sonde tant qu'un job est en cours, sinon arrête.
+  const actif = jobs.some((j) => j.statut === "en_cours");
+  if (actif && !sondageJobs) sondageJobs = setInterval(rafraichirJobs, 4000);
+  if (!actif && sondageJobs) {
+    clearInterval(sondageJobs);
+    sondageJobs = null;
+  }
+}
+
+async function lancerAction(boutonId, etatId, chemin, libelle) {
+  const btn = $(boutonId);
+  const etat = $(etatId);
+  btn.disabled = true;
+  etat.textContent = "Envoi…";
+  etat.className = "etat muted";
+  try {
+    await api(chemin, { method: "POST" });
+    etat.textContent = "✓ " + libelle + " lancé(e)";
+    etat.className = "etat ok";
+    await rafraichirJobs();
+  } catch (e) {
+    if (e instanceof NonAutorise) return montrerLogin();
+    etat.textContent = "⚠ " + e.message;
+    etat.className = "etat err";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+$("btn-rag").addEventListener("click", () =>
+  lancerAction("btn-rag", "etat-rag", "/api/rag/reindex", "Reindex RAG")
+);
+$("btn-ft").addEventListener("click", () =>
+  lancerAction("btn-ft", "etat-ft", "/api/finetuning/prepare", "Préparation")
+);
 
 /* ---------- Authentification ---------- */
 $("login-form").addEventListener("submit", async (e) => {

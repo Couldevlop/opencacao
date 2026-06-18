@@ -4,6 +4,24 @@ Ce runbook formalise la boucle : **interactions réelles → curation → corpus
 LoRA → GGUF → redéploiement**. L'entraînement tourne sur un **pod GPU loué**
 (RunPod, ~24 Go) ; le service tourne en CPU/GGUF sur le cluster K3s (Hetzner).
 
+> ## Depuis la console de curation (boutons)
+>
+> La console (`curation.opencacao.openlabconsulting.com`) expose deux actions du
+> pipeline, avec un **suivi des jobs** (statut, message, log) :
+>
+> - **🔁 Reconstruire le RAG** — ajoute les faits **curés** à l'index RAG
+>   (vectorisation via le service d'embeddings interne), puis **redémarre l'API**
+>   (rolling, sans coupure). Reconstruction **additive** : ne retire jamais
+>   d'entrée existante. Remplace les étapes manuelles RAG 3-4 ci-dessous pour
+>   l'enrichissement courant.
+> - **🎓 Préparer le fine-tuning** — assemble/valide/dédoublonne le corpus curé
+>   en `corpus_entrainement_cure.jsonl` (volume partagé) et affiche la **procédure
+>   exacte** à lancer sur un pod GPU. Le CPU du cluster ne peut pas entraîner :
+>   la console *prépare et instruit*, l'opérateur *déclenche* le pod (étapes 3-5).
+>
+> Permission cluster minimale (moindre privilège) : la console a un ServiceAccount
+> autorisé à `get/patch` le **seul** Deployment `api` (cf. `deploy/k8s/curation-rbac.yaml`).
+
 > Cadence conseillée : déclencher quand la console de curation a accumulé un lot
 > significatif de paires validées (≥ quelques dizaines), ou périodiquement.
 

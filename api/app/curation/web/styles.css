@@ -174,3 +174,47 @@ body {
 .etat.ok { color: var(--ok); font-weight: 600; }
 .etat.err { color: var(--err); }
 .etat.muted { color: var(--muted); }
+
+/* ---------- Pipeline ---------- */
+.pipeline { max-width: 820px; margin: 22px auto 0; padding: 0 16px; }
+.pipeline-titre { font-family: var(--serif); color: var(--cocoa-dark); font-size: 18px; margin: 0 0 12px; }
+.pipeline-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 640px) { .pipeline-actions { grid-template-columns: 1fr; } }
+.pipeline-carte {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 6px rgba(60, 40, 20, 0.06);
+}
+.pipeline-carte h3 { margin: 0 0 6px; font-size: 15px; color: var(--cocoa-dark); }
+.pipeline-aide { font-size: 13px; color: var(--muted); margin: 0 0 12px; }
+.pipeline-carte .btn { background: var(--cocoa); color: #fff; border-color: var(--cocoa); }
+.pipeline-carte .btn:hover:not(:disabled) { background: var(--cocoa-dark); }
+.pipeline-carte .etat { display: block; margin-top: 8px; }
+.procedure {
+  background: var(--cocoa-dark);
+  color: #f7f4ef;
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin: 16px 0 0;
+  font: 12.5px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
+.jobs-titre { font-size: 15px; color: var(--cocoa-dark); margin: 20px 0 10px; }
+.jobs { display: grid; gap: 10px; }
+.job {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  justify-content: start;
+  gap: 12px;
+}
+.job-type { font-weight: 600; color: var(--cocoa-dark); font-size: 13px; }
+.job-msg { grid-column: 1 / -1; margin: 4px 0 0; font-size: 13px; color: var(--ink); }

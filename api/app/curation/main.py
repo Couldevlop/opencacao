@@ -9,6 +9,7 @@ désactivée.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import os
@@ -18,16 +19,24 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi import Path as PathParam
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.logging import configure_logging, get_logger
+from app.core.security import BodySizeLimitMiddleware
+from app.curation.jobs import JobsRegistry
 from app.curation.models import LoginRequest, RejetRequest, ValidationRequest
+from app.curation.pipeline import PipelineService
 from app.curation.store import CurationStore, DosageRefuse, ValidationInvalide
 
 logger = get_logger(__name__)
 
 _store = CurationStore.from_env()
+_jobs = JobsRegistry.from_env()
+_pipeline = PipelineService.from_env(_jobs)
+# Référence forte vers les tâches de fond (sinon le GC peut les annuler).
+_taches: set[asyncio.Task] = set()
 _UTILISATEUR = os.environ.get("CURATION_USER", "curateur")
 _MOT_DE_PASSE = os.environ.get("CURATION_PASSWORD", "")
 # Clé de signature des sessions, dérivée du mot de passe : stable entre
@@ -70,6 +79,36 @@ Session = Annotated[None, Depends(_exiger_session)]
 
 app = FastAPI(title="OpenCacao — Console de curation", docs_url=None, redoc_url=None)
 configure_logging(os.environ.get("LOG_LEVEL", "INFO"))
+
+# En-têtes de sécurité (OWASP Secure Headers). CSP propre à la console : la page
+# charge SON js/css/img => 'self' (la CSP 'none' de l'API publique les bloquerait).
+_CSP = (
+    "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; "
+    "img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+)
+_ENTETES_SECURITE = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": _CSP,
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+}
+
+
+@app.middleware("http")
+async def _entetes_securite(request: Request, call_next) -> Response:
+    """Applique les en-têtes de sécurité OWASP et retire l'en-tête Server."""
+    response = await call_next(request)
+    for entete, valeur in _ENTETES_SECURITE.items():
+        response.headers.setdefault(entete, valeur)
+    if "server" in response.headers:
+        del response.headers["server"]
+    return response
+
+
+# Anti-DoS : la console ne reçoit que de petits payloads JSON.
+app.add_middleware(BodySizeLimitMiddleware, max_body_bytes=16_384)
 
 
 @app.get("/api/sante")
@@ -149,6 +188,65 @@ async def rejeter(payload: RejetRequest, _: Session) -> dict[str, str]:
     """Écarte une interaction de la curation."""
     await _store.rejeter(payload.interaction_id)
     return {"status": "rejete"}
+
+
+# --- Pipeline : reindex RAG, préparation fine-tuning, suivi des jobs ---
+
+
+@app.post("/api/rag/reindex", status_code=status.HTTP_202_ACCEPTED)
+async def rag_reindex(_: Session) -> dict[str, str]:
+    """Lance (en tâche de fond) l'ajout des faits curés à l'index RAG + reload API.
+
+    Raises:
+        HTTPException: 409 si un reindex est déjà en cours.
+    """
+    job = await _pipeline.demarrer_reindex()
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Un reindex est déjà en cours."
+        )
+    tache = asyncio.create_task(_pipeline.reindexer_rag(job["id"]))
+    _taches.add(tache)
+    tache.add_done_callback(_taches.discard)
+    return {"job_id": job["id"], "statut": job["statut"]}
+
+
+@app.post("/api/finetuning/prepare", status_code=status.HTTP_202_ACCEPTED)
+async def finetuning_prepare(_: Session) -> dict:
+    """Assemble le corpus curé et fournit la procédure d'entraînement (pod GPU).
+
+    Raises:
+        HTTPException: 409 si une préparation est déjà en cours.
+    """
+    job = await _pipeline.preparer_finetuning()
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Une préparation est déjà en cours.",
+        )
+    return job
+
+
+@app.get("/api/jobs")
+async def jobs_liste(_: Session) -> list[dict]:
+    """Liste les jobs du pipeline, du plus récent au plus ancien."""
+    return await _jobs.lister()
+
+
+@app.get("/api/jobs/{job_id}")
+async def job_detail(
+    _: Session,
+    job_id: Annotated[str, PathParam(pattern=r"^[0-9a-f]{16}$")],
+) -> dict:
+    """Détail d'un job (statut, message, log).
+
+    Raises:
+        HTTPException: 404 si le job est introuvable.
+    """
+    job = await _jobs.obtenir(job_id)
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job introuvable.")
+    return job
 
 
 @app.exception_handler(Exception)

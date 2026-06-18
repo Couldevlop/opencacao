@@ -19,6 +19,8 @@ spec:
     metadata:
       labels: { app: curation }
     spec:
+      # SA dédié : autorise le rollout restart de l'API (cf. curation-rbac.yaml).
+      serviceAccountName: curation
       securityContext:
         fsGroup: 10001
       containers:

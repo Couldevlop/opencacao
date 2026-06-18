@@ -6,6 +6,9 @@ recherche) via le service d'embeddings (OpenAI-compatible) et stocke
 corpus (notamment corpus_cure.jsonl) : un fait validé devient récupérable
 **sans réentraînement**.
 
+La logique pure (lecture des paires, détection de source, écriture de l'index)
+est partagée avec la console de curation via ``app.services.rag_index_builder``.
+
 Usage :
     python training/scripts/build_rag_index.py \\
         --sources corpus/corpus_cacao_rag.jsonl corpus/corpus_cacao_demarrage.jsonl \\
@@ -18,21 +21,22 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import sys
 import urllib.request
 from pathlib import Path
 
+# Le module partagé vit dans l'API (api/app). Le script est lancé depuis la racine
+# du dépôt (cloné sur le pod) : on ajoute api/ au chemin d'import.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "api"))
+
+from app.services.rag_index_builder import (  # noqa: E402
+    charger_paires,
+    construire_entrees,
+    ecrire_index,
+)
+
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("build_rag_index")
-
-_SOURCES = ("CNRA", "ANADER", "Conseil du Café-Cacao", "FAO")
-
-
-def _source(output: str) -> str:
-    """Première source reconnue citée dans le texte, ou chaîne vide."""
-    for source in _SOURCES:
-        if source.lower() in output.lower():
-            return source
-    return ""
 
 
 def _embed(url: str, textes: list[str], lot: int = 32) -> list[list[float]]:
@@ -53,49 +57,17 @@ def _embed(url: str, textes: list[str], lot: int = 32) -> list[list[float]]:
     return vecteurs
 
 
-def _charger_paires(sources: list[Path]) -> list[tuple[str, str]]:
-    """Lit les paires (instruction, output) non vides des fichiers corpus."""
-    paires: list[tuple[str, str]] = []
-    for source in sources:
-        if not source.exists():
-            logger.warning("source absente (ignorée) : %s", source)
-            continue
-        for ligne in source.read_text(encoding="utf-8").splitlines():
-            ligne = ligne.strip()
-            if not ligne:
-                continue
-            try:
-                paire = json.loads(ligne)
-            except json.JSONDecodeError:
-                continue
-            instruction = str(paire.get("instruction", "")).strip()
-            output = str(paire.get("output", "")).strip()
-            if instruction and output:
-                paires.append((instruction, output))
-    return paires
-
-
 def construire(sources: list[Path], embeddings_url: str, sortie: Path) -> int:
-    """Construit l'index et l'écrit en JSONL. Retourne le nombre d'entrées."""
-    paires = _charger_paires(sources)
+    """Construit l'index (reconstruction complète) et l'écrit. Retourne le nombre d'entrées."""
+    paires = charger_paires(sources)
     if not paires:
         logger.error("aucune paire à indexer")
         return 0
     vecteurs = _embed(embeddings_url, [instruction for instruction, _ in paires])
-    sortie.parent.mkdir(parents=True, exist_ok=True)
-    with sortie.open("w", encoding="utf-8") as handle:
-        for (_, output), vecteur in zip(paires, vecteurs, strict=True):
-            # Arrondi à 6 décimales : index ~2x plus léger, sans impact sur le cosinus.
-            vecteur = [round(x, 6) for x in vecteur]
-            handle.write(
-                json.dumps(
-                    {"texte": output, "source": _source(output), "vecteur": vecteur},
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
-    logger.info("Index RAG écrit : %d entrées -> %s", len(paires), sortie)
-    return len(paires)
+    entrees = construire_entrees(paires, vecteurs)
+    ecrire_index(sortie, entrees)
+    logger.info("Index RAG écrit : %d entrées -> %s", len(entrees), sortie)
+    return len(entrees)
 
 
 def main() -> int:

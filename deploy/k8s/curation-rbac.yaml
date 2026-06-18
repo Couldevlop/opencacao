@@ -1,0 +1,31 @@
+# RBAC de la console de curation.
+# La console doit pouvoir déclencher un redémarrage progressif de l'API après
+# reconstruction de l'index RAG (patch du template de pods = `rollout restart`).
+# Droit minimal (principe du moindre privilège) : patch/get sur le SEUL
+# Deployment `api`, rien d'autre.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: curation
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: curation-rollout-api
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["api"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: curation-rollout-api
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: curation-rollout-api
+subjects:
+  - kind: ServiceAccount
+    name: curation
