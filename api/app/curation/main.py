@@ -109,7 +109,7 @@ async def login(payload: LoginRequest, response: Response) -> dict[str, bool]:
         max_age=_DUREE_S,
         httponly=True,
         secure=True,
-        samesite="strict",
+        samesite="lax",  # renvoyé de façon fiable sur les requêtes same-origin
         path="/",
     )
     return {"ok": True}
