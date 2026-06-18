@@ -160,3 +160,20 @@ async def test_cache_hit_malgre_variation_de_forme() -> None:
     cache = CacheClient(FakeRedis(), rate_limit_per_min=20)
     await cache.set_cached("Quand récolter ?", "fr", '{"reponse": "ok"}')
     assert await cache.get_cached("quand  RECOLTER !", "fr") == '{"reponse": "ok"}'
+
+
+def test_cache_key_depend_du_model_version() -> None:
+    """La version du modèle fait partie de la clé (invalidation au redéploiement)."""
+    cle = CacheClient._cache_key
+    assert cle("Q", "fr", "1.0.0") == cle("Q", "fr", "1.0.0")
+    assert cle("Q", "fr", "1.0.0") != cle("Q", "fr", "2.0.0")
+
+
+async def test_cache_isole_par_model_version() -> None:
+    """Un nouveau modèle ne ressert pas les réponses cachées de l'ancien."""
+    partage = FakeRedis()
+    ancien = CacheClient(partage, rate_limit_per_min=20, model_version="1.0.0")
+    nouveau = CacheClient(partage, rate_limit_per_min=20, model_version="2.0.0")
+    await ancien.set_cached("Q", "fr", '{"reponse": "ancien"}')
+    assert await nouveau.get_cached("Q", "fr") is None  # cache vierge pour le nouveau
+    assert await ancien.get_cached("Q", "fr") == '{"reponse": "ancien"}'

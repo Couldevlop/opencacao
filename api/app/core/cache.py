@@ -45,39 +45,49 @@ class CacheClient:
     _RATE_PREFIX = "rate:"
     _CACHE_TTL_S = 604_800  # 7 jours : les conseils agronomiques sont stables.
 
-    def __init__(self, client: redis.Redis, rate_limit_per_min: int) -> None:
+    def __init__(
+        self, client: redis.Redis, rate_limit_per_min: int, model_version: str = ""
+    ) -> None:
         """Initialise le client de cache.
 
         Args:
             client: Connexion Redis asynchrone.
             rate_limit_per_min: Limite de requêtes par minute et par IP.
+            model_version: Version du modèle, incluse dans la clé de cache pour
+                invalider automatiquement le cache au redéploiement d'un modèle
+                (plus de réponses périmées resservies, sans purge manuelle).
         """
         self._redis = client
         self._rate_limit = rate_limit_per_min
+        self._model_version = model_version
 
     @classmethod
     def from_settings(cls, settings: Settings) -> CacheClient:
         """Construit un client à partir des paramètres applicatifs."""
         client = redis.from_url(settings.redis_url, decode_responses=True)
-        return cls(client, settings.rate_limit_per_min)
+        return cls(client, settings.rate_limit_per_min, settings.model_version)
 
     @staticmethod
-    def _cache_key(question: str, langue: str) -> str:
-        base = f"{langue}:{_normaliser_question(question)}"
+    def _cache_key(question: str, langue: str, model_version: str = "") -> str:
+        base = f"{model_version}:{langue}:{_normaliser_question(question)}"
         digest = hashlib.sha256(base.encode()).hexdigest()
         return f"{CacheClient._CACHE_PREFIX}{digest}"
 
     async def get_cached(self, question: str, langue: str) -> str | None:
         """Retourne la réponse JSON en cache pour la question, ou None."""
         try:
-            return await self._redis.get(self._cache_key(question, langue))
+            return await self._redis.get(self._cache_key(question, langue, self._model_version))
         except redis.RedisError:
             return None
 
     async def set_cached(self, question: str, langue: str, payload: str) -> None:
         """Met en cache la réponse JSON sérialisée pour la question."""
         try:
-            await self._redis.set(self._cache_key(question, langue), payload, ex=self._CACHE_TTL_S)
+            await self._redis.set(
+                self._cache_key(question, langue, self._model_version),
+                payload,
+                ex=self._CACHE_TTL_S,
+            )
         except redis.RedisError:
             return
 

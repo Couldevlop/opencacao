@@ -73,6 +73,14 @@ def test_chat_rate_limit(client) -> None:
     assert 429 in statuts
 
 
+def test_chat_cache_ne_consomme_pas_le_quota(client, fake_inference) -> None:
+    """Une question en cache, reposée au-delà du quota, reste servie (pas de 429)."""
+    body = {"question": "Comment conserver les feves de cacao apres sechage ?", "canal": "web"}
+    statuts = {client.post("/v1/chat", json=body).status_code for _ in range(25)}
+    assert statuts == {200}  # jamais 429 : le cache ne décompte pas le quota
+    assert len(fake_inference.appels) == 1  # une seule inférence (le reste = cache)
+
+
 def test_validation_question_trop_courte(client) -> None:
     """Une question trop courte est rejetée par la validation Pydantic (422)."""
     resp = client.post("/v1/chat", json={"question": "a"})

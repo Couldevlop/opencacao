@@ -83,6 +83,26 @@ def test_from_settings_construit_un_client() -> None:
     assert isinstance(client, InferenceClient)
 
 
+async def test_max_tokens_configurable_envoye_dans_le_payload() -> None:
+    """Le plafond max_tokens du client est transmis à l'inférence."""
+    vu: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        vu["max_tokens"] = json.loads(request.content)["max_tokens"]
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+    transport = httpx.MockTransport(handler)
+    http = httpx.AsyncClient(transport=transport, base_url="http://inference:8000")
+    client = InferenceClient(
+        "http://inference:8000", "opencacao-8b", 10.0, max_tokens=256, client=http
+    )
+    await client.generer("Comment sécher mes fèves ?")
+    assert vu["max_tokens"] == 256  # valeur du client par défaut
+    await client.close()
+
+
 # --- Streaming (generer_stream) ---
 
 _SSE = (

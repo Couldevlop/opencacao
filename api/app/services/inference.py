@@ -29,6 +29,7 @@ class InferenceClient:
         base_url: str,
         model_name: str,
         timeout_s: float,
+        max_tokens: int = 512,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         """Initialise le client d'inférence.
@@ -37,10 +38,12 @@ class InferenceClient:
             base_url: URL de base du service d'inférence.
             model_name: Nom du modèle à demander.
             timeout_s: Timeout des requêtes, en secondes.
+            max_tokens: Plafond de génération par défaut (réglable).
             client: Client httpx injectable (pour les tests).
         """
         self._base_url = base_url.rstrip("/")
         self._model_name = model_name
+        self._max_tokens = max_tokens
         self._client = client or httpx.AsyncClient(timeout=timeout_s)
 
     @classmethod
@@ -50,13 +53,14 @@ class InferenceClient:
             base_url=settings.inference_url,
             model_name=settings.model_name,
             timeout_s=settings.request_timeout_s,
+            max_tokens=settings.inference_max_tokens,
         )
 
     async def generer(
         self,
         question: str,
         temperature: float = 0.3,
-        max_tokens: int = 512,
+        max_tokens: int | None = None,
         contexte: str | None = None,
     ) -> str:
         """Génère une réponse agronomique pour la question donnée.
@@ -77,7 +81,7 @@ class InferenceClient:
             "model": self._model_name,
             "messages": build_messages(question, contexte),
             "temperature": temperature,
-            "max_tokens": max_tokens,
+            "max_tokens": max_tokens if max_tokens is not None else self._max_tokens,
         }
         try:
             response = await self._client.post(
@@ -94,7 +98,7 @@ class InferenceClient:
         self,
         question: str,
         temperature: float = 0.3,
-        max_tokens: int = 512,
+        max_tokens: int | None = None,
         contexte: str | None = None,
     ) -> AsyncIterator[str]:
         """Génère une réponse en flux (SSE), morceau par morceau.
@@ -115,7 +119,7 @@ class InferenceClient:
             "model": self._model_name,
             "messages": build_messages(question, contexte),
             "temperature": temperature,
-            "max_tokens": max_tokens,
+            "max_tokens": max_tokens if max_tokens is not None else self._max_tokens,
             "stream": True,
         }
         try:

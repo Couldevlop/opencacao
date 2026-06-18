@@ -4,13 +4,19 @@ Procédure pour livrer une nouvelle version de l'**API** (et de la **console de
 curation**, servie par la même image) sur le cluster K3s (Hetzner). Le modèle
 GGUF se déploie séparément (`docs/REENTRAINEMENT.md`).
 
-> Version livrée ici : image API **0.1.11** (`__version__` applicatif **0.2.0**) —
-> pipeline depuis la console, pré-chauffage du cache FAQ, anti-brute-force du login.
+> Version livrée ici : image API **0.1.12** (`__version__` applicatif **0.2.1**) —
+> pipeline depuis la console, pré-chauffage du cache FAQ, anti-brute-force du login,
+> cache testé avant le rate-limit, `model_version` dans la clé de cache, `max_tokens`
+> configurable.
+>
+> Note : `model_version` fait désormais partie de la clé de cache. Au déploiement,
+> le cache accumulé devient orphelin (expire seul) ; le pré-chauffage régénère les
+> FAQ en ~8 min. Sans impact fonctionnel.
 
 ## 1. Construire et pousser l'image API
 
 ```bash
-TAG=0.1.11
+TAG=0.1.12
 docker build -t docker.io/thomcoul/opencacao-api:$TAG ./api
 docker push docker.io/thomcoul/opencacao-api:$TAG
 ```
@@ -45,6 +51,7 @@ Les valeurs par défaut conviennent en prod :
 | `API_DEPLOYMENT` | `api` | Déploiement redémarré après reindex. |
 | `CURATION_LOGIN_MAX_ECHECS` | `5` | Seuil de blocage du login (par IP). |
 | `CURATION_LOGIN_FENETRE_S` | `300` | Fenêtre/blocage anti-brute-force (s). |
+| `INFERENCE_MAX_TOKENS` | `512` | Plafond de génération (abaisser réduit la latence). |
 
 Durcissement recommandé : décommenter `whitelist-source-range` dans
 `deploy/k8s/curation-ingress.yaml` avec les CIDR de l'équipe.
@@ -55,7 +62,7 @@ Durcissement recommandé : décommenter `whitelist-source-range` dans
 # Santé API
 curl -s https://opencacao.openlabconsulting.com/v1/health        # {"status":"ok"}
 # Version exposée
-curl -s https://opencacao.openlabconsulting.com/v1/version        # api_version 0.2.0
+curl -s https://opencacao.openlabconsulting.com/v1/version        # api_version 0.2.1
 # Console : page de connexion (200) et anti-brute-force
 curl -s -o /dev/null -w "%{http_code}\n" https://curation.opencacao.openlabconsulting.com/
 ```

@@ -71,10 +71,7 @@ class ConseilService:
             RateLimitDepasse: Si le quota par IP est dépassé.
             InferenceUnavailable: Si l'inférence échoue (propagée par le port).
         """
-        if await self._cache.hit_rate_limit(client_ip):
-            raise RateLimitDepasse
-
-        # Garde-fous métier : refus sans appeler le modèle.
+        # Garde-fous métier : refus sans appeler le modèle (réponse instantanée).
         refus = guardrails.evaluer(question)
         if refus is not None:
             logger.info("garde_fou_declenche", categorie=refus.categorie.value)
@@ -84,7 +81,7 @@ class ConseilService:
                 Conseil(refus.message, Confiance.ELEVEE, [], redirection_anader=True),
             )
 
-        # Cache de réponses.
+        # Cache de réponses (instantané).
         cached = await self._cache.get_cached(question, langue.value)
         if cached is not None:
             donnees = json.loads(cached)
@@ -98,6 +95,11 @@ class ConseilService:
                     redirection_anader=donnees["redirection_anader"],
                 ),
             )
+
+        # Rate-limit UNIQUEMENT avant l'inférence réelle : un hit de cache ou un
+        # refus instantané ne doit pas consommer le quota (équité).
+        if await self._cache.hit_rate_limit(client_ip):
+            raise RateLimitDepasse
 
         # Inférence (peut lever InferenceUnavailable), augmentée par RAG si activé.
         contexte = await self._contexte(question)
@@ -184,9 +186,6 @@ class ConseilService:
             RateLimitDepasse: Si le quota par IP est dépassé.
             InferenceUnavailable: Si l'inférence échoue (propagée par le port).
         """
-        if await self._cache.hit_rate_limit(client_ip):
-            raise RateLimitDepasse
-
         refus = guardrails.evaluer(question)
         if refus is not None:
             logger.info("garde_fou_declenche", categorie=refus.categorie.value)
@@ -209,6 +208,10 @@ class ConseilService:
                 redirection=donnees["redirection_anader"],
             )
             return
+
+        # Rate-limit seulement avant l'inférence réelle (équité : cache/refus gratuits).
+        if await self._cache.hit_rate_limit(client_ip):
+            raise RateLimitDepasse
 
         emis: list[str] = []
         tampon = ""

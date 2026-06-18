@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     rate_limit_per_min: int = 20
 
+    # Plafond de génération. Les réponses cacao sont brèves (consigne « SMS ») :
+    # abaisser réduit la latence CPU sur les réponses longues. Réglable sans
+    # rebuild via INFERENCE_MAX_TOKENS.
+    inference_max_tokens: int = 512
+
     # --- RAG (génération augmentée par récupération) ---
     # Désactivé tant que l'index n'est pas construit et le service d'embeddings prêt.
     rag_enabled: bool = False
