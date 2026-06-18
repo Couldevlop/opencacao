@@ -14,13 +14,15 @@ def test_charger_sources(tmp_path: Path) -> None:
     manifeste.write_text(
         "documents:\n"
         '  - id: manuel_a\n    source: "CNRA"\n    titre: "Manuel A"\n    url: "http://ex/a.pdf"\n'
+        '  - id: ssl_casse\n    titre: "SSL"\n    url: "https://ex/b.pdf"\n    verify: false\n'
         '  - id: sans_url\n    titre: "Incomplet"\n',  # sans url -> ignoré
         encoding="utf-8",
     )
     docs = charger_sources(manifeste)
-    assert len(docs) == 1
+    assert len(docs) == 2
     assert docs[0]["id"] == "manuel_a"
-    assert docs[0]["url"] == "http://ex/a.pdf"
+    assert docs[0]["verify"] is True  # défaut
+    assert docs[1]["verify"] is False  # transmis depuis le manifeste
 
 
 def test_charger_sources_absent(tmp_path: Path) -> None:

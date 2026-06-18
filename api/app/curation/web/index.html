@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
     <title>OpenCacao — Console de curation</title>
-    <link rel="stylesheet" href="styles.css?v=7" />
+    <link rel="stylesheet" href="styles.css?v=8" />
   </head>
   <body>
     <div class="flag-strip" aria-hidden="true"></div>
@@ -45,12 +45,22 @@
         </div>
       </header>
 
-      <nav class="onglets" role="tablist">
-        <button type="button" class="onglet actif" id="tab-curation" data-vue="vue-curation">
-          🗂️ Curation <span class="onglet-compteur" id="onglet-compteur"></span>
-        </button>
-        <button type="button" class="onglet" id="tab-pipeline" data-vue="vue-pipeline">⚙️ Pipeline</button>
-      </nav>
+      <div class="layout">
+        <aside class="sidebar">
+          <nav class="menu" role="tablist">
+            <button type="button" class="onglet actif" id="tab-curation" data-vue="vue-curation">
+              <span class="menu-ico" aria-hidden="true">🗂️</span>
+              <span class="menu-txt">Curation</span>
+              <span class="onglet-compteur" id="onglet-compteur"></span>
+            </button>
+            <button type="button" class="onglet" id="tab-pipeline" data-vue="vue-pipeline">
+              <span class="menu-ico" aria-hidden="true">⚙️</span>
+              <span class="menu-txt">Pipeline</span>
+            </button>
+          </nav>
+        </aside>
+
+        <div class="contenu">
 
       <div id="vue-pipeline" class="vue" hidden>
       <section class="pipeline" id="pipeline">
@@ -124,6 +134,9 @@
           <p class="vide" id="chargement">Chargement…</p>
         </main>
       </div>
+
+      </div><!-- .contenu -->
+      </div><!-- .layout -->
     </div>
 
     <template id="modele-carte">

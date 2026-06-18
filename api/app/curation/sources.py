@@ -56,6 +56,8 @@ def charger_sources(chemin: Path = SOURCES_PATH) -> list[dict]:
                     "source": str(doc.get("source", "")),
                     "titre": str(doc.get("titre", ident)),
                     "url": url,
+                    # Vérification TLS : False pour les serveurs à certificat cassé.
+                    "verify": bool(doc.get("verify", True)),
                 }
             )
     return documents

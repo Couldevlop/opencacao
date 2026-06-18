@@ -330,6 +330,66 @@ body { background: linear-gradient(180deg, #f7f4ef 0%, #f2ede4 100%); }
 .onglet-compteur { color: var(--ci-orange); font-weight: 700; }
 .vue { animation: apparition .15s ease; }
 @keyframes apparition { from { opacity: 0; } to { opacity: 1; } }
+
+/* ====================================================================
+   Mise en page avec barre latérale gauche (menu Curation / Pipeline)
+   ==================================================================== */
+.layout { display: flex; align-items: flex-start; max-width: 1140px; margin: 0 auto; }
+.sidebar {
+  position: sticky;
+  top: 51px;
+  flex: 0 0 220px;
+  align-self: stretch;
+  min-height: calc(100vh - 51px);
+  background: var(--cocoa-dark);
+  padding: 16px 10px;
+}
+.sidebar .menu { display: flex; flex-direction: column; gap: 6px; }
+.sidebar .onglet {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.82);
+  font: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 11px 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.sidebar .onglet:hover { background: rgba(255, 255, 255, 0.10); color: #fff; }
+.sidebar .onglet.actif { background: var(--cocoa); color: #fff; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25); }
+.sidebar .onglet:focus-visible { outline: 2px solid var(--ci-orange); outline-offset: 2px; }
+.sidebar .menu-ico { font-size: 17px; line-height: 1; }
+.sidebar .menu-txt { flex: 1; }
+.sidebar .onglet-compteur {
+  background: var(--ci-orange);
+  color: #fff;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.contenu { flex: 1; min-width: 0; padding: 0 4px 36px; }
+/* Dans la barre latérale, le contenu n'est plus centré horizontalement. */
+.contenu .pipeline, .contenu .liste { margin: 18px 0 0; max-width: 880px; }
+
+@media (max-width: 760px) {
+  .layout { flex-direction: column; }
+  .sidebar {
+    position: static;
+    flex-basis: auto;
+    width: 100%;
+    min-height: 0;
+    padding: 8px;
+  }
+  .sidebar .menu { flex-direction: row; }
+  .sidebar .onglet { justify-content: center; }
+}
 .procedure {
   background: var(--cocoa-dark);
   color: #f7f4ef;
