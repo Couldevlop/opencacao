@@ -23,6 +23,18 @@ spec:
       serviceAccountName: curation
       securityContext:
         fsGroup: 10001
+      # Le volume /data peut contenir des fichiers root-owned (index RAG déposé,
+      # ou créés hors fsGroup sur un volume local-path). La console doit pouvoir y
+      # écrire (uid 10001) : on corrige les droits au démarrage.
+      initContainers:
+        - name: fix-perms
+          image: busybox:1.36
+          command: ["sh", "-c", "chown -R 10001:10001 /data || true; chmod -R g+rwX /data || true"]
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: dataset
+              mountPath: /data
       containers:
         - name: curation
           image: opencacao-api # tag/registre fixés par kustomization.yaml
