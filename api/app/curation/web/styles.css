@@ -254,6 +254,52 @@ body {
   font-size: 14px;
   line-height: 1;
 }
+
+/* ====================================================================
+   Finition « pro » : hiérarchie, liaison des étapes, états, focus
+   ==================================================================== */
+body { background: linear-gradient(180deg, #f7f4ef 0%, #f2ede4 100%); }
+
+/* Barre du haut : plus sobre, accent drapeau CI sous la barre */
+.topbar { padding: 13px 22px; border-bottom: 3px solid transparent;
+  background-image: linear-gradient(var(--cocoa-dark), var(--cocoa-dark)),
+    linear-gradient(90deg, var(--ci-orange) 0 33.33%, #fff 33.33% 66.66%, var(--ci-green) 66.66%);
+  background-clip: padding-box, border-box; background-origin: border-box; }
+.topbar h1 { font-family: var(--serif); font-size: 17px; letter-spacing: .2px; }
+
+.pipeline, .liste { max-width: 860px; }
+.pipeline-titre { font-size: 20px; display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+
+/* Stepper : trait de liaison vertical entre les pastilles numérotées */
+.etape { transition: box-shadow .15s, border-color .15s; }
+.etape:hover { box-shadow: 0 4px 14px rgba(60, 40, 20, 0.10); }
+.etape:not(:last-of-type)::before {
+  content: ""; position: absolute; left: 26px; top: 44px; bottom: -16px;
+  width: 2px; background: var(--border);
+}
+.etape-num { box-shadow: 0 2px 5px rgba(111, 78, 55, 0.35); z-index: 1; }
+.etape-tete h3 { font-family: var(--serif); font-size: 16px; }
+
+/* Badges d'état : pastille colorée devant le libellé */
+.badge-etat { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.badge-etat::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: .7; }
+
+/* Boutons : cohérents, focus accessible */
+.btn { font-weight: 600; border-radius: 9px; transition: background .15s, transform .05s; }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:focus-visible, .login-btn:focus-visible, input:focus-visible {
+  outline: 2px solid var(--ci-orange); outline-offset: 2px;
+}
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Jobs : statut aligné à droite, carte plus lisible */
+.job { grid-template-columns: 1fr auto; }
+.job .etat { justify-self: end; font-weight: 600; }
+.jobs-titre, .pipeline-titre { font-family: var(--serif); }
+
+/* Cartes de curation : titre de question plus présent */
+.carte { transition: box-shadow .15s; }
+.carte:hover { box-shadow: 0 4px 14px rgba(60, 40, 20, 0.10); }
 .procedure {
   background: var(--cocoa-dark);
   color: #f7f4ef;
