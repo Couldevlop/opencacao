@@ -79,6 +79,16 @@ body {
   border-color: var(--cocoa);
   box-shadow: 0 0 0 3px rgba(111, 78, 55, 0.12);
 }
+.afficher {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: -4px 0 14px;
+  cursor: pointer;
+}
+.afficher input { cursor: pointer; }
 .login-btn {
   width: 100%;
   margin-top: 6px;

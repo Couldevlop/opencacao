@@ -88,10 +88,16 @@ async def session_etat(request: Request) -> dict[str, bool]:
 
 @app.post("/api/login")
 async def login(payload: LoginRequest, response: Response) -> dict[str, bool]:
-    """Vérifie les identifiants et pose un cookie de session signé."""
+    """Vérifie les identifiants et pose un cookie de session signé.
+
+    Les valeurs sont nettoyées (strip) pour tolérer un espace/retour-ligne
+    introduit par un copier-coller.
+    """
+    utilisateur = payload.utilisateur.strip()
+    mot_de_passe = payload.mot_de_passe.strip()
     valide = bool(_MOT_DE_PASSE) and (
-        secrets.compare_digest(payload.utilisateur, _UTILISATEUR)
-        and secrets.compare_digest(payload.mot_de_passe, _MOT_DE_PASSE)
+        secrets.compare_digest(utilisateur, _UTILISATEUR)
+        and secrets.compare_digest(mot_de_passe, _MOT_DE_PASSE)
     )
     if not valide:
         raise HTTPException(

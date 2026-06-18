@@ -19,11 +19,14 @@
 
         <label class="champ">
           <span>Utilisateur</span>
-          <input id="utilisateur" name="username" type="text" autocomplete="username" required />
+          <input id="utilisateur" name="username" type="text" autocomplete="username" value="curateur" required />
         </label>
         <label class="champ">
           <span>Mot de passe</span>
           <input id="mot_de_passe" name="password" type="password" autocomplete="current-password" required />
+        </label>
+        <label class="afficher">
+          <input type="checkbox" id="voir-mdp" /> <span>Afficher le mot de passe</span>
         </label>
 
         <button class="login-btn" type="submit" id="login-btn">Se connecter</button>

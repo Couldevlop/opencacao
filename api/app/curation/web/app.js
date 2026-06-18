@@ -126,7 +126,7 @@ $("login-form").addEventListener("submit", async (e) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         utilisateur: $("utilisateur").value.trim(),
-        mot_de_passe: $("mot_de_passe").value,
+        mot_de_passe: $("mot_de_passe").value.trim(),
       }),
     });
     $("mot_de_passe").value = "";
@@ -138,6 +138,10 @@ $("login-form").addEventListener("submit", async (e) => {
     btn.disabled = false;
     btn.textContent = "Se connecter";
   }
+});
+
+$("voir-mdp").addEventListener("change", (e) => {
+  $("mot_de_passe").type = e.target.checked ? "text" : "password";
 });
 
 $("logout").addEventListener("click", async () => {
