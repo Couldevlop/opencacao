@@ -122,6 +122,46 @@ class ConseilService:
         await self._cache.set_cached(question, langue.value, _serialiser(conseil))
         return await self._journaliser(question, langue, conseil)
 
+    async def prechauffer(self, question: str, langue: Langue) -> bool:
+        """Génère et met en cache une réponse FAQ (pré-chauffage).
+
+        Chemin allégé, distinct de :meth:`conseiller` : **pas de rate-limit** (action
+        interne) ni de **journalisation** (le pré-chauffage ne doit pas polluer le
+        jeu de données de curation). Idempotent : ne régénère pas une réponse déjà
+        en cache.
+
+        Args:
+            question: Question fréquente à pré-calculer.
+            langue: Langue de la réponse.
+
+        Returns:
+            True si une réponse a été générée et mise en cache ; False si elle y
+            était déjà ou n'est pas cachable (refus / garde-fou de sortie).
+
+        Raises:
+            InferenceUnavailable: Si l'inférence échoue (propagée par le port).
+        """
+        if await self._cache.get_cached(question, langue.value) is not None:
+            return False
+        # Un refus est instantané (aucune inférence) : inutile de le mettre en cache.
+        if guardrails.evaluer(question) is not None:
+            return False
+
+        contexte = await self._contexte(question)
+        texte = await self._inference.generer(question, contexte=contexte)
+        if guardrails.verifier_reponse(texte) is not None:
+            return False
+
+        sources = postprocess.extraire_sources(texte)
+        conseil = Conseil(
+            reponse=texte,
+            confiance=postprocess.estimer_confiance(sources),
+            sources=sources,
+            redirection_anader=False,
+        )
+        await self._cache.set_cached(question, langue.value, _serialiser(conseil))
+        return True
+
     async def conseiller_stream(
         self, question: str, langue: Langue, client_ip: str
     ) -> AsyncIterator[dict]:

@@ -36,14 +36,41 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.embeddings, app.state.rag = _construire_rag(settings)
     logger.info("demarrage", version=__version__, backend=settings.inference_backend)
 
+    app.state.prewarm_task = _lancer_prechauffage(app, settings)
+
     try:
         yield
     finally:
+        if app.state.prewarm_task is not None:
+            app.state.prewarm_task.cancel()
         await app.state.inference.close()
         await app.state.cache.close()
         if app.state.embeddings is not None:
             await app.state.embeddings.close()
         logger.info("arret")
+
+
+def _lancer_prechauffage(app: FastAPI, settings: Settings) -> object | None:
+    """Démarre le pré-chauffage du cache en tâche de fond (non bloquant).
+
+    Returns:
+        La tâche asyncio créée, ou None si le pré-chauffage est désactivé.
+    """
+    if not settings.prewarm_enabled:
+        return None
+    import asyncio
+
+    from app.application.conseil_service import ConseilService
+    from app.application.faq import QUESTIONS_FAQ
+    from app.application.prewarm import prechauffer_cache
+
+    service = ConseilService(
+        inference=app.state.inference,
+        cache=app.state.cache,
+        journal=app.state.journal,
+        rag=app.state.rag,
+    )
+    return asyncio.create_task(prechauffer_cache(service, QUESTIONS_FAQ))
 
 
 def _construire_rag(settings: Settings) -> tuple[object | None, object | None]:

@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     # Similarité cosinus minimale pour qu'un passage soit injecté (sinon ignoré).
     rag_min_similarite: float = 0.62
 
+    # Pré-chauffage du cache au démarrage : génère une fois les questions FAQ
+    # (app.application.faq) en tâche de fond -> réponses instantanées ensuite.
+    prewarm_enabled: bool = True
+
     log_level: str = "INFO"
     # Journalisation (anonymisée) des interactions Q/R + retours 👍/👎, pour
     # constituer un jeu de données d'amélioration (boucle humain-dans-la-boucle).

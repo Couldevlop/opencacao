@@ -14,6 +14,7 @@ from app.api_deps import (
     get_journal,
 )
 from app.application.conseil_service import ConseilService
+from app.core.config import get_settings
 from app.main import create_app
 
 
@@ -122,9 +123,15 @@ def fake_journal() -> FakeJournal:
 
 @pytest.fixture
 def client(
-    fake_cache: FakeCache, fake_inference: FakeInference, fake_journal: FakeJournal
+    fake_cache: FakeCache,
+    fake_inference: FakeInference,
+    fake_journal: FakeJournal,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[TestClient]:
     """Client de test avec inférence, cache et journal surchargés."""
+    # Pas de pré-chauffage en test (éviterait de vrais appels d'inférence au démarrage).
+    monkeypatch.setenv("PREWARM_ENABLED", "false")
+    get_settings.cache_clear()
     app = create_app()
     service = ConseilService(inference=fake_inference, cache=fake_cache, journal=fake_journal)
     app.dependency_overrides[get_cache_client] = lambda: fake_cache
@@ -134,3 +141,4 @@ def client(
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+    get_settings.cache_clear()
