@@ -23,10 +23,13 @@ import unicodedata
 from collections.abc import Callable
 from pathlib import Path
 
+import httpx
+
 from app.core.logging import get_logger
-from app.curation.documents import DocumentStore
+from app.curation.documents import DocumentInvalide, DocumentStore
 from app.curation.jobs import JobsRegistry
 from app.curation.k8s import ClusterClient, ClusterIndisponible
+from app.curation.sources import charger_sources, nom_fichier, telecharger
 from app.services import guardrails
 from app.services.embeddings import EmbeddingsClient
 from app.services.rag_index_builder import (
@@ -84,6 +87,7 @@ class PipelineService:
         api_deployment: str,
         cluster_factory: Callable[[], ClusterClient],
         documents: DocumentStore,
+        http_factory: Callable[[], httpx.AsyncClient] | None = None,
     ) -> None:
         """Initialise le service.
 
@@ -105,6 +109,9 @@ class PipelineService:
         self._api_deployment = api_deployment
         self._cluster_factory = cluster_factory
         self._documents = documents
+        self._http_factory = http_factory or (
+            lambda: httpx.AsyncClient(follow_redirects=True, timeout=60.0)
+        )
 
     @classmethod
     def from_env(cls, jobs: JobsRegistry) -> PipelineService:
@@ -352,6 +359,66 @@ class PipelineService:
                 job_id, log=f"vectorisation {min(debut + lot, len(nouveaux))}/{len(nouveaux)}"
             )
         return entrees
+
+    # --- Étape ① Recherche des sources officielles (téléchargement) ---
+
+    async def demarrer_recherche(self) -> dict | None:
+        """Crée un job de recherche, sauf si un est déjà en cours."""
+        if await self._jobs.actif("recherche_sources"):
+            return None
+        return await self._jobs.creer("recherche_sources")
+
+    async def collecter_sources(self, job_id: str) -> None:
+        """Télécharge les documents officiels (manifeste) vers le store de documents.
+
+        En flux (peu gourmand). Idempotent : saute les documents déjà présents.
+        N'enrichit pas le RAG (c'est l'étape ② Constitution qui le fait ensuite).
+
+        Args:
+            job_id: Identifiant du job à suivre.
+        """
+        try:
+            sources = charger_sources()
+            if not sources:
+                await self._jobs.maj(
+                    job_id, statut="echec", message="Aucune source officielle configurée."
+                )
+                return
+            telecharges = deja = echoues = 0
+            client = self._http_factory()
+            try:
+                for i, doc in enumerate(sources, start=1):
+                    nom = nom_fichier(doc)
+                    if self._documents.existe(nom):
+                        deja += 1
+                        continue
+                    await self._jobs.maj(job_id, log=f"{i}/{len(sources)} {doc['titre'][:60]}")
+                    donnees = await telecharger(client, doc["url"])
+                    if not donnees:
+                        echoues += 1
+                        continue
+                    try:
+                        self._documents.enregistrer(nom, donnees)
+                        telecharges += 1
+                    except DocumentInvalide:
+                        echoues += 1
+            finally:
+                await client.aclose()
+
+            await self._jobs.maj(
+                job_id,
+                statut="reussi",
+                message=(
+                    f"{telecharges} document(s) téléchargé(s), {deja} déjà présent(s), "
+                    f"{echoues} échec(s). Lancez la Constitution pour les indexer."
+                ),
+                details={"telecharges": telecharges, "deja": deja, "echoues": echoues},
+            )
+        except Exception as exc:  # noqa: BLE001 - journalisé, statut d'échec propre
+            logger.error("recherche_sources_echec", job_id=job_id, error=str(exc))
+            await self._jobs.maj(
+                job_id, statut="echec", message="Erreur interne (voir les journaux)."
+            )
 
     # --- Préparation fine-tuning ---
 

@@ -41,6 +41,14 @@ def test_store_enregistrer_lister_supprimer(tmp_path: Path) -> None:
     assert store.supprimer("guide.txt") is False  # déjà absent
 
 
+def test_store_existe(tmp_path: Path) -> None:
+    store = DocumentStore(tmp_path / "documents")
+    assert store.existe("guide.txt") is False
+    store.enregistrer("guide.txt", b"contenu")
+    assert store.existe("guide.txt") is True
+    assert store.existe("mauvais.exe") is False  # nom invalide -> False, pas d'erreur
+
+
 def test_store_refuse_vide_et_mauvais_format(tmp_path: Path) -> None:
     store = DocumentStore(tmp_path / "documents")
     with pytest.raises(DocumentInvalide):

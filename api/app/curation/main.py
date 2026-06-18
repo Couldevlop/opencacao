@@ -271,6 +271,24 @@ async def documents_suppr(nom: str, _: Session) -> list[dict]:
     return _documents.lister()
 
 
+@app.post("/api/recherche", status_code=status.HTTP_202_ACCEPTED)
+async def recherche_sources(_: Session) -> dict[str, str]:
+    """Lance (tâche de fond) le téléchargement des sources officielles.
+
+    Raises:
+        HTTPException: 409 si une recherche est déjà en cours.
+    """
+    job = await _pipeline.demarrer_recherche()
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Une recherche est déjà en cours."
+        )
+    tache = asyncio.create_task(_pipeline.collecter_sources(job["id"]))
+    _taches.add(tache)
+    tache.add_done_callback(_taches.discard)
+    return {"job_id": job["id"], "statut": job["statut"]}
+
+
 # --- Pipeline : constitution RAG, reindex, préparation fine-tuning, suivi des jobs ---
 
 

@@ -52,6 +52,7 @@ def _service(
     tmp_path: Path,
     embeddings: FakeEmbeddings | None = None,
     cluster: FakeCluster | None = None,
+    http_factory=None,
 ) -> tuple[PipelineService, JobsRegistry]:
     jobs = JobsRegistry(tmp_path / "jobs.jsonl")
     cluster = cluster or FakeCluster()
@@ -64,6 +65,7 @@ def _service(
         api_deployment="api",
         cluster_factory=lambda: cluster,
         documents=DocumentStore(tmp_path / "documents"),
+        http_factory=http_factory,
     )
     return service, jobs
 
@@ -237,6 +239,68 @@ async def test_constituer_anti_concurrence(tmp_path: Path) -> None:
     service, _ = _service(tmp_path)
     assert await service.demarrer_constitution() is not None
     assert await service.demarrer_constitution() is None
+
+
+# --- Recherche des sources officielles ---
+
+
+def _http_ok(contenu: bytes = b"%PDF-1.4 contenu"):
+    import httpx
+
+    return lambda: httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda req: httpx.Response(200, content=contenu))
+    )
+
+
+async def test_collecter_succes(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        pipeline_module,
+        "charger_sources",
+        lambda: [
+            {"id": "manuel_a", "source": "CNRA", "titre": "Manuel A", "url": "http://x/a.pdf"}
+        ],
+    )
+    service, jobs = _service(tmp_path, http_factory=_http_ok())
+    job = await jobs.creer("recherche_sources")
+
+    await service.collecter_sources(job["id"])
+
+    relu = await jobs.obtenir(job["id"])
+    assert relu["statut"] == "reussi"
+    assert relu["details"]["telecharges"] == 1
+    assert (tmp_path / "documents" / "manuel_a.pdf").exists()
+
+
+async def test_collecter_idempotent(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        pipeline_module,
+        "charger_sources",
+        lambda: [{"id": "manuel_a", "source": "CNRA", "titre": "A", "url": "http://x/a.pdf"}],
+    )
+    (tmp_path / "documents").mkdir(parents=True)
+    (tmp_path / "documents" / "manuel_a.pdf").write_bytes(b"deja")
+    service, jobs = _service(tmp_path, http_factory=_http_ok())
+    job = await jobs.creer("recherche_sources")
+
+    await service.collecter_sources(job["id"])
+
+    relu = await jobs.obtenir(job["id"])
+    assert relu["details"] == {"telecharges": 0, "deja": 1, "echoues": 0}
+
+
+async def test_collecter_aucune_source(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(pipeline_module, "charger_sources", lambda: [])
+    service, jobs = _service(tmp_path)
+    job = await jobs.creer("recherche_sources")
+    await service.collecter_sources(job["id"])
+    relu = await jobs.obtenir(job["id"])
+    assert relu["statut"] == "echec"
+
+
+async def test_demarrer_recherche_anti_concurrence(tmp_path: Path) -> None:
+    service, _ = _service(tmp_path)
+    assert await service.demarrer_recherche() is not None
+    assert await service.demarrer_recherche() is None
 
 
 # --- Préparation fine-tuning ---

@@ -151,6 +151,13 @@ class DocumentStore:
         ]
         return sorted(items, key=lambda d: d["nom"])
 
+    def existe(self, nom: str) -> bool:
+        """Indique si un document du nom donné est déjà stocké."""
+        try:
+            return (self._dossier / nom_sur(nom)).is_file()
+        except DocumentInvalide:
+            return False
+
     def supprimer(self, nom: str) -> bool:
         """Supprime un document. Retourne True s'il existait."""
         cible = self._dossier / nom_sur(nom)

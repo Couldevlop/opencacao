@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
     <title>OpenCacao — Console de curation</title>
-    <link rel="stylesheet" href="styles.css?v=6" />
+    <link rel="stylesheet" href="styles.css?v=7" />
   </head>
   <body>
     <div class="flag-strip" aria-hidden="true"></div>
@@ -45,6 +45,14 @@
         </div>
       </header>
 
+      <nav class="onglets" role="tablist">
+        <button type="button" class="onglet actif" id="tab-curation" data-vue="vue-curation">
+          🗂️ Curation <span class="onglet-compteur" id="onglet-compteur"></span>
+        </button>
+        <button type="button" class="onglet" id="tab-pipeline" data-vue="vue-pipeline">⚙️ Pipeline</button>
+      </nav>
+
+      <div id="vue-pipeline" class="vue" hidden>
       <section class="pipeline" id="pipeline">
         <h2 class="pipeline-titre">⚙️ Pipeline d'enrichissement</h2>
 
@@ -64,8 +72,8 @@
               📎 Téléverser
               <input type="file" id="fichier" accept=".pdf,.txt,.md,.csv" multiple hidden />
             </label>
-            <button type="button" class="btn secondaire" id="btn-recherche" disabled
-              title="Bientôt : téléchargement des sources officielles">🔎 Lancer la recherche (bientôt)</button>
+            <button type="button" class="btn secondaire" id="btn-recherche"
+              title="Télécharge les sources officielles (CNRA, ANADER, Conseil Café-Cacao, FAO)">🔎 Lancer la recherche</button>
             <span class="etat" id="etat-upload" aria-live="polite"></span>
           </div>
           <ul class="docs-liste" id="docs-liste"></ul>
@@ -109,10 +117,13 @@
         <h3 class="jobs-titre">📋 Jobs récents</h3>
         <div class="jobs" id="jobs"><p class="vide">Aucun job pour l'instant.</p></div>
       </section>
+      </div>
 
-      <main class="liste" id="liste">
-        <p class="vide" id="chargement">Chargement…</p>
-      </main>
+      <div id="vue-curation" class="vue">
+        <main class="liste" id="liste">
+          <p class="vide" id="chargement">Chargement…</p>
+        </main>
+      </div>
     </div>
 
     <template id="modele-carte">
@@ -133,6 +144,6 @@
       </article>
     </template>
 
-    <script type="module" src="app.js?v=5"></script>
+    <script type="module" src="app.js?v=7"></script>
   </body>
 </html>

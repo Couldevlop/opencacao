@@ -37,6 +37,8 @@ async function rafraichirStats() {
   try {
     const s = await api("/api/stats");
     $("stats").textContent = `À curer : ${s.a_curer} · Validés : ${s.valides} · Rejetés : ${s.rejetes} · Total : ${s.total}`;
+    const compteur = $("onglet-compteur");
+    if (compteur) compteur.textContent = s.a_curer ? `(${s.a_curer})` : "";
   } catch (e) {
     if (e instanceof NonAutorise) montrerLogin();
   }
@@ -183,9 +185,15 @@ async function rafraichirJobs() {
   const dernier = (type) => jobs.find((j) => j.type === type);
   badgeEtape("etat-constituer", dernier("rag_constitution"));
   badgeEtape("etat-ft-badge", dernier("finetuning_prepare"));
-  // Sonde tant qu'un job est en cours, sinon arrête.
+  // Sonde tant qu'un job est en cours (et rafraîchit la liste des documents,
+  // qui se remplit pendant la recherche/constitution).
   const actif = jobs.some((j) => j.statut === "en_cours");
-  if (actif && !sondageJobs) sondageJobs = setInterval(rafraichirJobs, 4000);
+  if (actif && !sondageJobs) {
+    sondageJobs = setInterval(() => {
+      rafraichirJobs();
+      rafraichirDocuments();
+    }, 4000);
+  }
   if (!actif && sondageJobs) {
     clearInterval(sondageJobs);
     sondageJobs = null;
@@ -303,10 +311,24 @@ $("btn-rag").addEventListener("click", () =>
   lancerAction("btn-rag", "etat-rag", "/api/rag/reindex", "Reindex des faits curés")
 );
 
+$("btn-recherche").addEventListener("click", () =>
+  lancerAction("btn-recherche", "etat-upload", "/api/recherche", "Recherche des sources")
+);
+
 /* ---------- Étape ③ Fine-tuning ---------- */
 $("btn-ft").addEventListener("click", () =>
   lancerAction("btn-ft", "etat-ft", "/api/finetuning/prepare", "Préparation")
 );
+
+/* ---------- Onglets (Curation / Pipeline) ---------- */
+document.querySelectorAll(".onglet").forEach((onglet) => {
+  onglet.addEventListener("click", () => {
+    document.querySelectorAll(".onglet").forEach((o) => o.classList.toggle("actif", o === onglet));
+    document.querySelectorAll(".vue").forEach((v) => {
+      v.hidden = v.id !== onglet.dataset.vue;
+    });
+  });
+});
 
 /* ---------- Authentification ---------- */
 $("login-form").addEventListener("submit", async (e) => {
