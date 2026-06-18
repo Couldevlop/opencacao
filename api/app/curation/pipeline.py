@@ -29,7 +29,7 @@ from app.core.logging import get_logger
 from app.curation.documents import DocumentInvalide, DocumentStore
 from app.curation.jobs import JobsRegistry
 from app.curation.k8s import ClusterClient, ClusterIndisponible
-from app.curation.sources import charger_sources, nom_fichier, telecharger
+from app.curation.sources import NAVIGATEUR_UA, charger_sources, nom_fichier, telecharger
 from app.services import guardrails
 from app.services.embeddings import EmbeddingsClient
 from app.services.rag_index_builder import (
@@ -87,7 +87,7 @@ class PipelineService:
         api_deployment: str,
         cluster_factory: Callable[[], ClusterClient],
         documents: DocumentStore,
-        http_factory: Callable[[], httpx.AsyncClient] | None = None,
+        http_factory: Callable[[bool], httpx.AsyncClient] | None = None,
     ) -> None:
         """Initialise le service.
 
@@ -110,7 +110,12 @@ class PipelineService:
         self._cluster_factory = cluster_factory
         self._documents = documents
         self._http_factory = http_factory or (
-            lambda: httpx.AsyncClient(follow_redirects=True, timeout=60.0)
+            lambda verifie: httpx.AsyncClient(
+                verify=verifie,
+                follow_redirects=True,
+                timeout=60.0,
+                headers={"User-Agent": NAVIGATEUR_UA},
+            )
         )
 
     @classmethod
@@ -385,7 +390,15 @@ class PipelineService:
                 )
                 return
             telecharges = deja = echoues = 0
-            client = self._http_factory()
+            # Un client par mode de vérification TLS (certaines sources publiques ont
+            # un certificat cassé et sont marquées ``verify: false`` dans le manifeste).
+            clients: dict[bool, httpx.AsyncClient] = {}
+
+            def client_pour(verifie: bool) -> httpx.AsyncClient:
+                if verifie not in clients:
+                    clients[verifie] = self._http_factory(verifie)
+                return clients[verifie]
+
             try:
                 for i, doc in enumerate(sources, start=1):
                     nom = nom_fichier(doc)
@@ -393,7 +406,9 @@ class PipelineService:
                         deja += 1
                         continue
                     await self._jobs.maj(job_id, log=f"{i}/{len(sources)} {doc['titre'][:60]}")
-                    donnees = await telecharger(client, doc["url"])
+                    donnees = await telecharger(
+                        client_pour(bool(doc.get("verify", True))), doc["url"]
+                    )
                     if not donnees:
                         echoues += 1
                         continue
@@ -403,7 +418,8 @@ class PipelineService:
                     except DocumentInvalide:
                         echoues += 1
             finally:
-                await client.aclose()
+                for client in clients.values():
+                    await client.aclose()
 
             await self._jobs.maj(
                 job_id,

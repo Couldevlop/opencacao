@@ -247,7 +247,8 @@ async def test_constituer_anti_concurrence(tmp_path: Path) -> None:
 def _http_ok(contenu: bytes = b"%PDF-1.4 contenu"):
     import httpx
 
-    return lambda: httpx.AsyncClient(
+    # La fabrique reçoit le mode `verifie` (ignoré ici : transport simulé).
+    return lambda verifie=True: httpx.AsyncClient(
         transport=httpx.MockTransport(lambda req: httpx.Response(200, content=contenu))
     )
 
@@ -286,6 +287,39 @@ async def test_collecter_idempotent(tmp_path: Path, monkeypatch) -> None:
 
     relu = await jobs.obtenir(job["id"])
     assert relu["details"] == {"telecharges": 0, "deja": 1, "echoues": 0}
+
+
+async def test_collecter_source_verify_false(tmp_path: Path, monkeypatch) -> None:
+    """Une source à certificat cassé (verify: false) est tout de même téléchargée."""
+    monkeypatch.setattr(
+        pipeline_module,
+        "charger_sources",
+        lambda: [
+            {
+                "id": "ssl_casse",
+                "source": "X",
+                "titre": "SSL",
+                "url": "https://x/s.pdf",
+                "verify": False,
+            }
+        ],
+    )
+    modes: list[bool] = []
+    import httpx
+
+    def fabrique(verifie):
+        modes.append(verifie)
+        return httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda req: httpx.Response(200, content=b"%PDF"))
+        )
+
+    service, jobs = _service(tmp_path, http_factory=fabrique)
+    job = await jobs.creer("recherche_sources")
+    await service.collecter_sources(job["id"])
+
+    relu = await jobs.obtenir(job["id"])
+    assert relu["details"]["telecharges"] == 1
+    assert modes == [False]  # le client non-vérifié a bien été demandé
 
 
 async def test_collecter_aucune_source(tmp_path: Path, monkeypatch) -> None:

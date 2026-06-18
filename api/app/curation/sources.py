@@ -24,6 +24,12 @@ logger = get_logger(__name__)
 SOURCES_PATH = Path(__file__).resolve().parent / "sources_officielles.yaml"
 # Garde-fou : on n'ingère pas un fichier démesuré (manuels officiels = quelques Mo).
 _TAILLE_MAX = 40 * 1024 * 1024
+# Certains serveurs publics (FAO, gestionnaires de téléchargement) rejettent un
+# client sans User-Agent « navigateur » (403). On se présente comme un navigateur.
+NAVIGATEUR_UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0 Safari/537.36"
+)
 
 
 def charger_sources(chemin: Path = SOURCES_PATH) -> list[dict]:

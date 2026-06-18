@@ -47,6 +47,7 @@ documents:
     url: "https://ars1000.conseilcafecacao.ci/wdocs/ars1000_guide-formation_v1_2023.pdf"
     annee: 2023
     themes: [durabilite, tracabilite, bonnes_pratiques, social, environnement]
+    verify: false  # certificat TLS du serveur invalide (vérification désactivée pour cette source)
 
   - id: programme_cacao_cnra
     source: "CNRA"
@@ -232,3 +233,26 @@ documents:
     url: "https://www.dol.gov/sites/dolgov/files/mclean.elizabeth.f@dol.gov/67_Manuel_formation_producteurs_cacao_productivite.pdf"
     annee: 2017
     themes: [productivite, taille, fertilisation, lutte_integree, recolte]
+
+  # --- Sources additionnelles (FIRCA, ICCO, agroforesterie) ---
+  - id: firca_guide_regeneration
+    source: "FIRCA"
+    titre: "Guide de la régénération des vergers de cacaoyer et de caféier en Côte d'Ivoire"
+    url: "https://observaterra.ci/images/Biblio/Agroforesterie/FIRCA_Guide-regeneration.pdf"
+    annee: 2021
+    themes: [regeneration, replantation, agroforesterie, vieux_vergers, productivite]
+
+  - id: icco_guide_mondial_systemes_culture
+    source: "FAO"
+    titre: "Guide mondial sur les systèmes de culture du cacao (ICCO, français)"
+    url: "https://www.icco.org/wp-content/uploads/B27407-Cocoa-Grower-Guide-French-CFW-v7-interactive.pdf"
+    annee: 2022
+    themes: [systemes_culture, bonnes_pratiques, agroforesterie, sol, ombrage]
+
+  - id: ars1000_agroforesterie
+    source: "Conseil du Café-Cacao"
+    titre: "ARS 1000 — Lignes directrices agroforesterie pour le cacao durable"
+    url: "https://ars1000.conseilcafecacao.ci/wdocs/lignes-directrices-agroforesterie-final-26-12-2023.pdf"
+    annee: 2023
+    themes: [agroforesterie, ombrage, durabilite, environnement]
+    verify: false  # même serveur ARS1000 (certificat TLS invalide)
