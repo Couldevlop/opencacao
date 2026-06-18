@@ -3,10 +3,15 @@
 const $ = (id) => document.getElementById(id);
 
 class NonAutorise extends Error {}
+class TropDeRequetes extends Error {}
 
 async function api(chemin, options) {
   const resp = await fetch(chemin, options);
   if (resp.status === 401) throw new NonAutorise();
+  if (resp.status === 429) {
+    const corps = await resp.json().catch(() => ({}));
+    throw new TropDeRequetes(corps.detail || "Trop de tentatives. Réessayez plus tard.");
+  }
   if (!resp.ok) {
     const corps = await resp.json().catch(() => ({}));
     throw new Error(corps.detail || "Erreur " + resp.status);
@@ -211,8 +216,13 @@ $("login-form").addEventListener("submit", async (e) => {
     $("mot_de_passe").value = "";
     montrerConsole();
   } catch (err) {
-    erreur.textContent =
-      err instanceof NonAutorise ? "Utilisateur ou mot de passe incorrect." : "Service indisponible.";
+    if (err instanceof NonAutorise) {
+      erreur.textContent = "Utilisateur ou mot de passe incorrect.";
+    } else if (err instanceof TropDeRequetes) {
+      erreur.textContent = err.message; // ex. « Trop de tentatives… »
+    } else {
+      erreur.textContent = "Service indisponible.";
+    }
   } finally {
     btn.disabled = false;
     btn.textContent = "Se connecter";

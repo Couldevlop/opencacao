@@ -47,8 +47,10 @@ _COOKIE = "curation_session"
 _DUREE_S = 8 * 3600
 
 # Anti-brute-force du login (OWASP API2) : blocage par IP après N échecs.
+# Seuil tolérant aux fautes de frappe d'un admin légitime, tout en stoppant le
+# brute-force automatisé.
 _LIMITEUR_LOGIN = LimiteurConnexion(
-    max_echecs=int(os.environ.get("CURATION_LOGIN_MAX_ECHECS", "5")),
+    max_echecs=int(os.environ.get("CURATION_LOGIN_MAX_ECHECS", "10")),
     fenetre_s=float(os.environ.get("CURATION_LOGIN_FENETRE_S", "300")),
 )
 
