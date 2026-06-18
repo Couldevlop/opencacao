@@ -8,11 +8,14 @@ from pathlib import Path
 import pytest
 
 from app.services.rag_index_builder import (
+    ajouter_entrees,
     charger_paires,
     construire_entrees,
     detecter_source,
     ecrire_index,
+    filtrer_nouvelles,
     lire_index,
+    lire_textes_indexes,
     paires_nouvelles,
 )
 
@@ -89,6 +92,36 @@ def test_ecrire_index_atomique(tmp_path: Path) -> None:
     assert relu[0]["texte"] == "T"
     # Aucun fichier temporaire résiduel.
     assert not list(cible.parent.glob("*.tmp"))
+
+
+def test_lire_textes_indexes_en_flux(tmp_path: Path) -> None:
+    idx = tmp_path / "i.jsonl"
+    _ecrire_jsonl(
+        idx,
+        [
+            {"texte": "réponse A", "source": "CNRA", "vecteur": [0.1]},
+            {"texte": "réponse B", "source": "", "vecteur": [0.2]},
+        ],
+    )
+    assert lire_textes_indexes(idx) == {"réponse A", "réponse B"}
+    assert lire_textes_indexes(tmp_path / "absent.jsonl") == set()
+
+
+def test_filtrer_nouvelles_contre_textes_connus() -> None:
+    connus = {"déjà là"}
+    paires = [("Qa", "déjà là"), ("Qb", "nouveau"), ("Qc", "nouveau")]
+    assert filtrer_nouvelles(connus, paires) == [("Qb", "nouveau")]
+
+
+def test_ajouter_entrees_append(tmp_path: Path) -> None:
+    idx = tmp_path / "i.jsonl"
+    _ecrire_jsonl(idx, [{"texte": "base", "source": "CNRA", "vecteur": [1.0]}])
+    ajouter_entrees(idx, [{"texte": "ajout", "source": "", "vecteur": [2.0]}])
+    textes = {e["texte"] for e in lire_index(idx)}
+    assert textes == {"base", "ajout"}  # l'existant est conservé
+    # Aucun écrit si rien à ajouter (pas de ligne vide).
+    ajouter_entrees(idx, [])
+    assert len(lire_index(idx)) == 2
 
 
 def test_fusion_additive_ne_reduit_jamais(tmp_path: Path) -> None:

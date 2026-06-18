@@ -102,6 +102,55 @@ def lire_index(chemin: Path) -> list[dict]:
     return entrees
 
 
+def lire_textes_indexes(chemin: Path) -> set[str]:
+    """Lit, en flux, l'ensemble des **réponses** déjà indexées (sans les vecteurs).
+
+    Économe en mémoire : ne charge ni les vecteurs ni le fichier entier — juste le
+    champ ``texte`` de chaque entrée. Sert à dédupliquer un reindex additif sur un
+    gros index (plusieurs dizaines de Mo) sans risque d'OOM.
+
+    Args:
+        chemin: Fichier d'index JSONL.
+
+    Returns:
+        L'ensemble des textes de réponse présents (vide si absent).
+    """
+    textes: set[str] = set()
+    if not chemin.exists():
+        return textes
+    with chemin.open(encoding="utf-8") as handle:
+        for ligne in handle:
+            ligne = ligne.strip()
+            if not ligne:
+                continue
+            try:
+                enr = json.loads(ligne)
+            except json.JSONDecodeError:
+                continue
+            texte = enr.get("texte")
+            if isinstance(texte, str):
+                textes.add(texte.strip())
+    return textes
+
+
+def ajouter_entrees(chemin: Path, entrees: list[dict]) -> None:
+    """Ajoute des entrées en fin d'index (append), sans réécrire l'existant.
+
+    Bien plus économe que de relire puis réécrire tout l'index : O(nouvelles
+    entrées) en mémoire et en E/S.
+
+    Args:
+        chemin: Fichier d'index JSONL.
+        entrees: Entrées ``{"texte", "source", "vecteur"}`` à ajouter.
+    """
+    if not entrees:
+        return
+    chemin.parent.mkdir(parents=True, exist_ok=True)
+    with chemin.open("a", encoding="utf-8") as handle:
+        for entree in entrees:
+            handle.write(json.dumps(entree, ensure_ascii=False) + "\n")
+
+
 def paires_nouvelles(existant: list[dict], paires: list[tuple[str, str]]) -> list[tuple[str, str]]:
     """Filtre les paires dont la réponse n'est pas déjà indexée.
 
@@ -115,7 +164,22 @@ def paires_nouvelles(existant: list[dict], paires: list[tuple[str, str]]) -> lis
     Returns:
         Les couples à indexer (réponse absente de l'index et non dupliquée).
     """
-    connus = {entree["texte"].strip() for entree in existant}
+    return filtrer_nouvelles({entree["texte"].strip() for entree in existant}, paires)
+
+
+def filtrer_nouvelles(
+    textes_connus: set[str], paires: list[tuple[str, str]]
+) -> list[tuple[str, str]]:
+    """Filtre les paires dont la réponse n'est ni connue ni dupliquée.
+
+    Args:
+        textes_connus: Ensemble des réponses déjà indexées.
+        paires: Couples ``(instruction, output)`` candidats.
+
+    Returns:
+        Les couples à indexer (réponse absente de ``textes_connus``, sans doublon).
+    """
+    connus = set(textes_connus)
     nouvelles: list[tuple[str, str]] = []
     for instruction, output in paires:
         if output.strip() in connus:

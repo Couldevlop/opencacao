@@ -29,11 +29,11 @@ from app.curation.k8s import ClusterClient, ClusterIndisponible
 from app.services import guardrails
 from app.services.embeddings import EmbeddingsClient
 from app.services.rag_index_builder import (
+    ajouter_entrees,
     charger_paires,
     construire_entrees,
-    ecrire_index,
-    lire_index,
-    paires_nouvelles,
+    filtrer_nouvelles,
+    lire_textes_indexes,
 )
 
 logger = get_logger(__name__)
@@ -148,19 +148,24 @@ class PipelineService:
             job_id: Identifiant du job à suivre.
         """
         try:
-            existant = lire_index(self._index_path)
+            # Économe en mémoire : on ne charge QUE les réponses déjà indexées
+            # (pas les vecteurs ni le fichier entier) pour dédupliquer, puis on
+            # ajoute les nouvelles entrées en fin de fichier. Indispensable sur un
+            # gros index (dizaines de Mo) avec une console à faible mémoire.
+            textes_connus = lire_textes_indexes(self._index_path)
             paires = charger_paires([self._corpus_cure])
-            nouvelles = paires_nouvelles(existant, paires)
+            nouvelles = filtrer_nouvelles(textes_connus, paires)
+            total_actuel = len(textes_connus)
             await self._jobs.maj(
                 job_id,
-                log=f"{len(nouvelles)} nouveau(x) fait(s) — index actuel : {len(existant)}",
+                log=f"{len(nouvelles)} nouveau(x) fait(s) — index actuel : {total_actuel}",
             )
             if not nouvelles:
                 await self._jobs.maj(
                     job_id,
                     statut="reussi",
                     message="Index déjà à jour (aucun nouveau fait curé).",
-                    details={"ajoutees": 0, "total": len(existant)},
+                    details={"ajoutees": 0, "total": total_actuel},
                 )
                 return
 
@@ -174,9 +179,10 @@ class PipelineService:
                 )
                 return
 
-            entrees = existant + construire_entrees(nouvelles, vecteurs)
-            ecrire_index(self._index_path, entrees)
-            await self._jobs.maj(job_id, log=f"Index écrit : {len(entrees)} entrées")
+            entrees = construire_entrees(nouvelles, vecteurs)
+            ajouter_entrees(self._index_path, entrees)
+            total = total_actuel + len(entrees)
+            await self._jobs.maj(job_id, log=f"{len(entrees)} entrée(s) ajoutée(s) — total {total}")
 
             try:
                 cluster = self._cluster_factory()
@@ -187,11 +193,11 @@ class PipelineService:
                     job_id,
                     statut="echec",
                     message=(
-                        f"Index reconstruit (+{len(nouvelles)}, {len(entrees)} au total) "
+                        f"Index reconstruit (+{len(entrees)}, {total} au total) "
                         f"mais redémarrage de l'API échoué : {exc}. "
                         "Relancez le rollout manuellement."
                     ),
-                    details={"ajoutees": len(nouvelles), "total": len(entrees)},
+                    details={"ajoutees": len(entrees), "total": total},
                 )
                 return
 
@@ -199,10 +205,10 @@ class PipelineService:
                 job_id,
                 statut="reussi",
                 message=(
-                    f"RAG reconstruit : +{len(nouvelles)} fait(s), "
-                    f"{len(entrees)} au total. API redémarrée (sans coupure)."
+                    f"RAG reconstruit : +{len(entrees)} fait(s), "
+                    f"{total} au total. API redémarrée (sans coupure)."
                 ),
-                details={"ajoutees": len(nouvelles), "total": len(entrees)},
+                details={"ajoutees": len(entrees), "total": total},
             )
         except Exception as exc:  # noqa: BLE001 - journalisé, statut d'échec propre
             # OWASP : on journalise le détail, on n'expose qu'un message générique.

@@ -160,7 +160,7 @@ async def test_reindex_erreur_inattendue(tmp_path: Path, monkeypatch) -> None:
     def boom(_chemin):
         raise RuntimeError("disque cassé")
 
-    monkeypatch.setattr(pipeline_module, "lire_index", boom)
+    monkeypatch.setattr(pipeline_module, "lire_textes_indexes", boom)
     job = await jobs.creer("rag_reindex")
 
     await service.reindexer_rag(job["id"])
