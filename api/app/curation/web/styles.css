@@ -13,6 +13,10 @@
   --serif: Georgia, "Times New Roman", serif;
 }
 * { box-sizing: border-box; }
+/* L'attribut `hidden` doit toujours l'emporter : sans cela, une règle de classe
+   comme `.login-wrap { display: flex }` masque l'effet de `hidden` et l'écran de
+   connexion reste affiché par-dessus la console après login. */
+[hidden] { display: none !important; }
 body {
   margin: 0;
   font: 15px/1.55 system-ui, sans-serif;
