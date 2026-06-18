@@ -41,6 +41,39 @@ def test_store_enregistrer_lister_supprimer(tmp_path: Path) -> None:
     assert store.supprimer("guide.txt") is False  # déjà absent
 
 
+def test_extraire_html(tmp_path: Path) -> None:
+    from app.curation.documents import extraire_texte
+
+    page = tmp_path / "page.html"
+    page.write_text(
+        "<html><head><title>x</title><style>.a{}</style></head>"
+        "<body><script>var a=1;</script><h1>Coop&eacute;rative</h1>"
+        "<p>Le cacao en C&ocirc;te d'Ivoire.</p></body></html>",
+        encoding="utf-8",
+    )
+    texte = extraire_texte(page)
+    assert "Coopérative" in texte  # entités décodées
+    assert "Le cacao" in texte
+    assert "var a=1" not in texte  # script ignoré
+    assert ".a{}" not in texte  # style ignoré
+
+
+def test_extraits_inclut_html(tmp_path: Path) -> None:
+    store = DocumentStore(tmp_path / "documents")
+    contenu = "<html><body><p>" + ("Le cacaoyer aime l'ombre. " * 12) + "</p></body></html>"
+    store.enregistrer("page.html", contenu.encode("utf-8"))
+    extraits = store.extraits()
+    assert extraits and extraits[0][0] == "page.html"
+
+
+def test_store_existe_prefixe(tmp_path: Path) -> None:
+    store = DocumentStore(tmp_path / "documents")
+    assert store.existe_prefixe("manuel") is False
+    store.enregistrer("manuel.pdf", b"%PDF")
+    assert store.existe_prefixe("manuel") is True  # quel que soit le format
+    assert store.existe_prefixe("autre") is False
+
+
 def test_store_existe(tmp_path: Path) -> None:
     store = DocumentStore(tmp_path / "documents")
     assert store.existe("guide.txt") is False

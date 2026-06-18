@@ -334,7 +334,8 @@ body { background: linear-gradient(180deg, #f7f4ef 0%, #f2ede4 100%); }
 /* ====================================================================
    Mise en page avec barre latérale gauche (menu Curation / Pipeline)
    ==================================================================== */
-.layout { display: flex; align-items: flex-start; max-width: 1140px; margin: 0 auto; }
+/* Pleine largeur : la barre latérale est collée à l'extrême gauche. */
+.layout { display: flex; align-items: stretch; width: 100%; }
 .sidebar {
   position: sticky;
   top: 51px;
@@ -374,9 +375,9 @@ body { background: linear-gradient(180deg, #f7f4ef 0%, #f2ede4 100%); }
   font-size: 12px;
   font-weight: 700;
 }
-.contenu { flex: 1; min-width: 0; padding: 0 4px 36px; }
-/* Dans la barre latérale, le contenu n'est plus centré horizontalement. */
-.contenu .pipeline, .contenu .liste { margin: 18px 0 0; max-width: 880px; }
+.contenu { flex: 1; min-width: 0; padding: 0 16px 36px; }
+/* Contenu lisible, centré dans l'espace restant à droite de la barre. */
+.contenu .pipeline, .contenu .liste { margin: 18px auto 0; max-width: 880px; }
 
 @media (max-width: 760px) {
   .layout { flex-direction: column; }

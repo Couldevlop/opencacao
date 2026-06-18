@@ -256,3 +256,32 @@ documents:
     annee: 2023
     themes: [agroforesterie, ombrage, durabilite, environnement]
     verify: false  # même serveur ARS1000 (certificat TLS invalide)
+
+  # --- Coopératives & organisation de l'encadrement (pages web, ingérées en HTML) ---
+  - id: anader_presentation
+    source: "ANADER"
+    titre: "ANADER — Présentation et missions"
+    url: "https://www.anader.ci/presentation/"
+    annee: 2024
+    themes: [encadrement, appui_conseil, organisation, missions]
+
+  - id: anader_directions_regionales
+    source: "ANADER"
+    titre: "ANADER — Directions régionales"
+    url: "https://www.anader.ci/directions-regionales/"
+    annee: 2024
+    themes: [organisation, directions_regionales, zones, decoupage]
+
+  - id: anader_reorganisation_zones
+    source: "ANADER"
+    titre: "ANADER — Réorganisation spatiale : 10 DR et 60 zones"
+    url: "https://www.anader.ci/reorganisation-spatiale-de-lanader-tout-savoir-sur-les-10-dr-et-les-60-zones/"
+    annee: 2024
+    themes: [organisation, zones, directions_regionales, decoupage, agents]
+
+  - id: icoopaci_listing_cooperatives
+    source: "ANADER"
+    titre: "I-COOP — Listing des coopératives agricoles de Côte d'Ivoire"
+    url: "http://icoopaci.ci/visiteur.php"
+    annee: 2024
+    themes: [cooperatives, organisations_producteurs, annuaire]

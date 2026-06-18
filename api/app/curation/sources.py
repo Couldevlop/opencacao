@@ -63,27 +63,47 @@ def charger_sources(chemin: Path = SOURCES_PATH) -> list[dict]:
     return documents
 
 
-def nom_fichier(doc: dict) -> str:
-    """Déduit un nom de fichier pour un document (``<id>`` + extension de l'URL)."""
-    suffixe = Path(httpx.URL(doc["url"]).path).suffix.lower()
-    if suffixe not in (".pdf", ".txt", ".md"):
-        suffixe = ".pdf"
-    return f"{doc['id']}{suffixe}"
+# Type de contenu HTTP -> extension de fichier.
+_TYPE_EXT = {
+    "application/pdf": ".pdf",
+    "text/html": ".html",
+    "application/xhtml+xml": ".html",
+    "text/plain": ".txt",
+    "text/markdown": ".md",
+}
 
 
-async def telecharger(client: httpx.AsyncClient, url: str) -> bytes | None:
-    """Télécharge un document en flux. Retourne les octets, ou None en cas d'échec.
+def extension_pour(url: str, content_type: str | None) -> str:
+    """Déduit l'extension d'un document depuis le type de contenu, sinon l'URL.
+
+    Args:
+        url: URL téléchargée.
+        content_type: En-tête ``Content-Type`` de la réponse, le cas échéant.
+
+    Returns:
+        Une extension de fichier (``.pdf``, ``.html``…) ou ``.bin`` si inconnue.
+    """
+    ct = (content_type or "").split(";")[0].strip().lower()
+    if ct in _TYPE_EXT:
+        return _TYPE_EXT[ct]
+    suffixe = Path(httpx.URL(url).path).suffix.lower()
+    return suffixe if suffixe in (".pdf", ".txt", ".md", ".html", ".htm") else ".bin"
+
+
+async def telecharger(client: httpx.AsyncClient, url: str) -> tuple[bytes, str | None] | None:
+    """Télécharge un document en flux. Retourne (octets, content-type), ou None si échec.
 
     Args:
         client: Client HTTP asynchrone.
         url: URL du document.
 
     Returns:
-        Le contenu binaire, ou ``None`` si l'URL est injoignable ou trop volumineuse.
+        ``(contenu, content_type)``, ou ``None`` si injoignable ou trop volumineux.
     """
     try:
         async with client.stream("GET", url) as reponse:
             reponse.raise_for_status()
+            content_type = reponse.headers.get("content-type")
             morceaux: list[bytes] = []
             total = 0
             async for bloc in reponse.aiter_bytes():
@@ -92,7 +112,7 @@ async def telecharger(client: httpx.AsyncClient, url: str) -> bytes | None:
                     logger.warning("source_trop_volumineuse", url=url)
                     return None
                 morceaux.append(bloc)
-            return b"".join(morceaux)
+            return b"".join(morceaux), content_type
     except httpx.HTTPError as exc:
         logger.warning("source_telechargement_echec", url=url, error=str(exc))
         return None

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import httpx
 
-from app.curation.sources import charger_sources, nom_fichier, telecharger
+from app.curation.sources import charger_sources, extension_pour, telecharger
 
 
 def test_charger_sources(tmp_path: Path) -> None:
@@ -29,17 +29,25 @@ def test_charger_sources_absent(tmp_path: Path) -> None:
     assert charger_sources(tmp_path / "absent.yaml") == []
 
 
-def test_nom_fichier() -> None:
-    assert nom_fichier({"id": "doc1", "url": "http://x/y.pdf"}) == "doc1.pdf"
-    assert nom_fichier({"id": "doc2", "url": "http://x/page"}) == "doc2.pdf"  # extension par défaut
-    assert nom_fichier({"id": "doc3", "url": "http://x/n.txt"}) == "doc3.txt"
+def test_extension_pour() -> None:
+    # Priorité au type de contenu HTTP.
+    assert extension_pour("http://x/page", "text/html; charset=utf-8") == ".html"
+    assert extension_pour("http://x/doc", "application/pdf") == ".pdf"
+    # Sinon repli sur l'extension de l'URL.
+    assert extension_pour("http://x/y.pdf", None) == ".pdf"
+    assert extension_pour("http://x/page", None) == ".bin"  # inconnu -> rejeté ensuite
 
 
 async def test_telecharger_ok() -> None:
-    transport = httpx.MockTransport(lambda req: httpx.Response(200, content=b"%PDF-1.4 ..."))
+    transport = httpx.MockTransport(
+        lambda req: httpx.Response(
+            200, content=b"%PDF-1.4 ...", headers={"content-type": "application/pdf"}
+        )
+    )
     async with httpx.AsyncClient(transport=transport) as client:
-        donnees = await telecharger(client, "http://ex/a.pdf")
+        donnees, ct = await telecharger(client, "http://ex/a.pdf")
     assert donnees == b"%PDF-1.4 ..."
+    assert ct == "application/pdf"
 
 
 async def test_telecharger_echec_http() -> None:

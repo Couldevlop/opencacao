@@ -29,7 +29,12 @@ from app.core.logging import get_logger
 from app.curation.documents import DocumentInvalide, DocumentStore
 from app.curation.jobs import JobsRegistry
 from app.curation.k8s import ClusterClient, ClusterIndisponible
-from app.curation.sources import NAVIGATEUR_UA, charger_sources, nom_fichier, telecharger
+from app.curation.sources import (
+    NAVIGATEUR_UA,
+    charger_sources,
+    extension_pour,
+    telecharger,
+)
 from app.services import guardrails
 from app.services.embeddings import EmbeddingsClient
 from app.services.rag_index_builder import (
@@ -401,17 +406,19 @@ class PipelineService:
 
             try:
                 for i, doc in enumerate(sources, start=1):
-                    nom = nom_fichier(doc)
-                    if self._documents.existe(nom):
+                    if self._documents.existe_prefixe(doc["id"]):
                         deja += 1
                         continue
                     await self._jobs.maj(job_id, log=f"{i}/{len(sources)} {doc['titre'][:60]}")
-                    donnees = await telecharger(
+                    resultat = await telecharger(
                         client_pour(bool(doc.get("verify", True))), doc["url"]
                     )
-                    if not donnees:
+                    if not resultat:
                         echoues += 1
                         continue
+                    donnees, content_type = resultat
+                    # Nom final selon le type réel (PDF, HTML, texte…).
+                    nom = f"{doc['id']}{extension_pour(doc['url'], content_type)}"
                     try:
                         self._documents.enregistrer(nom, donnees)
                         telecharges += 1

@@ -10,14 +10,15 @@ from __future__ import annotations
 
 import os
 import re
+from html.parser import HTMLParser
 from pathlib import Path
 
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Formats acceptés à l'upload.
-EXTENSIONS_OK = (".pdf", ".txt", ".md", ".csv")
+# Formats acceptés (upload + recherche). Le HTML est extrait en texte (stdlib).
+EXTENSIONS_OK = (".pdf", ".txt", ".md", ".csv", ".html", ".htm")
 # Découpage des extraits : taille cible et chevauchement (caractères).
 _TAILLE_EXTRAIT = 700
 _CHEVAUCHEMENT = 100
@@ -95,10 +96,43 @@ def _extraire_pdf(chemin: Path) -> str:
     return "\n".join((page.extract_text() or "") for page in lecteur.pages)
 
 
+class _ExtracteurHTML(HTMLParser):
+    """Extrait le texte visible d'une page HTML (ignore script/style)."""
+
+    _IGNORES = {"script", "style", "noscript", "head", "nav", "footer", "svg"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.morceaux: list[str] = []
+        self._ignore = 0
+
+    def handle_starttag(self, tag: str, attrs: object) -> None:
+        if tag in self._IGNORES:
+            self._ignore += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self._IGNORES and self._ignore:
+            self._ignore -= 1
+
+    def handle_data(self, data: str) -> None:
+        if not self._ignore and data.strip():
+            self.morceaux.append(data.strip())
+
+
+def _extraire_html(chemin: Path) -> str:
+    """Extrait le texte visible d'une page HTML (stdlib, sans dépendance)."""
+    parseur = _ExtracteurHTML()
+    parseur.feed(chemin.read_text(encoding="utf-8", errors="ignore"))
+    return "\n".join(parseur.morceaux)
+
+
 def extraire_texte(chemin: Path) -> str:
-    """Extrait le texte brut d'un document (PDF via pypdf, sinon lecture UTF-8)."""
-    if chemin.suffix.lower() == ".pdf":
+    """Extrait le texte brut d'un document (PDF via pypdf, HTML nettoyé, sinon UTF-8)."""
+    suffixe = chemin.suffix.lower()
+    if suffixe == ".pdf":
         return _extraire_pdf(chemin)
+    if suffixe in (".html", ".htm"):
+        return _extraire_html(chemin)
     return chemin.read_text(encoding="utf-8", errors="ignore")
 
 
@@ -157,6 +191,16 @@ class DocumentStore:
             return (self._dossier / nom_sur(nom)).is_file()
         except DocumentInvalide:
             return False
+
+    def existe_prefixe(self, ident: str) -> bool:
+        """Indique si un document ``<ident>.*`` existe (quel que soit le format).
+
+        Sert à l'idempotence de la recherche : le nom final dépend du type de
+        contenu (PDF/HTML), inconnu avant téléchargement.
+        """
+        if not self._dossier.is_dir():
+            return False
+        return any(p.is_file() and p.stem == ident for p in self._dossier.iterdir())
 
     def supprimer(self, nom: str) -> bool:
         """Supprime un document. Retourne True s'il existait."""
