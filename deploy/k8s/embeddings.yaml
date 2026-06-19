@@ -33,8 +33,15 @@ spec:
             - "0.0.0.0"
             - "--port"
             - "8001"
+            # Contexte/batch suffisants pour vectoriser des lots d'extraits (la
+            # constitution envoie plusieurs extraits par requête). -c 512 faisait
+            # échouer (500) les lots dépassant 512 tokens.
             - "-c"
-            - "512"
+            - "4096"
+            - "-b"
+            - "4096"
+            - "-ub"
+            - "4096"
             - "-t"
             - "2"
           ports:
