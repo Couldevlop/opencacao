@@ -376,6 +376,63 @@ function drapeau(code) {
   );
 }
 
+const PALETTE = [
+  "#2f9e44", "#f77f00", "#1971c2", "#6f4e37", "#9c36b5",
+  "#e8590c", "#0c8599", "#a61e4d", "#5c940d", "#868e96",
+];
+const SVGNS = "http://www.w3.org/2000/svg";
+
+/** Dessine un donut SVG. `segments` = [{label, n, ...}]. onSurvol(seg|null) au survol. */
+function dessinerDonut(svg, segments, onSurvol) {
+  svg.innerHTML = "";
+  const total = segments.reduce((s, x) => s + x.n, 0);
+  const fond = document.createElementNS(SVGNS, "circle");
+  fond.setAttribute("cx", "21");
+  fond.setAttribute("cy", "21");
+  fond.setAttribute("r", "15.915");
+  fond.setAttribute("fill", "transparent");
+  fond.setAttribute("stroke", "#eee");
+  fond.setAttribute("stroke-width", "6");
+  svg.appendChild(fond);
+  if (!total) return;
+  let acc = 0;
+  segments.forEach((seg, i) => {
+    const pct = (100 * seg.n) / total;
+    const arc = document.createElementNS(SVGNS, "circle");
+    arc.setAttribute("cx", "21");
+    arc.setAttribute("cy", "21");
+    arc.setAttribute("r", "15.915");
+    arc.setAttribute("fill", "transparent");
+    arc.setAttribute("stroke", PALETTE[i % PALETTE.length]);
+    arc.setAttribute("stroke-width", "6");
+    arc.setAttribute("stroke-dasharray", `${pct} ${100 - pct}`);
+    arc.setAttribute("stroke-dashoffset", String((25 - acc + 100) % 100));
+    arc.style.cursor = "pointer";
+    if (onSurvol) {
+      arc.addEventListener("mouseenter", () => onSurvol(seg));
+      arc.addEventListener("mouseleave", () => onSurvol(null));
+    }
+    svg.appendChild(arc);
+    acc += pct;
+  });
+}
+
+function rendreLegende(conteneur, segments) {
+  conteneur.innerHTML = "";
+  const total = segments.reduce((s, x) => s + x.n, 0) || 1;
+  segments.forEach((seg, i) => {
+    const item = document.createElement("div");
+    item.className = "legende-item";
+    const puce = document.createElement("span");
+    puce.className = "puce";
+    puce.style.background = PALETTE[i % PALETTE.length];
+    const txt = document.createElement("span");
+    txt.textContent = `${seg.label} — ${seg.n} (${Math.round((100 * seg.n) / total)}%)`;
+    item.append(puce, txt);
+    conteneur.appendChild(item);
+  });
+}
+
 function carteStat(libelle, valeur) {
   const d = document.createElement("div");
   d.className = "carte-stat";
@@ -421,6 +478,26 @@ async function chargerStats() {
     col.appendChild(barre);
     chart.appendChild(col);
   });
+
+  // Donut par continent (survol -> détail des pays).
+  const continents = (a.par_continent || []).map((c) => ({ label: c.continent, n: c.n, pays: c.pays }));
+  const detail = $("detail-continent");
+  dessinerDonut($("donut-continent"), continents, (seg) => {
+    if (!seg) {
+      detail.textContent = "Survolez un continent pour voir les pays.";
+      return;
+    }
+    const liste = (seg.pays || [])
+      .map((p) => `${drapeau(p.pays)} ${p.pays || "??"} : ${p.n}`)
+      .join(" · ");
+    detail.textContent = `${seg.label} (${seg.n}) — ${liste}`;
+  });
+  rendreLegende($("legende-continent"), continents);
+
+  // Camembert par canal (interaction).
+  const canaux = (a.par_canal || []).map((c) => ({ label: c.canal, n: c.n }));
+  dessinerDonut($("donut-canal"), canaux, null);
+  rendreLegende($("legende-canal"), canaux);
 
   const pl = $("pays-liste");
   pl.innerHTML = "";

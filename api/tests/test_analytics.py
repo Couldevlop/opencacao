@@ -11,11 +11,11 @@ from app.curation.analytics import agreger, charger_visites
 def test_agreger_par_periode_et_pays() -> None:
     maintenant = datetime(2026, 6, 19, 12, 0, tzinfo=UTC)
     visites = [
-        {"ts": "2026-06-19T08:00:00+00:00", "pays": "CI"},
-        {"ts": "2026-06-19T09:00:00+00:00", "pays": "CI"},
-        {"ts": "2026-06-15T09:00:00+00:00", "pays": "FR"},  # semaine + mois + année
-        {"ts": "2026-01-01T00:00:00+00:00", "pays": ""},  # année seulement
-        {"ts": "2025-12-31T00:00:00+00:00", "pays": "FR"},  # année précédente
+        {"ts": "2026-06-19T08:00:00+00:00", "pays": "CI", "continent": "AF", "canal": "web"},
+        {"ts": "2026-06-19T09:00:00+00:00", "pays": "CI", "continent": "AF", "canal": "sms"},
+        {"ts": "2026-06-15T09:00:00+00:00", "pays": "FR", "continent": "EU", "canal": "web"},
+        {"ts": "2026-01-01T00:00:00+00:00", "pays": "", "continent": "", "canal": "web"},
+        {"ts": "2025-12-31T00:00:00+00:00", "pays": "FR", "continent": "EU", "canal": "web"},
         {"ts": "pas une date"},  # ignoré
     ]
     a = agreger(visites, maintenant)
@@ -30,6 +30,15 @@ def test_agreger_par_periode_et_pays() -> None:
     assert pays["??"] == 1  # pays vide -> ??
     assert len(a["par_jour"]) == 30
     assert a["par_jour"][-1] == {"date": "2026-06-19", "n": 2}  # dernier jour = aujourd'hui
+    # Par continent (le plus visité d'abord) + détail pays.
+    continents = {c["continent"]: c for c in a["par_continent"]}
+    assert continents["Afrique"]["n"] == 2
+    assert continents["Europe"]["n"] == 2
+    assert {p["pays"] for p in continents["Afrique"]["pays"]} == {"CI"}
+    # Par canal.
+    canal = {c["canal"]: c["n"] for c in a["par_canal"]}
+    assert canal["web"] == 4
+    assert canal["sms"] == 1
 
 
 def test_charger_visites(tmp_path: Path) -> None:

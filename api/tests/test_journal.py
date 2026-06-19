@@ -26,12 +26,13 @@ async def test_enregistre_interaction_ecrit_une_ligne(tmp_path: Path) -> None:
 
 
 async def test_enregistre_visite(tmp_path: Path) -> None:
-    """Une visite est journalisée (pays + canal + ts), sans IP, même si log_questions=off."""
+    """Une visite est journalisée (pays + continent + canal + ts), sans IP."""
     journal = JournalFichier(tmp_path, actif=False, actif_visites=True)
-    await journal.enregistrer_visite("CI", "web")
+    await journal.enregistrer_visite("CI", "AF", "web")
     lignes = (tmp_path / "visites.jsonl").read_text(encoding="utf-8").splitlines()
     enr = json.loads(lignes[0])
     assert enr["pays"] == "CI"
+    assert enr["continent"] == "AF"
     assert enr["canal"] == "web"
     assert "ts" in enr
     assert "ip" not in enr  # anonymisé
@@ -40,15 +41,16 @@ async def test_enregistre_visite(tmp_path: Path) -> None:
 async def test_visite_desactivee(tmp_path: Path) -> None:
     """Si l'analytique est désactivée, rien n'est écrit."""
     journal = JournalFichier(tmp_path, actif=True, actif_visites=False)
-    await journal.enregistrer_visite("CI", "web")
+    await journal.enregistrer_visite("CI", "AF", "web")
     assert not (tmp_path / "visites.jsonl").exists()
 
 
 async def test_visite_pays_vide_devient_inconnu(tmp_path: Path) -> None:
     journal = JournalFichier(tmp_path, actif=False, actif_visites=True)
-    await journal.enregistrer_visite("", "sms")
+    await journal.enregistrer_visite("", "", "sms")
     enr = json.loads((tmp_path / "visites.jsonl").read_text(encoding="utf-8").splitlines()[0])
     assert enr["pays"] == "??"
+    assert enr["continent"] == "??"
 
 
 async def test_enregistre_feedback(tmp_path: Path) -> None:

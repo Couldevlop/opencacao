@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
     <title>OpenCacao — Console de curation</title>
-    <link rel="stylesheet" href="styles.css?v=12" />
+    <link rel="stylesheet" href="styles.css?v=13" />
   </head>
   <body>
     <div class="flag-strip" aria-hidden="true"></div>
@@ -148,9 +148,28 @@
         <section class="stats-board">
           <h2 class="pipeline-titre">📊 Visites de l'outil</h2>
           <div class="cartes-stats" id="cartes-stats"></div>
+
+          <div class="graphes">
+            <div class="graphe-bloc">
+              <h3 class="jobs-titre">Visites par continent</h3>
+              <div class="donut-wrap">
+                <svg class="donut" id="donut-continent" viewBox="0 0 42 42" aria-label="Répartition par continent"></svg>
+                <p class="donut-detail" id="detail-continent">Survolez un continent pour voir les pays.</p>
+              </div>
+              <div class="legende" id="legende-continent"></div>
+            </div>
+            <div class="graphe-bloc">
+              <h3 class="jobs-titre">Interactions par canal</h3>
+              <div class="donut-wrap">
+                <svg class="donut" id="donut-canal" viewBox="0 0 42 42" aria-label="Répartition par canal"></svg>
+              </div>
+              <div class="legende" id="legende-canal"></div>
+            </div>
+          </div>
+
           <h3 class="jobs-titre">30 derniers jours</h3>
           <div class="chart" id="chart-jours"></div>
-          <h3 class="jobs-titre">Par pays</h3>
+          <h3 class="jobs-titre">Détail par pays</h3>
           <div class="pays-liste" id="pays-liste"></div>
         </section>
       </div>
@@ -177,6 +196,6 @@
       </article>
     </template>
 
-    <script type="module" src="app.js?v=12"></script>
+    <script type="module" src="app.js?v=13"></script>
   </body>
 </html>

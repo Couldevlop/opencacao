@@ -9,9 +9,21 @@ from __future__ import annotations
 
 import json
 import os
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+# Codes continent GeoLite2 -> libellés français.
+CONTINENTS = {
+    "AF": "Afrique",
+    "EU": "Europe",
+    "NA": "Amérique du Nord",
+    "SA": "Amérique du Sud",
+    "AS": "Asie",
+    "OC": "Océanie",
+    "AN": "Antarctique",
+    "??": "Inconnu",
+}
 
 
 def _chemin_visites() -> Path:
@@ -75,15 +87,41 @@ def agreger(visites: list[dict], maintenant: datetime, jours_serie: int = 30) ->
         jour = (aujourdhui - timedelta(days=i)).isoformat()
         serie.append({"date": jour, "n": par_jour_compteur.get(jour, 0)})
 
-    # Répartition par pays (top), puis par mois.
-    par_pays = Counter(str(v.get("pays") or "??") for v in visites if _date(v) is not None)
+    valides = [v for v in visites if _date(v) is not None]
+
+    # Répartition par pays (top) et par mois.
+    par_pays = Counter(str(v.get("pays") or "??") for v in valides)
     par_mois = Counter(f"{d.year:04d}-{d.month:02d}" for d in dates)
+
+    # Répartition par canal (interaction : web / sms / whatsapp).
+    par_canal = Counter(str(v.get("canal") or "?") for v in valides)
+
+    # Répartition par CONTINENT, avec le détail des pays (pour le survol).
+    continents: dict[str, Counter] = defaultdict(Counter)
+    for v in valides:
+        code = str(v.get("continent") or "??")
+        continents[code][str(v.get("pays") or "??")] += 1
+    par_continent = sorted(
+        (
+            {
+                "code": code,
+                "continent": CONTINENTS.get(code, code),
+                "n": sum(pays.values()),
+                "pays": [{"pays": p, "n": n} for p, n in pays.most_common()],
+            }
+            for code, pays in continents.items()
+        ),
+        key=lambda c: c["n"],
+        reverse=True,
+    )
 
     return {
         **cartes,
         "par_jour": serie,
         "par_pays": [{"pays": p, "n": n} for p, n in par_pays.most_common(20)],
         "par_mois": [{"mois": m, "n": par_mois[m]} for m in sorted(par_mois)],
+        "par_canal": [{"canal": c, "n": n} for c, n in par_canal.most_common()],
+        "par_continent": par_continent,
     }
 
 

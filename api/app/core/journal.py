@@ -51,13 +51,21 @@ class JournalFichier:
             actif_visites=settings.log_visites,
         )
 
-    async def enregistrer_visite(self, pays: str, canal: str) -> None:
-        """Enregistre une visite anonymisée (horodatage + pays + canal, jamais d'IP)."""
+    async def enregistrer_visite(self, pays: str, continent: str, canal: str) -> None:
+        """Enregistre une visite anonymisée (horodatage + pays + continent + canal).
+
+        Jamais d'IP : seuls le pays/continent (résolus en local) et le canal sont gardés.
+        """
         if not self._actif_visites:
             return
         await self._ecrire(
             self._FICHIER_VISITES,
-            {"ts": datetime.now(UTC).isoformat(), "pays": pays or "??", "canal": canal},
+            {
+                "ts": datetime.now(UTC).isoformat(),
+                "pays": pays or "??",
+                "continent": continent or "??",
+                "canal": canal,
+            },
         )
 
     async def enregistrer_interaction(

@@ -54,22 +54,31 @@ class GeoLocalisateur:
             logger.warning("geoip_indisponible", error=str(exc))
         return self._reader
 
+    def _enregistrement(self, ip: str) -> dict:
+        """Retourne l'enregistrement GeoLite2 de l'IP, ou {} si indisponible/invalide."""
+        lecteur = self._lecteur()
+        if lecteur is None or not ip:
+            return {}
+        try:
+            enr = lecteur.get(ip)
+        except (ValueError, TypeError):
+            return {}  # IP invalide (ex. "testclient", IP interne)
+        return enr if isinstance(enr, dict) else {}
+
     def pays(self, ip: str) -> str:
-        """Retourne le code pays ISO de l'IP, ou "" si inconnu/indisponible.
+        """Retourne le code pays ISO de l'IP, ou "" si inconnu/indisponible."""
+        return str(self._enregistrement(ip).get("country", {}).get("iso_code", "") or "")
+
+    def localiser(self, ip: str) -> tuple[str, str]:
+        """Retourne (code pays ISO, code continent) de l'IP, "" si inconnu.
 
         Args:
             ip: Adresse IP du visiteur (jamais stockée).
 
         Returns:
-            Le code pays ISO-3166 alpha-2 (majuscules), ou une chaîne vide.
+            Un couple ``(pays, continent)`` — codes ISO pays + continent (AF, EU…).
         """
-        lecteur = self._lecteur()
-        if lecteur is None or not ip:
-            return ""
-        try:
-            enr = lecteur.get(ip)
-        except (ValueError, TypeError):
-            return ""  # IP invalide (ex. "testclient", IP interne)
-        if not isinstance(enr, dict):
-            return ""
-        return str(enr.get("country", {}).get("iso_code", "") or "")
+        enr = self._enregistrement(ip)
+        pays = str(enr.get("country", {}).get("iso_code", "") or "")
+        continent = str(enr.get("continent", {}).get("code", "") or "")
+        return pays, continent

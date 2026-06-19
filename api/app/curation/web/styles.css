@@ -381,6 +381,24 @@ body { background: linear-gradient(180deg, #f7f4ef 0%, #f2ede4 100%); }
   font-size: 14px;
 }
 .pays-n { font-weight: 700; color: var(--cocoa-dark); }
+
+/* Graphes (donuts continent + canal) */
+.graphes { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 4px 0 16px; }
+@media (max-width: 680px) { .graphes { grid-template-columns: 1fr; } }
+.graphe-bloc {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 6px rgba(60, 40, 20, 0.06);
+}
+.graphe-bloc .jobs-titre { margin-top: 0; }
+.donut-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.donut { width: 160px; height: 160px; }
+.donut-detail { font-size: 12.5px; color: var(--muted); text-align: center; min-height: 34px; margin: 0; }
+.legende { margin-top: 10px; display: grid; gap: 5px; }
+.legende-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink); }
+.legende-item .puce { width: 11px; height: 11px; border-radius: 3px; flex: none; }
 .vue { animation: apparition .15s ease; }
 @keyframes apparition { from { opacity: 0; } to { opacity: 1; } }
 

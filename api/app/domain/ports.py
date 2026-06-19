@@ -80,6 +80,6 @@ class JournalPort(Protocol):
         """Enregistre un retour utilisateur (👍/👎) pour une interaction."""
         ...
 
-    async def enregistrer_visite(self, pays: str, canal: str) -> None:
-        """Enregistre une visite anonymisée (pays + canal, jamais d'IP)."""
+    async def enregistrer_visite(self, pays: str, continent: str, canal: str) -> None:
+        """Enregistre une visite anonymisée (pays + continent + canal, jamais d'IP)."""
         ...

@@ -20,10 +20,10 @@ router = APIRouter(prefix="/v1", tags=["chat"])
 async def _journaliser_visite(
     request: Request, client_ip: str, canal: str, journal: JournalPort
 ) -> None:
-    """Enregistre une visite anonymisée (pays résolu localement, IP jamais stockée)."""
+    """Enregistre une visite anonymisée (pays/continent résolus localement, IP non stockée)."""
     geo = getattr(request.app.state, "geo", None)
-    pays = geo.pays(client_ip) if geo is not None else ""
-    await journal.enregistrer_visite(pays, canal)
+    pays, continent = geo.localiser(client_ip) if geo is not None else ("", "")
+    await journal.enregistrer_visite(pays, continent, canal)
 
 
 @router.post("/chat", response_model=ChatResponse)
