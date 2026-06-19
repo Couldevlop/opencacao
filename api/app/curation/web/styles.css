@@ -417,3 +417,18 @@ body { background: linear-gradient(180deg, #f7f4ef 0%, #f2ede4 100%); }
 }
 .job-type { font-weight: 600; color: var(--cocoa-dark); font-size: 13px; }
 .job-msg { grid-column: 1 / -1; margin: 4px 0 0; font-size: 13px; color: var(--ink); }
+.progress {
+  grid-column: 1 / -1;
+  height: 9px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+.progress-jauge {
+  height: 100%;
+  background: linear-gradient(90deg, var(--ci-green), var(--cocoa));
+  transition: width 0.4s ease;
+}
+.progress-pct { grid-column: 1 / -1; font-size: 12px; color: var(--muted); margin-top: 3px; }

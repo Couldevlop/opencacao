@@ -128,6 +128,7 @@ const STATUT_LIB = {
   echec: { txt: "✕ échec", cls: "err" },
 };
 const TYPE_LIB = {
+  recherche_sources: "Recherche sources",
   rag_constitution: "Constitution RAG",
   rag_reindex: "RAG (faits curés)",
   finetuning_prepare: "Fine-tuning",
@@ -144,6 +145,21 @@ function ligneJob(job) {
   msg.className = "job-msg";
   msg.textContent = job.message || "…";
   div.appendChild(msg);
+  // Barre de progression (tâches longues en cours : recherche, constitution).
+  const d = job.details || {};
+  if (job.statut === "en_cours" && d.objectif) {
+    const pct = Math.min(100, Math.round((100 * (d.courant || 0)) / d.objectif));
+    const barre = document.createElement("div");
+    barre.className = "progress";
+    const jauge = document.createElement("div");
+    jauge.className = "progress-jauge";
+    jauge.style.width = pct + "%";
+    barre.appendChild(jauge);
+    const etiquette = document.createElement("span");
+    etiquette.className = "progress-pct";
+    etiquette.textContent = `${pct}% (${d.courant || 0}/${d.objectif})`;
+    div.append(barre, etiquette);
+  }
   // Procédure d'entraînement (fine-tuning) : affichée telle quelle.
   if (job.details && job.details.procedure) {
     const proc = $("procedure");

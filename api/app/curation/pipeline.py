@@ -397,7 +397,11 @@ class PipelineService:
             ]
             await asyncio.to_thread(ajouter_entrees, self._index_path, entrees)
             ajoutees += len(entrees)
-            await self._jobs.maj(job_id, log=f"indexation {ajoutees}/{len(nouveaux)}")
+            await self._jobs.maj(
+                job_id,
+                log=f"indexation {ajoutees}/{len(nouveaux)}",
+                details={"courant": ajoutees, "objectif": len(nouveaux)},
+            )
         return ajoutees
 
     # --- Étape ① Recherche des sources officielles (téléchargement) ---
@@ -439,7 +443,11 @@ class PipelineService:
                     if self._documents.existe_prefixe(doc["id"]):
                         deja += 1
                         continue
-                    await self._jobs.maj(job_id, log=f"{i}/{len(sources)} {doc['titre'][:60]}")
+                    await self._jobs.maj(
+                        job_id,
+                        log=f"{i}/{len(sources)} {doc['titre'][:60]}",
+                        details={"courant": i, "objectif": len(sources)},
+                    )
                     resultat = await telecharger(
                         client_pour(bool(doc.get("verify", True))), doc["url"]
                     )
