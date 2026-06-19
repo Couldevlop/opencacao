@@ -36,6 +36,7 @@ from app.curation.sources import (
     extension_pour,
     nom_depuis_url,
     telecharger,
+    url_publique_sure,
 )
 from app.services import guardrails
 from app.services.embeddings import EmbeddingsClient
@@ -417,6 +418,10 @@ class PipelineService:
         Raises:
             DocumentInvalide: Si le format/contenu n'est pas exploitable.
         """
+        # Anti-SSRF : refuser les hôtes internes/privés (services du cluster,
+        # métadonnées cloud…). Résolution DNS bloquante -> déportée en thread.
+        if not await asyncio.to_thread(url_publique_sure, url):
+            raise DocumentInvalide("URL non autorisée (hôte interne ou injoignable).")
         # URL fournie explicitement par l'utilisateur (de confiance) : on essaie
         # d'abord avec vérification TLS, puis SANS (de nombreux sites officiels
         # ivoiriens ont un certificat incomplet).

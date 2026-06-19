@@ -379,9 +379,10 @@ async def test_demarrer_recherche_anti_concurrence(tmp_path: Path) -> None:
     assert await service.demarrer_recherche() is None
 
 
-async def test_ajouter_document_url(tmp_path: Path) -> None:
+async def test_ajouter_document_url(tmp_path: Path, monkeypatch) -> None:
     import httpx
 
+    monkeypatch.setattr(pipeline_module, "url_publique_sure", lambda u: True)
     page = b"<html><body><h1>ANADER</h1><p>Le cacao en Cote d'Ivoire.</p></body></html>"
 
     def fab(verifie):
@@ -398,10 +399,11 @@ async def test_ajouter_document_url(tmp_path: Path) -> None:
     assert (tmp_path / "documents" / doc["nom"]).exists()
 
 
-async def test_ajouter_document_url_repli_tls(tmp_path: Path) -> None:
+async def test_ajouter_document_url_repli_tls(tmp_path: Path, monkeypatch) -> None:
     """Sur certificat cassé (vérif TLS), on bascule en non-vérifié et ça passe."""
     import httpx
 
+    monkeypatch.setattr(pipeline_module, "url_publique_sure", lambda u: True)
     appels: list[bool] = []
 
     def fab(verifie):
@@ -422,14 +424,26 @@ async def test_ajouter_document_url_repli_tls(tmp_path: Path) -> None:
     assert appels == [True, False]  # a réessayé sans vérification TLS
 
 
-async def test_ajouter_document_url_injoignable(tmp_path: Path) -> None:
+async def test_ajouter_document_url_injoignable(tmp_path: Path, monkeypatch) -> None:
     import httpx
+
+    monkeypatch.setattr(pipeline_module, "url_publique_sure", lambda u: True)
 
     def fab(verifie):
         return httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(404)))
 
     service, _ = _service(tmp_path, http_factory=fab)
     assert await service.ajouter_document_url("https://x/absent") is None
+
+
+async def test_ajouter_document_url_ssrf_bloque(tmp_path: Path, monkeypatch) -> None:
+    """Une URL interne (SSRF) est refusée avant tout téléchargement."""
+    import pytest
+
+    monkeypatch.setattr(pipeline_module, "url_publique_sure", lambda u: False)
+    service, _ = _service(tmp_path)
+    with pytest.raises(pipeline_module.DocumentInvalide):
+        await service.ajouter_document_url("http://inference:8000/")
 
 
 # --- Préparation fine-tuning ---

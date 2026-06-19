@@ -12,7 +12,9 @@ gourmand, contrairement à l'extraction de texte qui a lieu à la constitution.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import re
+import socket
 from pathlib import Path
 
 import httpx
@@ -21,6 +23,48 @@ import yaml
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def url_publique_sure(url: str) -> bool:
+    """Vrai si l'URL pointe vers un hôte PUBLIC (anti-SSRF).
+
+    Bloque les hôtes internes/privés (services du cluster, loopback, lien-local,
+    métadonnées cloud 169.254.169.254…) pour qu'un ajout par URL ne puisse pas
+    faire interroger des ressources internes au serveur.
+
+    Args:
+        url: URL fournie par l'utilisateur.
+
+    Returns:
+        True si toutes les IP résolues sont publiques et le schéma http/https.
+    """
+    try:
+        u = httpx.URL(url)
+    except (ValueError, TypeError):
+        return False
+    if u.scheme not in ("http", "https") or not u.host:
+        return False
+    hote = u.host
+    # Noms internes au cluster Kubernetes (sans domaine public).
+    if hote in {"localhost"} or hote.endswith((".local", ".svc", ".cluster.local", ".internal")):
+        return False
+    try:
+        infos = socket.getaddrinfo(hote, None)
+    except socket.gaierror:
+        return False
+    for info in infos:
+        adresse = ipaddress.ip_address(info[4][0])
+        if (
+            adresse.is_private
+            or adresse.is_loopback
+            or adresse.is_link_local
+            or adresse.is_reserved
+            or adresse.is_multicast
+            or adresse.is_unspecified
+        ):
+            return False
+    return True
+
 
 # Manifeste embarqué dans l'image (à côté de ce module).
 SOURCES_PATH = Path(__file__).resolve().parent / "sources_officielles.yaml"

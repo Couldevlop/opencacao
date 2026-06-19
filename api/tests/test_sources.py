@@ -11,7 +11,21 @@ from app.curation.sources import (
     extension_pour,
     nom_depuis_url,
     telecharger,
+    url_publique_sure,
 )
+
+
+def test_url_publique_sure_bloque_interne() -> None:
+    # IP publique -> autorisée.
+    assert url_publique_sure("http://8.8.8.8/") is True
+    # Adresses internes / privées / métadonnées -> refusées (anti-SSRF).
+    assert url_publique_sure("http://127.0.0.1/") is False
+    assert url_publique_sure("http://10.0.0.5/") is False
+    assert url_publique_sure("http://169.254.169.254/latest/meta-data/") is False
+    assert url_publique_sure("http://inference.svc/") is False
+    assert url_publique_sure("http://localhost:8001/") is False
+    # Schéma non http(s) -> refusé.
+    assert url_publique_sure("ftp://example.com/x") is False
 
 
 def test_nom_depuis_url_query_unique() -> None:
