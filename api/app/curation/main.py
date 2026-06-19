@@ -32,6 +32,7 @@ from app.curation.documents import DocumentInvalide, DocumentStore
 from app.curation.jobs import JobsRegistry
 from app.curation.models import (
     DocumentUpload,
+    DocumentUrl,
     LoginRequest,
     RejetRequest,
     ValidationRequest,
@@ -265,6 +266,24 @@ async def documents_upload(payload: DocumentUpload, _: Session) -> list[dict]:
         _documents.enregistrer(payload.nom, donnees)
     except DocumentInvalide as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return _documents.lister()
+
+
+@app.post("/api/documents/url", status_code=status.HTTP_201_CREATED)
+async def documents_par_url(payload: DocumentUrl, _: Session) -> list[dict]:
+    """Ajoute un document/page depuis une URL (ex. page d'accueil ANADER).
+
+    Raises:
+        HTTPException: 422 si format non exploitable, 502 si l'URL est injoignable.
+    """
+    try:
+        doc = await _pipeline.ajouter_document_url(payload.url)
+    except DocumentInvalide as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    if doc is None:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail="URL injoignable ou illisible."
+        )
     return _documents.lister()
 
 

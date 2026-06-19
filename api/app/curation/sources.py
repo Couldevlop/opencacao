@@ -90,6 +90,23 @@ def extension_pour(url: str, content_type: str | None) -> str:
     return suffixe if suffixe in (".pdf", ".txt", ".md", ".html", ".htm") else ".bin"
 
 
+def nom_depuis_url(url: str, content_type: str | None) -> str:
+    """Déduit un nom de fichier lisible depuis une URL libre (+ extension du type).
+
+    Args:
+        url: URL de la page/document.
+        content_type: En-tête Content-Type de la réponse.
+
+    Returns:
+        Un nom de fichier (hôte + chemin + extension), à assainir par le store.
+    """
+    u = httpx.URL(url)
+    base = (u.host or "page").replace(".", "-")
+    chemin = u.path.strip("/").replace("/", "-")
+    nom = f"{base}-{chemin}" if chemin else base
+    return f"{nom[:80]}{extension_pour(url, content_type)}"
+
+
 async def telecharger(client: httpx.AsyncClient, url: str) -> tuple[bytes, str | None] | None:
     """Télécharge un document en flux. Retourne (octets, content-type), ou None si échec.
 

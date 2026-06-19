@@ -379,6 +379,35 @@ async def test_demarrer_recherche_anti_concurrence(tmp_path: Path) -> None:
     assert await service.demarrer_recherche() is None
 
 
+async def test_ajouter_document_url(tmp_path: Path) -> None:
+    import httpx
+
+    page = b"<html><body><h1>ANADER</h1><p>Le cacao en Cote d'Ivoire.</p></body></html>"
+
+    def fab(verifie):
+        return httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda r: httpx.Response(200, content=page, headers={"content-type": "text/html"})
+            )
+        )
+
+    service, _ = _service(tmp_path, http_factory=fab)
+    doc = await service.ajouter_document_url("https://www.anader.ci/")
+    assert doc is not None
+    assert doc["nom"].endswith(".html")  # détecté comme page HTML
+    assert (tmp_path / "documents" / doc["nom"]).exists()
+
+
+async def test_ajouter_document_url_injoignable(tmp_path: Path) -> None:
+    import httpx
+
+    def fab(verifie):
+        return httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(404)))
+
+    service, _ = _service(tmp_path, http_factory=fab)
+    assert await service.ajouter_document_url("https://x/absent") is None
+
+
 # --- Préparation fine-tuning ---
 
 

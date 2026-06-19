@@ -226,6 +226,11 @@ class FakePipeline:
     async def collecter_sources(self, job_id: str) -> None:
         await self._jobs.maj(job_id, statut="reussi", message="ok")
 
+    async def ajouter_document_url(self, url: str) -> dict | None:
+        if getattr(self, "url_injoignable", False):
+            return None
+        return {"nom": "anader-ci.html", "taille": 42}
+
 
 @pytest.fixture
 def pipeline_console(tmp_path: Path, monkeypatch) -> tuple[TestClient, FakePipeline]:
@@ -324,6 +329,23 @@ def test_documents_upload_base64_invalide_422(pipeline_console) -> None:
     client, _ = pipeline_console
     resp = client.post("/api/documents", json={"nom": "x.txt", "contenu_base64": "pas du base64!"})
     assert resp.status_code == 422
+
+
+def test_documents_url_201(pipeline_console) -> None:
+    client, _ = pipeline_console
+    resp = client.post("/api/documents/url", json={"url": "https://www.anader.ci/"})
+    assert resp.status_code == 201
+
+
+def test_documents_url_invalide_422(pipeline_console) -> None:
+    client, _ = pipeline_console
+    assert client.post("/api/documents/url", json={"url": "pas-une-url"}).status_code == 422
+
+
+def test_documents_url_injoignable_502(pipeline_console) -> None:
+    client, faux = pipeline_console
+    faux.url_injoignable = True
+    assert client.post("/api/documents/url", json={"url": "https://x/none"}).status_code == 502
 
 
 def test_rag_constituer_202(pipeline_console) -> None:

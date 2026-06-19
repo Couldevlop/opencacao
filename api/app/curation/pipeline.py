@@ -34,6 +34,7 @@ from app.curation.sources import (
     NAVIGATEUR_UA,
     charger_sources,
     extension_pour,
+    nom_depuis_url,
     telecharger,
 )
 from app.services import guardrails
@@ -403,6 +404,29 @@ class PipelineService:
                 details={"courant": ajoutees, "objectif": len(nouveaux)},
             )
         return ajoutees
+
+    async def ajouter_document_url(self, url: str) -> dict | None:
+        """Télécharge une page/document depuis une URL libre et l'ajoute aux documents.
+
+        Args:
+            url: URL à récupérer (page web, PDF…).
+
+        Returns:
+            Les métadonnées du document enregistré, ou ``None`` si injoignable.
+
+        Raises:
+            DocumentInvalide: Si le format/contenu n'est pas exploitable.
+        """
+        client = self._http_factory(True)
+        try:
+            resultat = await telecharger(client, url)
+        finally:
+            await client.aclose()
+        if not resultat:
+            return None
+        donnees, content_type = resultat
+        nom = nom_depuis_url(url, content_type)
+        return self._documents.enregistrer(nom, donnees)
 
     # --- Étape ① Recherche des sources officielles (téléchargement) ---
 

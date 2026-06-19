@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
     <title>OpenCacao — Console de curation</title>
-    <link rel="stylesheet" href="styles.css?v=11" />
+    <link rel="stylesheet" href="styles.css?v=12" />
   </head>
   <body>
     <div class="flag-strip" aria-hidden="true"></div>
@@ -90,6 +90,11 @@
               title="Télécharge les sources officielles (CNRA, ANADER, Conseil Café-Cacao, FAO)">🔎 Lancer la recherche</button>
             <span class="etat" id="etat-upload" aria-live="polite"></span>
           </div>
+          <div class="etape-actions url-ligne">
+            <input type="url" id="url-page" class="champ-url"
+              placeholder="https://… (ex. page d'accueil ANADER)" />
+            <button type="button" class="btn secondaire" id="btn-url">➕ Ajouter la page</button>
+          </div>
           <ul class="docs-liste" id="docs-liste"></ul>
         </article>
 
@@ -172,6 +177,6 @@
       </article>
     </template>
 
-    <script type="module" src="app.js?v=11"></script>
+    <script type="module" src="app.js?v=12"></script>
   </body>
 </html>

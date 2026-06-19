@@ -331,6 +331,38 @@ $("btn-recherche").addEventListener("click", () =>
   lancerAction("btn-recherche", "etat-upload", "/api/recherche", "Recherche des sources")
 );
 
+$("btn-url").addEventListener("click", async () => {
+  const champ = $("url-page");
+  const url = champ.value.trim();
+  const etat = $("etat-upload");
+  if (!/^https?:\/\//.test(url)) {
+    etat.textContent = "⚠ URL invalide (http/https)";
+    etat.className = "etat err";
+    return;
+  }
+  const btn = $("btn-url");
+  btn.disabled = true;
+  etat.textContent = "Ajout de la page…";
+  etat.className = "etat muted";
+  try {
+    await api("/api/documents/url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    champ.value = "";
+    etat.textContent = "✓ Page ajoutée";
+    etat.className = "etat ok";
+    await rafraichirDocuments();
+  } catch (e) {
+    if (e instanceof NonAutorise) return montrerLogin();
+    etat.textContent = "⚠ " + e.message;
+    etat.className = "etat err";
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 /* ---------- Étape ③ Fine-tuning ---------- */
 $("btn-ft").addEventListener("click", () =>
   lancerAction("btn-ft", "etat-ft", "/api/finetuning/prepare", "Préparation")

@@ -232,6 +232,17 @@ body {
 .etape .etat { display: inline-block; }
 
 /* Liste de documents */
+.url-ligne { margin-top: 8px; }
+.champ-url {
+  flex: 1;
+  min-width: 200px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  background: #fcfbf9;
+}
+.champ-url:focus { outline: 2px solid var(--ci-orange); outline-offset: 1px; }
 .docs-liste { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
 .docs-liste .vide-doc { color: var(--muted); font-size: 13px; padding: 4px 0; }
 .doc {

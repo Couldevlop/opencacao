@@ -45,3 +45,9 @@ class DocumentUpload(BaseModel):
 
     nom: str = Field(min_length=1, max_length=255)
     contenu_base64: str = Field(min_length=1)
+
+
+class DocumentUrl(BaseModel):
+    """Ajout d'un document/page par URL (téléchargé côté serveur)."""
+
+    url: str = Field(min_length=8, max_length=2000, pattern=r"^https?://")
