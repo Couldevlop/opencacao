@@ -366,7 +366,7 @@ class PipelineService:
         return None
 
     async def _indexer_par_lots(
-        self, job_id: str, nouveaux: list[tuple[str, str]], lot: int = 32
+        self, job_id: str, nouveaux: list[tuple[str, str]], lot: int = 8
     ) -> int:
         """Vectorise et ajoute les extraits par lots (incrémental). Retourne le nombre ajouté.
 

@@ -266,7 +266,7 @@ async def test_constituer_partiel_puis_reprise(tmp_path: Path, monkeypatch) -> N
     await service.constituer_rag(job1["id"])
     r1 = await jobs.obtenir(job1["id"])
     assert r1["statut"] == "echec"  # partiel
-    assert r1["details"]["ajoutees"] == 32  # seul le 1er lot indexé et conservé
+    assert r1["details"]["ajoutees"] == 8  # seul le 1er lot (taille 8) indexé et conservé
 
     # Reprise : le reste s'indexe, sans re-traiter le déjà-fait (dédup).
     emb.reprise = True
