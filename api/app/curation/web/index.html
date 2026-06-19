@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
     <title>OpenCacao — Console de curation</title>
-    <link rel="stylesheet" href="styles.css?v=13" />
+    <link rel="stylesheet" href="styles.css?v=14" />
   </head>
   <body>
     <div class="flag-strip" aria-hidden="true"></div>
@@ -94,6 +94,11 @@
             <input type="url" id="url-page" class="champ-url"
               placeholder="https://… (ex. page d'accueil ANADER)" />
             <button type="button" class="btn secondaire" id="btn-url">➕ Ajouter la page</button>
+          </div>
+          <div class="docs-entete">
+            <span class="docs-titre" id="docs-titre">Documents</span>
+            <button type="button" class="btn secondaire petit" id="btn-archiver"
+              title="Retire les documents traités de la liste (ils restent dans le RAG)">🗄️ Archiver les traités</button>
           </div>
           <ul class="docs-liste" id="docs-liste"></ul>
         </article>
@@ -196,6 +201,6 @@
       </article>
     </template>
 
-    <script type="module" src="app.js?v=13"></script>
+    <script type="module" src="app.js?v=14"></script>
   </body>
 </html>

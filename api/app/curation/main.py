@@ -287,6 +287,13 @@ async def documents_par_url(payload: DocumentUrl, _: Session) -> list[dict]:
     return _documents.lister()
 
 
+@app.post("/api/documents/archiver")
+async def documents_archiver(_: Session) -> dict:
+    """Archive les documents traités (sortent de la liste active, restent dans le RAG)."""
+    n = _documents.archiver()
+    return {"archives": n, "documents": _documents.lister()}
+
+
 @app.delete("/api/documents/{nom}")
 async def documents_suppr(nom: str, _: Session) -> list[dict]:
     """Supprime un document téléversé et retourne la liste mise à jour."""

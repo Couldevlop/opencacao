@@ -66,6 +66,19 @@ def test_extraits_inclut_html(tmp_path: Path) -> None:
     assert extraits and extraits[0][0] == "page.html"
 
 
+def test_archiver(tmp_path: Path) -> None:
+    store = DocumentStore(tmp_path / "documents")
+    store.enregistrer("a.pdf", b"%PDF")
+    store.enregistrer("b.html", b"<html></html>")
+    assert store.archiver() == 2
+    # Liste active vide, mais documents toujours "présents" (archivés) -> pas re-téléchargés.
+    assert store.lister() == []
+    assert store.existe_prefixe("a") is True
+    assert store.existe_prefixe("b") is True
+    # Archiver à vide ne fait rien.
+    assert store.archiver() == 0
+
+
 def test_store_existe_prefixe(tmp_path: Path) -> None:
     store = DocumentStore(tmp_path / "documents")
     assert store.existe_prefixe("manuel") is False

@@ -331,6 +331,16 @@ def test_documents_upload_base64_invalide_422(pipeline_console) -> None:
     assert resp.status_code == 422
 
 
+def test_documents_archiver(pipeline_console) -> None:
+    client, _ = pipeline_console
+    contenu = base64.b64encode(b"Doc a archiver").decode()
+    client.post("/api/documents", json={"nom": "vieux.txt", "contenu_base64": contenu})
+    resp = client.post("/api/documents/archiver")
+    assert resp.status_code == 200
+    assert resp.json()["archives"] == 1
+    assert client.get("/api/documents").json() == []  # liste active vidée
+
+
 def test_documents_url_201(pipeline_console) -> None:
     client, _ = pipeline_console
     resp = client.post("/api/documents/url", json={"url": "https://www.anader.ci/"})

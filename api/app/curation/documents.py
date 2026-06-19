@@ -143,9 +143,12 @@ class DocumentStore:
         """Initialise le store.
 
         Args:
-            dossier: Répertoire de stockage des documents.
+            dossier: Répertoire de stockage des documents (actifs).
         """
         self._dossier = dossier
+        # Archive : documents déjà traités, retirés de la liste active mais
+        # conservés (et toujours considérés "présents" pour ne pas les re-télécharger).
+        self._archive = dossier.parent / f"{dossier.name}_archive"
 
     @classmethod
     def from_env(cls) -> DocumentStore:
@@ -193,14 +196,39 @@ class DocumentStore:
             return False
 
     def existe_prefixe(self, ident: str) -> bool:
-        """Indique si un document ``<ident>.*`` existe (quel que soit le format).
+        """Indique si un document ``<ident>.*`` existe (actif OU archivé).
 
-        Sert à l'idempotence de la recherche : le nom final dépend du type de
+        Sert à l'idempotence de la recherche : on ne re-télécharge pas un document
+        déjà présent, même s'il a été archivé. Le nom final dépend du type de
         contenu (PDF/HTML), inconnu avant téléchargement.
         """
+        for dossier in (self._dossier, self._archive):
+            if dossier.is_dir() and any(p.is_file() and p.stem == ident for p in dossier.iterdir()):
+                return True
+        return False
+
+    def archiver(self) -> int:
+        """Déplace tous les documents actifs vers l'archive. Retourne le nombre archivé.
+
+        Les extraits restent dans l'index RAG (inchangé) ; seuls les fichiers sources
+        sortent de la liste active. Utile pour repartir sur une liste propre avant une
+        nouvelle recherche, sans re-télécharger les documents déjà traités.
+        """
         if not self._dossier.is_dir():
-            return False
-        return any(p.is_file() and p.stem == ident for p in self._dossier.iterdir())
+            return 0
+        self._archive.mkdir(parents=True, exist_ok=True)
+        n = 0
+        for p in sorted(self._dossier.iterdir()):
+            if not p.is_file():
+                continue
+            cible = self._archive / p.name
+            if cible.exists():
+                cible.unlink()  # on remplace l'ancienne archive du même nom
+            p.rename(cible)
+            n += 1
+        if n:
+            logger.info("documents_archives", nombre=n)
+        return n
 
     def supprimer(self, nom: str) -> bool:
         """Supprime un document. Retourne True s'il existait."""

@@ -1,0 +1,49 @@
+# Service d'enrichissement automatique 24h/24 : un CronJob télécharge les sources
+# officielles puis les constitue dans le RAG (à chaud), sans intervention.
+# Réutilise l'image de l'API (app.curation.enrichir) et le ServiceAccount curation
+# (droit de redémarrer l'API après mise à jour de l'index).
+#
+# Cadence : tous les jours à 03:00 UTC. Modifier `schedule` au besoin
+# (ex. "0 */6 * * *" pour toutes les 6 h).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: enrichissement-rag
+  labels: { app: enrichissement }
+spec:
+  schedule: "0 3 * * *"
+  concurrencyPolicy: Forbid # jamais deux enrichissements en parallèle
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 3600 # garde-fou : tue le job après 1 h
+      backoffLimit: 1
+      template:
+        metadata:
+          labels: { app: enrichissement }
+        spec:
+          serviceAccountName: curation # autorise le rollout restart de l'API
+          restartPolicy: Never
+          securityContext:
+            fsGroup: 10001
+          containers:
+            - name: enrichir
+              image: opencacao-api # tag/registre fixés par kustomization.yaml
+              command: ["python", "-m", "app.curation.enrichir"]
+              env:
+                - { name: DATASET_DIR, value: "/data" }
+                - { name: EMBEDDINGS_URL, value: "http://embeddings:8001" }
+                - { name: API_DEPLOYMENT, value: "api" }
+                - { name: LOG_LEVEL, value: "INFO" }
+              volumeMounts:
+                - name: dataset
+                  mountPath: /data
+              resources:
+                requests: { cpu: "100m", memory: "256Mi" }
+                limits: { cpu: "1", memory: "1Gi" }
+          volumes:
+            - name: dataset
+              persistentVolumeClaim:
+                claimName: dataset

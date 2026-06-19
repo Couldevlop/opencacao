@@ -282,6 +282,8 @@ async function rafraichirDocuments() {
   }
   const ul = $("docs-liste");
   ul.innerHTML = "";
+  const titre = $("docs-titre");
+  if (titre) titre.textContent = `Documents (${docs.length})`;
   const badge = $("etat-docs");
   if (!docs.length) {
     ul.innerHTML = '<li class="vide-doc">Aucun document pour l\'instant.</li>';
@@ -330,6 +332,26 @@ $("btn-rag").addEventListener("click", () =>
 $("btn-recherche").addEventListener("click", () =>
   lancerAction("btn-recherche", "etat-upload", "/api/recherche", "Recherche des sources")
 );
+
+$("btn-archiver").addEventListener("click", async () => {
+  const etat = $("etat-upload");
+  const btn = $("btn-archiver");
+  btn.disabled = true;
+  etat.textContent = "Archivage…";
+  etat.className = "etat muted";
+  try {
+    const r = await api("/api/documents/archiver", { method: "POST" });
+    etat.textContent = `🗄️ ${r.archives || 0} document(s) archivé(s)`;
+    etat.className = "etat ok";
+    await rafraichirDocuments();
+  } catch (e) {
+    if (e instanceof NonAutorise) return montrerLogin();
+    etat.textContent = "⚠ " + e.message;
+    etat.className = "etat err";
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 $("btn-url").addEventListener("click", async () => {
   const champ = $("url-page");
