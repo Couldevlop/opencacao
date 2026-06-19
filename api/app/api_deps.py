@@ -52,6 +52,10 @@ def get_client_ip(request: Request) -> str:
     """
     settings = get_settings()
     if settings.trust_forwarded_for:
+        # Derrière Cloudflare (proxy) : l'IP réelle est dans CF-Connecting-IP.
+        cf = request.headers.get("cf-connecting-ip")
+        if cf:
+            return cf.strip()
         forwarded = request.headers.get("x-forwarded-for")
         if forwarded:
             return forwarded.split(",")[0].strip()

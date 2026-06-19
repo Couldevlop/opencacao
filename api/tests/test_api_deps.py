@@ -34,6 +34,15 @@ def test_ip_tcp_par_defaut(monkeypatch) -> None:
     assert get_client_ip(req) == "10.0.0.1"
 
 
+def test_cf_connecting_ip_prioritaire(monkeypatch) -> None:
+    """Derrière Cloudflare, CF-Connecting-IP (IP réelle) prime sur X-Forwarded-For."""
+    _patch_settings(monkeypatch, trust_forwarded_for=True)
+    req = _FakeRequest(
+        {"cf-connecting-ip": "102.0.0.7", "x-forwarded-for": "10.42.0.1"}, host="10.42.0.1"
+    )
+    assert get_client_ip(req) == "102.0.0.7"
+
+
 def test_forwarded_for_pris_si_proxy_de_confiance(monkeypatch) -> None:
     """Derrière un proxy de confiance, on lit le premier X-Forwarded-For."""
     _patch_settings(monkeypatch, trust_forwarded_for=True)
