@@ -225,14 +225,56 @@ async def test_constituer_succes_indexe_et_redemarre(tmp_path: Path) -> None:
     assert entrees and entrees[0]["source"] == "guide.txt"
 
 
-async def test_constituer_embeddings_en_panne(tmp_path: Path) -> None:
+async def test_constituer_embeddings_en_panne(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(pipeline_module, "_EMBED_DELAI_S", 0)  # pas d'attente en test
     service, jobs = _service(tmp_path, FakeEmbeddings(en_panne=True))
     _doc(tmp_path, "guide.txt", _DOC_TEXTE)
     job = await jobs.creer("rag_constitution")
     await service.constituer_rag(job["id"])
     relu = await jobs.obtenir(job["id"])
     assert relu["statut"] == "echec"
+    assert relu["details"]["ajoutees"] == 0  # rien indexé (échec dès le 1er lot)
     assert not (tmp_path / "rag_index.jsonl").exists()
+
+
+async def test_constituer_partiel_puis_reprise(tmp_path: Path, monkeypatch) -> None:
+    """Un échec d'embeddings en cours conserve le déjà-fait ; relancer reprend."""
+    monkeypatch.setattr(pipeline_module, "_EMBED_DELAI_S", 0)
+
+    class EmbeddingsIntermittent:
+        """1er passage : 1er lot OK puis panne. Après `reprise=True` : tout OK."""
+
+        def __init__(self) -> None:
+            self.lots_ok = 0
+            self.reprise = False
+
+        async def embed(self, textes):
+            if self.reprise:
+                return [[1.0, 0.0] for _ in textes]
+            if self.lots_ok >= 1:  # après le 1er lot : panne persistante
+                return None
+            self.lots_ok += 1
+            return [[1.0, 0.0] for _ in textes]
+
+    # Assez d'extraits pour forcer plusieurs lots (lot=32).
+    gros = " ".join(f"Phrase numero {i} sur la cacaoculture en Cote d'Ivoire." for i in range(1500))
+    _doc(tmp_path, "gros.txt", gros)
+    emb = EmbeddingsIntermittent()
+    service, jobs = _service(tmp_path, emb)
+
+    job1 = await jobs.creer("rag_constitution")
+    await service.constituer_rag(job1["id"])
+    r1 = await jobs.obtenir(job1["id"])
+    assert r1["statut"] == "echec"  # partiel
+    assert r1["details"]["ajoutees"] == 32  # seul le 1er lot indexé et conservé
+
+    # Reprise : le reste s'indexe, sans re-traiter le déjà-fait (dédup).
+    emb.reprise = True
+    job2 = await jobs.creer("rag_constitution")
+    await service.constituer_rag(job2["id"])
+    r2 = await jobs.obtenir(job2["id"])
+    assert r2["statut"] == "reussi"
+    assert r2["details"]["ajoutees"] > 0
 
 
 async def test_constituer_anti_concurrence(tmp_path: Path) -> None:

@@ -53,6 +53,9 @@ _MIN_INSTRUCTION, _MAX_INSTRUCTION = 10, 500
 _MIN_OUTPUT, _MAX_OUTPUT = 50, 2000
 _SOURCES = ("CNRA", "ANADER", "Conseil du Café-Cacao", "FAO")
 _ESPACES = re.compile(r"\s+")
+# Résilience de la vectorisation (constitution) : tentatives par lot + pause.
+_EMBED_TENTATIVES = 3
+_EMBED_DELAI_S = 5.0
 
 # Procédure exacte à exécuter sur un pod GPU externe (RunPod) après préparation.
 # Le CPU Hetzner ne peut pas entraîner : la console prépare, l'opérateur déclenche.
@@ -293,27 +296,43 @@ class PipelineService:
                 )
                 return
 
-            entrees = await self._vectoriser_extraits(job_id, nouveaux)
-            if entrees is None:
-                return  # embeddings indisponibles (job déjà marqué en échec)
+            # Indexation incrémentale : chaque lot vectorisé est ajouté immédiatement.
+            # Un échec d'embeddings n'efface donc pas le travail déjà fait — il suffit
+            # de relancer la Constitution pour reprendre (dédup automatique).
+            ajoutees = await self._indexer_par_lots(job_id, nouveaux)
+            total = total_actuel + ajoutees
 
-            await asyncio.to_thread(ajouter_entrees, self._index_path, entrees)
-            total = total_actuel + len(entrees)
-            await self._jobs.maj(job_id, log=f"{len(entrees)} extrait(s) ajouté(s) — total {total}")
+            if ajoutees:
+                try:
+                    cluster = self._cluster_factory()
+                    await cluster.rollout_restart(self._api_deployment)
+                    await cluster.close()
+                except ClusterIndisponible as exc:
+                    await self._jobs.maj(
+                        job_id,
+                        statut="echec",
+                        message=(
+                            f"Index enrichi (+{ajoutees}, {total} au total) mais "
+                            f"redémarrage de l'API échoué : {exc}. Relancez le rollout."
+                        ),
+                        details={"ajoutees": ajoutees, "total": total},
+                    )
+                    return
 
-            try:
-                cluster = self._cluster_factory()
-                await cluster.rollout_restart(self._api_deployment)
-                await cluster.close()
-            except ClusterIndisponible as exc:
+            if ajoutees < len(nouveaux):
                 await self._jobs.maj(
                     job_id,
                     statut="echec",
                     message=(
-                        f"Index enrichi (+{len(entrees)}, {total} au total) mais "
-                        f"redémarrage de l'API échoué : {exc}. Relancez le rollout."
+                        f"Partiel : {ajoutees}/{len(nouveaux)} extrait(s) indexé(s) "
+                        f"({total} au total). Embeddings momentanément indisponible — "
+                        "relancez « Constituer » pour continuer."
                     ),
-                    details={"ajoutees": len(entrees), "total": total},
+                    details={
+                        "ajoutees": ajoutees,
+                        "total": total,
+                        "restants": len(nouveaux) - ajoutees,
+                    },
                 )
                 return
 
@@ -321,10 +340,10 @@ class PipelineService:
                 job_id,
                 statut="reussi",
                 message=(
-                    f"RAG enrichi : +{len(entrees)} extrait(s), {total} au total. "
+                    f"RAG enrichi : +{ajoutees} extrait(s), {total} au total. "
                     "API redémarrée (sans coupure)."
                 ),
-                details={"ajoutees": len(entrees), "total": total},
+                details={"ajoutees": ajoutees, "total": total},
             )
         except Exception as exc:  # noqa: BLE001 - journalisé, statut d'échec propre
             logger.error("constitution_rag_echec", job_id=job_id, error=str(exc))
@@ -336,10 +355,23 @@ class PipelineService:
         """Nombre de documents stockés (pour les messages de progression)."""
         return len(self._documents.lister())
 
-    async def _vectoriser_extraits(
+    async def _embed_resilient(self, textes: list[str]) -> list[list[float]] | None:
+        """Vectorise un lot avec quelques tentatives (résiste aux hoquets transitoires)."""
+        for essai in range(_EMBED_TENTATIVES):
+            vecteurs = await self._embeddings.embed(textes)
+            if vecteurs:
+                return vecteurs
+            if essai < _EMBED_TENTATIVES - 1:
+                await asyncio.sleep(_EMBED_DELAI_S)
+        return None
+
+    async def _indexer_par_lots(
         self, job_id: str, nouveaux: list[tuple[str, str]], lot: int = 32
-    ) -> list[dict] | None:
-        """Vectorise les extraits par lots. Retourne les entrées d'index, ou None si KO.
+    ) -> int:
+        """Vectorise et ajoute les extraits par lots (incrémental). Retourne le nombre ajouté.
+
+        Chaque lot réussi est écrit immédiatement dans l'index : en cas d'échec
+        d'embeddings, le travail déjà fait est conservé (reprise au prochain appel).
 
         Args:
             job_id: Job à informer de la progression.
@@ -347,32 +379,26 @@ class PipelineService:
             lot: Taille des lots envoyés au service d'embeddings.
 
         Returns:
-            La liste d'entrées ``{"texte", "source", "vecteur"}``, ou ``None`` si le
-            service d'embeddings est indisponible (le job est alors marqué en échec).
+            Le nombre d'extraits effectivement ajoutés à l'index.
         """
-        entrees: list[dict] = []
+        ajoutees = 0
         for debut in range(0, len(nouveaux), lot):
             morceau = nouveaux[debut : debut + lot]
-            vecteurs = await self._embeddings.embed([ex for _, ex in morceau])
+            vecteurs = await self._embed_resilient([ex for _, ex in morceau])
             if not vecteurs:
-                await self._jobs.maj(
-                    job_id,
-                    statut="echec",
-                    message="Service d'embeddings indisponible — index inchangé.",
-                )
-                return None
-            for (source, extrait), vecteur in zip(morceau, vecteurs, strict=True):
-                entrees.append(
-                    {
-                        "texte": extrait,
-                        "source": source,
-                        "vecteur": [round(float(x), 6) for x in vecteur],
-                    }
-                )
-            await self._jobs.maj(
-                job_id, log=f"vectorisation {min(debut + lot, len(nouveaux))}/{len(nouveaux)}"
-            )
-        return entrees
+                break  # on s'arrête mais on garde ce qui est déjà indexé
+            entrees = [
+                {
+                    "texte": extrait,
+                    "source": source,
+                    "vecteur": [round(float(x), 6) for x in vecteur],
+                }
+                for (source, extrait), vecteur in zip(morceau, vecteurs, strict=True)
+            ]
+            await asyncio.to_thread(ajouter_entrees, self._index_path, entrees)
+            ajoutees += len(entrees)
+            await self._jobs.maj(job_id, log=f"indexation {ajoutees}/{len(nouveaux)}")
+        return ajoutees
 
     # --- Étape ① Recherche des sources officielles (téléchargement) ---
 
