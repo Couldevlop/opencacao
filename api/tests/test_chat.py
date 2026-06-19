@@ -81,6 +81,13 @@ def test_chat_cache_ne_consomme_pas_le_quota(client, fake_inference) -> None:
     assert len(fake_inference.appels) == 1  # une seule inférence (le reste = cache)
 
 
+def test_chat_enregistre_une_visite(client, fake_journal) -> None:
+    """Chaque interrogation enregistre une visite (canal + pays), sans IP."""
+    client.post("/v1/chat", json={"question": "Comment tailler un cacaoyer ?", "canal": "web"})
+    assert fake_journal.visites
+    assert fake_journal.visites[0]["canal"] == "web"
+
+
 def test_validation_question_trop_courte(client) -> None:
     """Une question trop courte est rejetée par la validation Pydantic (422)."""
     resp = client.post("/v1/chat", json={"question": "a"})

@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     log_questions: bool = False
     # Dossier où écrire le journal JSONL (interactions.jsonl, feedback.jsonl).
     dataset_dir: str = "/data"
+    # Analytique des visites (anonymisée : horodatage + pays + canal, jamais d'IP).
+    log_visites: bool = True
+    # Base GeoLite2 (IP -> pays, en local). Déposée sur le nœud comme les modèles.
+    geoip_db_path: str = "/models/GeoLite2-Country.mmdb"
 
     # NoDecode : ne PAS json-décoder la valeur d'env (sinon une liste CSV comme
     # "a,b" ou "*" lève une erreur). Le validateur _split_csv ci-dessous gère le CSV.

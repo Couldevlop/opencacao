@@ -328,6 +328,48 @@ body { background: linear-gradient(180deg, #f7f4ef 0%, #f2ede4 100%); }
 .onglet.actif { background: var(--surface); color: var(--cocoa-dark); box-shadow: 0 -2px 6px rgba(60,40,20,.05); }
 .onglet:focus-visible { outline: 2px solid var(--ci-orange); outline-offset: -2px; }
 .onglet-compteur { color: var(--ci-orange); font-weight: 700; }
+
+/* Tableau de bord des visites */
+.stats-board { max-width: 880px; margin: 18px auto 0; }
+.cartes-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; }
+.carte-stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+  box-shadow: 0 2px 6px rgba(60, 40, 20, 0.06);
+}
+.carte-stat-val { font-size: 26px; font-weight: 700; color: var(--cocoa-dark); font-family: var(--serif); }
+.carte-stat-lib { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+.chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 120px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+}
+.chart-col { flex: 1; display: flex; align-items: flex-end; height: 100%; }
+.chart-barre {
+  width: 100%;
+  min-height: 2px;
+  background: linear-gradient(180deg, var(--ci-green), var(--cocoa));
+  border-radius: 3px 3px 0 0;
+}
+.pays-liste { display: grid; gap: 6px; }
+.pays-row {
+  display: flex;
+  justify-content: space-between;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 14px;
+}
+.pays-n { font-weight: 700; color: var(--cocoa-dark); }
 .vue { animation: apparition .15s ease; }
 @keyframes apparition { from { opacity: 0; } to { opacity: 1; } }
 

@@ -27,6 +27,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.logging import configure_logging, get_logger
 from app.core.security import BodySizeLimitMiddleware
+from app.curation.analytics import analytique
 from app.curation.documents import DocumentInvalide, DocumentStore
 from app.curation.jobs import JobsRegistry
 from app.curation.models import (
@@ -207,6 +208,12 @@ async def logout(response: Response) -> dict[str, bool]:
 async def stats(_: Session) -> dict[str, int]:
     """Compteurs de curation (total, à curer, validés, rejetés)."""
     return _store.statistiques()
+
+
+@app.get("/api/analytics")
+async def analytics(_: Session) -> dict:
+    """Analytique des visites : compteurs par période (jour/semaine/mois/an) + pays."""
+    return analytique()
 
 
 @app.get("/api/a-curer")

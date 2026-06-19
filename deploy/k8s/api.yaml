@@ -28,6 +28,9 @@ data:
   DATASET_DIR: "/data"
   # RAG activé : embeddings (service interne) + index /data/rag_index.jsonl.
   RAG_ENABLED: "true"
+  # Analytique des visites + géolocalisation pays (base GeoLite2 locale, IP non stockée).
+  LOG_VISITES: "true"
+  GEOIP_DB_PATH: "/models/GeoLite2-Country.mmdb"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -55,6 +58,9 @@ spec:
           volumeMounts:
             - name: dataset
               mountPath: /data
+            - name: modeles
+              mountPath: /models
+              readOnly: true
           resources:
             requests: { cpu: "100m", memory: "320Mi" }
             limits: { cpu: "1", memory: "1Gi" }   # marge pour charger l'index RAG en mémoire
@@ -80,6 +86,11 @@ spec:
         - name: dataset
           persistentVolumeClaim:
             claimName: dataset
+        # Base GeoLite2 déposée sur le nœud (comme les modèles GGUF), lecture seule.
+        - name: modeles
+          hostPath:
+            path: /opt/opencacao/models
+            type: Directory
 ---
 apiVersion: v1
 kind: Service

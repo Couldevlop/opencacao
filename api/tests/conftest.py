@@ -86,6 +86,7 @@ class FakeJournal:
     def __init__(self) -> None:
         self.interactions: list[dict] = []
         self.feedbacks: list[dict] = []
+        self.visites: list[dict] = []
 
     async def enregistrer_interaction(
         self,
@@ -104,6 +105,9 @@ class FakeJournal:
 
     async def enregistrer_feedback(self, interaction_id: str, vote: str) -> None:
         self.feedbacks.append({"id": interaction_id, "vote": vote})
+
+    async def enregistrer_visite(self, pays: str, canal: str) -> None:
+        self.visites.append({"pays": pays, "canal": canal})
 
 
 @pytest.fixture

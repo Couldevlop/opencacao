@@ -336,13 +336,88 @@ $("btn-ft").addEventListener("click", () =>
   lancerAction("btn-ft", "etat-ft", "/api/finetuning/prepare", "Préparation")
 );
 
-/* ---------- Onglets (Curation / Pipeline) ---------- */
+/* ---------- Statistiques (visites) ---------- */
+function drapeau(code) {
+  if (!code || code.length !== 2 || !/^[A-Za-z]{2}$/.test(code)) return "🌍";
+  return String.fromCodePoint(
+    ...[...code.toUpperCase()].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65)
+  );
+}
+
+function carteStat(libelle, valeur) {
+  const d = document.createElement("div");
+  d.className = "carte-stat";
+  const v = document.createElement("div");
+  v.className = "carte-stat-val";
+  v.textContent = valeur ?? 0;
+  const l = document.createElement("div");
+  l.className = "carte-stat-lib";
+  l.textContent = libelle;
+  d.append(v, l);
+  return d;
+}
+
+async function chargerStats() {
+  let a;
+  try {
+    a = await api("/api/analytics");
+  } catch (e) {
+    if (e instanceof NonAutorise) montrerLogin();
+    return;
+  }
+  const cartes = $("cartes-stats");
+  cartes.innerHTML = "";
+  [
+    ["Aujourd'hui", a.aujourdhui],
+    ["7 jours", a.semaine],
+    ["Ce mois", a.mois],
+    ["Cette année", a.annee],
+    ["Total", a.total],
+  ].forEach(([lib, val]) => cartes.appendChild(carteStat(lib, val)));
+
+  const chart = $("chart-jours");
+  chart.innerHTML = "";
+  const jours = a.par_jour || [];
+  const max = Math.max(1, ...jours.map((j) => j.n));
+  jours.forEach((j) => {
+    const col = document.createElement("div");
+    col.className = "chart-col";
+    col.title = `${j.date} : ${j.n} visite(s)`;
+    const barre = document.createElement("div");
+    barre.className = "chart-barre";
+    barre.style.height = Math.round((100 * j.n) / max) + "%";
+    col.appendChild(barre);
+    chart.appendChild(col);
+  });
+
+  const pl = $("pays-liste");
+  pl.innerHTML = "";
+  const pays = a.par_pays || [];
+  if (!pays.length) {
+    pl.innerHTML = '<p class="vide">Aucune visite enregistrée pour l\'instant.</p>';
+    return;
+  }
+  pays.forEach((p) => {
+    const row = document.createElement("div");
+    row.className = "pays-row";
+    const nom = document.createElement("span");
+    nom.textContent = `${drapeau(p.pays)} ${p.pays || "??"}`;
+    const n = document.createElement("span");
+    n.className = "pays-n";
+    n.textContent = p.n;
+    row.append(nom, n);
+    pl.appendChild(row);
+  });
+}
+
+/* ---------- Onglets (Curation / Pipeline / Statistiques) ---------- */
 document.querySelectorAll(".onglet").forEach((onglet) => {
   onglet.addEventListener("click", () => {
     document.querySelectorAll(".onglet").forEach((o) => o.classList.toggle("actif", o === onglet));
     document.querySelectorAll(".vue").forEach((v) => {
       v.hidden = v.id !== onglet.dataset.vue;
     });
+    if (onglet.dataset.vue === "vue-stats") chargerStats();
   });
 });
 

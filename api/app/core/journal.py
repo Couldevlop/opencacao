@@ -27,22 +27,38 @@ class JournalFichier:
 
     _FICHIER_INTERACTIONS = "interactions.jsonl"
     _FICHIER_FEEDBACK = "feedback.jsonl"
+    _FICHIER_VISITES = "visites.jsonl"
 
-    def __init__(self, dossier: Path, actif: bool) -> None:
+    def __init__(self, dossier: Path, actif: bool, actif_visites: bool = True) -> None:
         """Initialise le journal.
 
         Args:
             dossier: Répertoire d'écriture des fichiers JSONL.
-            actif: Si faux, les identifiants sont générés mais rien n'est écrit.
+            actif: Si faux, les interactions Q/R ne sont pas écrites.
+            actif_visites: Si faux, l'analytique des visites n'est pas écrite.
         """
         self._dossier = dossier
         self._actif = actif
+        self._actif_visites = actif_visites
         self._verrou = asyncio.Lock()
 
     @classmethod
     def from_settings(cls, settings: Settings) -> JournalFichier:
         """Construit un journal à partir des paramètres applicatifs."""
-        return cls(Path(settings.dataset_dir or "/data"), actif=settings.log_questions)
+        return cls(
+            Path(settings.dataset_dir or "/data"),
+            actif=settings.log_questions,
+            actif_visites=settings.log_visites,
+        )
+
+    async def enregistrer_visite(self, pays: str, canal: str) -> None:
+        """Enregistre une visite anonymisée (horodatage + pays + canal, jamais d'IP)."""
+        if not self._actif_visites:
+            return
+        await self._ecrire(
+            self._FICHIER_VISITES,
+            {"ts": datetime.now(UTC).isoformat(), "pays": pays or "??", "canal": canal},
+        )
 
     async def enregistrer_interaction(
         self,
@@ -55,6 +71,8 @@ class JournalFichier:
     ) -> str:
         """Enregistre une interaction anonymisée et retourne son identifiant."""
         interaction_id = uuid4().hex
+        if not self._actif:
+            return interaction_id
         await self._ecrire(
             self._FICHIER_INTERACTIONS,
             {
@@ -72,6 +90,8 @@ class JournalFichier:
 
     async def enregistrer_feedback(self, interaction_id: str, vote: str) -> None:
         """Enregistre un retour utilisateur (👍/👎) pour une interaction."""
+        if not self._actif:
+            return
         await self._ecrire(
             self._FICHIER_FEEDBACK,
             {"id": interaction_id, "ts": datetime.now(UTC).isoformat(), "vote": vote},
@@ -79,8 +99,6 @@ class JournalFichier:
 
     async def _ecrire(self, fichier: str, enregistrement: dict) -> None:
         """Ajoute une ligne JSON au fichier (sous verrou), en tolérant les pannes."""
-        if not self._actif:
-            return
         ligne = json.dumps(enregistrement, ensure_ascii=False) + "\n"
         try:
             async with self._verrou:

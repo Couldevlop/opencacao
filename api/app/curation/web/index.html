@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
     <title>OpenCacao — Console de curation</title>
-    <link rel="stylesheet" href="styles.css?v=10" />
+    <link rel="stylesheet" href="styles.css?v=11" />
   </head>
   <body>
     <div class="flag-strip" aria-hidden="true"></div>
@@ -56,6 +56,10 @@
             <button type="button" class="onglet" id="tab-pipeline" data-vue="vue-pipeline">
               <span class="menu-ico" aria-hidden="true">⚙️</span>
               <span class="menu-txt">Pipeline</span>
+            </button>
+            <button type="button" class="onglet" id="tab-stats" data-vue="vue-stats">
+              <span class="menu-ico" aria-hidden="true">📊</span>
+              <span class="menu-txt">Statistiques</span>
             </button>
           </nav>
         </aside>
@@ -135,6 +139,17 @@
         </main>
       </div>
 
+      <div id="vue-stats" class="vue" hidden>
+        <section class="stats-board">
+          <h2 class="pipeline-titre">📊 Visites de l'outil</h2>
+          <div class="cartes-stats" id="cartes-stats"></div>
+          <h3 class="jobs-titre">30 derniers jours</h3>
+          <div class="chart" id="chart-jours"></div>
+          <h3 class="jobs-titre">Par pays</h3>
+          <div class="pays-liste" id="pays-liste"></div>
+        </section>
+      </div>
+
       </div><!-- .contenu -->
       </div><!-- .layout -->
     </div>
@@ -157,6 +172,6 @@
       </article>
     </template>
 
-    <script type="module" src="app.js?v=10"></script>
+    <script type="module" src="app.js?v=11"></script>
   </body>
 </html>

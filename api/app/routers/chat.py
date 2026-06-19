@@ -4,24 +4,36 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
-from app.api_deps import get_client_ip, get_conseil_service
+from app.api_deps import get_client_ip, get_conseil_service, get_journal
 from app.application.conseil_service import ConseilService
 from app.core.config import Settings, get_settings
 from app.domain.exceptions import InferenceUnavailable, RateLimitDepasse
+from app.domain.ports import JournalPort
 from app.models.chat import ChatRequest, ChatResponse
 
 router = APIRouter(prefix="/v1", tags=["chat"])
 
 
+async def _journaliser_visite(
+    request: Request, client_ip: str, canal: str, journal: JournalPort
+) -> None:
+    """Enregistre une visite anonymisée (pays résolu localement, IP jamais stockée)."""
+    geo = getattr(request.app.state, "geo", None)
+    pays = geo.pays(client_ip) if geo is not None else ""
+    await journal.enregistrer_visite(pays, canal)
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     payload: ChatRequest,
+    request: Request,
     client_ip: str = Depends(get_client_ip),
     service: ConseilService = Depends(get_conseil_service),
     settings: Settings = Depends(get_settings),
+    journal: JournalPort = Depends(get_journal),
 ) -> ChatResponse:
     """Répond à une question agronomique cacao.
 
@@ -31,6 +43,7 @@ async def chat(
     Raises:
         HTTPException: 429 si rate-limit dépassé, 503 si inférence indisponible.
     """
+    await _journaliser_visite(request, client_ip, payload.canal.value, journal)
     try:
         conseil = await service.conseiller(payload.question, payload.langue, client_ip)
     except RateLimitDepasse as exc:
@@ -56,8 +69,10 @@ async def chat(
 @router.post("/chat/stream")
 async def chat_stream(
     payload: ChatRequest,
+    request: Request,
     client_ip: str = Depends(get_client_ip),
     service: ConseilService = Depends(get_conseil_service),
+    journal: JournalPort = Depends(get_journal),
 ) -> StreamingResponse:
     """Répond en flux (Server-Sent Events) pour un affichage progressif.
 
@@ -65,6 +80,7 @@ async def chat_stream(
     ``done`` (métadonnées finales) ou ``error`` (rate-limit / indisponible). Le
     statut HTTP reste 200 ; les erreurs métier sont portées par un événement.
     """
+    await _journaliser_visite(request, client_ip, payload.canal.value, journal)
 
     async def flux() -> object:
         try:

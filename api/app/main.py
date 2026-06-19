@@ -34,6 +34,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.cache = CacheClient.from_settings(settings)
     app.state.journal = JournalFichier.from_settings(settings)
     app.state.embeddings, app.state.rag = _construire_rag(settings)
+    from app.services.geo import GeoLocalisateur
+
+    app.state.geo = GeoLocalisateur.from_env()
     logger.info("demarrage", version=__version__, backend=settings.inference_backend)
 
     app.state.prewarm_task = _lancer_prechauffage(app, settings)

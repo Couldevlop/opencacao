@@ -339,6 +339,20 @@ def test_rag_constituer_conflit_409(pipeline_console) -> None:
     assert client.post("/api/rag/constituer").status_code == 409
 
 
+def test_analytics_endpoint(console, monkeypatch) -> None:
+    client, tmp = console
+    (tmp / "visites.jsonl").write_text(
+        json.dumps({"ts": "2026-06-19T10:00:00+00:00", "pays": "CI", "canal": "web"}) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("DATASET_DIR", str(tmp))
+    resp = client.get("/api/analytics")
+    assert resp.status_code == 200
+    a = resp.json()
+    assert a["total"] == 1
+    assert a["par_pays"][0]["pays"] == "CI"
+
+
 def test_recherche_202_et_conflit_409(pipeline_console) -> None:
     client, faux = pipeline_console
     assert client.post("/api/recherche").status_code == 202

@@ -16,6 +16,9 @@ dependencies = [
     "numpy==1.26.*",
     # Extraction de texte des PDF uploadés dans la console de curation (pure-Python).
     "pypdf==5.*",
+    # Géolocalisation IP -> pays EN LOCAL (base GeoLite2), pour l'analytique des
+    # visites. L'IP n'est jamais stockée : on ne garde que le code pays.
+    "maxminddb==2.*",
 ]
 
 [project.optional-dependencies]
