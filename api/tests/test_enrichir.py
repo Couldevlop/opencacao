@@ -21,6 +21,9 @@ async def test_executer_enchaine_recherche_puis_constitution(monkeypatch) -> Non
         async def collecter_sources(self, job_id: str) -> None:
             appels.append(("collecter", job_id))
 
+        async def decouvrir_sources(self, job_id: str) -> None:
+            appels.append(("decouvrir", job_id))
+
         async def constituer_rag(self, job_id: str) -> None:
             appels.append(("constituer", job_id))
 
@@ -33,6 +36,7 @@ async def test_executer_enchaine_recherche_puis_constitution(monkeypatch) -> Non
 
     assert "reconcil" in appels
     assert ("collecter", "recherche_sources") in appels
+    assert ("decouvrir", "decouverte_sources") in appels
     assert ("constituer", "rag_constitution") in appels
     # L'ordre est respecté : recherche AVANT constitution.
     assert appels.index(("collecter", "recherche_sources")) < appels.index(

@@ -226,6 +226,14 @@ class FakePipeline:
     async def collecter_sources(self, job_id: str) -> None:
         await self._jobs.maj(job_id, statut="reussi", message="ok")
 
+    async def demarrer_decouverte(self) -> dict | None:
+        if getattr(self, "decouverte_conflit", False):
+            return None
+        return await self._jobs.creer("decouverte_sources")
+
+    async def decouvrir_sources(self, job_id: str) -> None:
+        await self._jobs.maj(job_id, statut="reussi", message="ok")
+
     async def ajouter_document_url(self, url: str) -> dict | None:
         if getattr(self, "url_injoignable", False):
             return None
@@ -390,3 +398,10 @@ def test_recherche_202_et_conflit_409(pipeline_console) -> None:
     assert client.post("/api/recherche").status_code == 202
     faux.recherche_conflit = True
     assert client.post("/api/recherche").status_code == 409
+
+
+def test_decouverte_202_et_conflit_409(pipeline_console) -> None:
+    client, faux = pipeline_console
+    assert client.post("/api/decouverte").status_code == 202
+    faux.decouverte_conflit = True
+    assert client.post("/api/decouverte").status_code == 409

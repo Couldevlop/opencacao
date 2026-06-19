@@ -322,6 +322,24 @@ async def recherche_sources(_: Session) -> dict[str, str]:
     return {"job_id": job["id"], "statut": job["statut"]}
 
 
+@app.post("/api/decouverte", status_code=status.HTTP_202_ACCEPTED)
+async def decouverte_sources(_: Session) -> dict[str, str]:
+    """Lance (tâche de fond) la découverte de nouvelles sources sur les sites officiels.
+
+    Raises:
+        HTTPException: 409 si une découverte est déjà en cours.
+    """
+    job = await _pipeline.demarrer_decouverte()
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Une découverte est déjà en cours."
+        )
+    tache = asyncio.create_task(_pipeline.decouvrir_sources(job["id"]))
+    _taches.add(tache)
+    tache.add_done_callback(_taches.discard)
+    return {"job_id": job["id"], "statut": job["statut"]}
+
+
 # --- Pipeline : constitution RAG, reindex, préparation fine-tuning, suivi des jobs ---
 
 

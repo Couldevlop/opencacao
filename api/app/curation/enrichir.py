@@ -20,13 +20,16 @@ logger = get_logger(__name__)
 
 
 async def executer() -> None:
-    """Exécute un cycle complet : recherche des sources puis constitution RAG."""
+    """Exécute un cycle complet : recherche + découverte de sources, puis constitution."""
     jobs = JobsRegistry.from_env()
     jobs.reconcilier_orphelins()
     pipeline = PipelineService.from_env(jobs)
 
     recherche = await jobs.creer("recherche_sources")
     await pipeline.collecter_sources(recherche["id"])
+
+    decouverte = await jobs.creer("decouverte_sources")
+    await pipeline.decouvrir_sources(decouverte["id"])
 
     constitution = await jobs.creer("rag_constitution")
     await pipeline.constituer_rag(constitution["id"])

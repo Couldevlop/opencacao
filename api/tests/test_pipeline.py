@@ -436,6 +436,52 @@ async def test_ajouter_document_url_injoignable(tmp_path: Path, monkeypatch) -> 
     assert await service.ajouter_document_url("https://x/absent") is None
 
 
+async def test_decouvrir_sources_telecharge_les_nouveaux(tmp_path: Path, monkeypatch) -> None:
+    import httpx
+
+    async def faux_decouvrir(client, store, max_docs=25):
+        return [{"url": "https://cnra.ci/x.pdf", "nom": "x.pdf"}]
+
+    monkeypatch.setattr(pipeline_module, "decouvrir", faux_decouvrir)
+
+    def fab(verifie):
+        return httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda r: httpx.Response(
+                    200, content=b"%PDF-1.4 data", headers={"content-type": "application/pdf"}
+                )
+            )
+        )
+
+    service, jobs = _service(tmp_path, http_factory=fab)
+    job = await jobs.creer("decouverte_sources")
+    await service.decouvrir_sources(job["id"])
+    relu = await jobs.obtenir(job["id"])
+    assert relu["statut"] == "reussi"
+    assert relu["details"]["decouverts"] == 1
+    assert relu["details"]["telecharges"] == 1
+    assert service._documents.existe("x.pdf")
+
+
+async def test_decouvrir_sources_aucune_nouveaute(tmp_path: Path, monkeypatch) -> None:
+    import httpx
+
+    async def faux_decouvrir(client, store, max_docs=25):
+        return []
+
+    monkeypatch.setattr(pipeline_module, "decouvrir", faux_decouvrir)
+
+    def fab(verifie):
+        return httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
+
+    service, jobs = _service(tmp_path, http_factory=fab)
+    job = await jobs.creer("decouverte_sources")
+    await service.decouvrir_sources(job["id"])
+    relu = await jobs.obtenir(job["id"])
+    assert relu["statut"] == "reussi"
+    assert relu["details"]["decouverts"] == 0
+
+
 async def test_ajouter_document_url_ssrf_bloque(tmp_path: Path, monkeypatch) -> None:
     """Une URL interne (SSRF) est refusée avant tout téléchargement."""
     import pytest

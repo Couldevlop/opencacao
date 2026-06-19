@@ -27,6 +27,7 @@ from pathlib import Path
 import httpx
 
 from app.core.logging import get_logger
+from app.curation.decouverte import decouvrir
 from app.curation.documents import DocumentInvalide, DocumentStore
 from app.curation.jobs import JobsRegistry
 from app.curation.k8s import ClusterClient, ClusterIndisponible
@@ -422,10 +423,15 @@ class PipelineService:
         # métadonnées cloud…). Résolution DNS bloquante -> déportée en thread.
         if not await asyncio.to_thread(url_publique_sure, url):
             raise DocumentInvalide("URL non autorisée (hôte interne ou injoignable).")
-        # URL fournie explicitement par l'utilisateur (de confiance) : on essaie
-        # d'abord avec vérification TLS, puis SANS (de nombreux sites officiels
-        # ivoiriens ont un certificat incomplet).
-        resultat = None
+        resultat = await self._telecharger_tolerant(url)
+        if not resultat:
+            return None
+        donnees, content_type = resultat
+        nom = nom_depuis_url(url, content_type)
+        return self._documents.enregistrer(nom, donnees)
+
+    async def _telecharger_tolerant(self, url: str) -> tuple[bytes, str | None] | None:
+        """Télécharge avec vérification TLS, puis SANS si échec (certificats cassés)."""
         for verifie in (True, False):
             client = self._http_factory(verifie)
             try:
@@ -433,12 +439,71 @@ class PipelineService:
             finally:
                 await client.aclose()
             if resultat:
-                break
-        if not resultat:
+                return resultat
+        return None
+
+    # --- Découverte automatique de nouvelles sources ---
+
+    async def demarrer_decouverte(self) -> dict | None:
+        """Crée un job de découverte, sauf si un est déjà en cours."""
+        if await self._jobs.actif("decouverte_sources"):
             return None
-        donnees, content_type = resultat
-        nom = nom_depuis_url(url, content_type)
-        return self._documents.enregistrer(nom, donnees)
+        return await self._jobs.creer("decouverte_sources")
+
+    async def decouvrir_sources(self, job_id: str) -> None:
+        """Explore les sites officiels, télécharge les nouveaux PDF découverts.
+
+        N'enrichit pas le RAG directement : les documents trouvés sont ajoutés à la
+        liste, prêts pour la Constitution (étape ②).
+
+        Args:
+            job_id: Identifiant du job à suivre.
+        """
+        try:
+            client = self._http_factory(True)
+            try:
+                candidats = await decouvrir(client, self._documents)
+            finally:
+                await client.aclose()
+            if not candidats:
+                await self._jobs.maj(
+                    job_id,
+                    statut="reussi",
+                    message="Aucune nouvelle source découverte sur les sites officiels.",
+                    details={"decouverts": 0, "telecharges": 0},
+                )
+                return
+            telecharges = echoues = 0
+            for i, cand in enumerate(candidats, start=1):
+                await self._jobs.maj(
+                    job_id,
+                    log=f"{i}/{len(candidats)} {cand['url'][-60:]}",
+                    details={"courant": i, "objectif": len(candidats)},
+                )
+                resultat = await self._telecharger_tolerant(cand["url"])
+                if not resultat:
+                    echoues += 1
+                    continue
+                donnees, _ = resultat
+                try:
+                    self._documents.enregistrer(cand["nom"], donnees)
+                    telecharges += 1
+                except DocumentInvalide:
+                    echoues += 1
+            await self._jobs.maj(
+                job_id,
+                statut="reussi",
+                message=(
+                    f"{telecharges} nouvelle(s) source(s) découverte(s) et ajoutée(s) "
+                    f"({echoues} échec(s)). Lancez la Constitution pour les indexer."
+                ),
+                details={"decouverts": len(candidats), "telecharges": telecharges},
+            )
+        except Exception as exc:  # noqa: BLE001 - journalisé, statut d'échec propre
+            logger.error("decouverte_echec", job_id=job_id, error=str(exc))
+            await self._jobs.maj(
+                job_id, statut="echec", message="Erreur interne (voir les journaux)."
+            )
 
     # --- Étape ① Recherche des sources officielles (téléchargement) ---
 
