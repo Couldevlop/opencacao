@@ -398,6 +398,30 @@ async def test_ajouter_document_url(tmp_path: Path) -> None:
     assert (tmp_path / "documents" / doc["nom"]).exists()
 
 
+async def test_ajouter_document_url_repli_tls(tmp_path: Path) -> None:
+    """Sur certificat cassé (vérif TLS), on bascule en non-vérifié et ça passe."""
+    import httpx
+
+    appels: list[bool] = []
+
+    def fab(verifie):
+        appels.append(verifie)
+
+        def handler(req):
+            if verifie:
+                raise httpx.ConnectError("certificate verify failed")
+            return httpx.Response(
+                200, content=b"<html>ok</html>", headers={"content-type": "text/html"}
+            )
+
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    service, _ = _service(tmp_path, http_factory=fab)
+    doc = await service.ajouter_document_url("https://cert-casse.ci/p")
+    assert doc is not None
+    assert appels == [True, False]  # a réessayé sans vérification TLS
+
+
 async def test_ajouter_document_url_injoignable(tmp_path: Path) -> None:
     import httpx
 

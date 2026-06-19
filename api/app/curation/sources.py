@@ -11,6 +11,8 @@ gourmand, contrairement à l'extraction de texte qui a lieu à la constitution.
 
 from __future__ import annotations
 
+import hashlib
+import re
 from pathlib import Path
 
 import httpx
@@ -91,20 +93,28 @@ def extension_pour(url: str, content_type: str | None) -> str:
 
 
 def nom_depuis_url(url: str, content_type: str | None) -> str:
-    """Déduit un nom de fichier lisible depuis une URL libre (+ extension du type).
+    """Déduit un nom de fichier UNIQUE et lisible depuis une URL (+ extension du type).
+
+    Inclut les paramètres de requête (ex. ``?id=111``) pour distinguer les articles
+    d'un même CMS, et ajoute un court hachage garantissant l'unicité même après
+    troncature.
 
     Args:
         url: URL de la page/document.
         content_type: En-tête Content-Type de la réponse.
 
     Returns:
-        Un nom de fichier (hôte + chemin + extension), à assainir par le store.
+        Un nom de fichier (hôte + chemin + requête + extension), assaini par le store.
     """
     u = httpx.URL(url)
+    query = u.query.decode("utf-8", "ignore") if u.query else ""
     base = (u.host or "page").replace(".", "-")
-    chemin = u.path.strip("/").replace("/", "-")
-    nom = f"{base}-{chemin}" if chemin else base
-    return f"{nom[:80]}{extension_pour(url, content_type)}"
+    brut = f"{base}-{u.path}-{query}".lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", brut).strip("-")[:80]
+    # Hachage de l'URL complète : unicité même si des articles ont le même slug tronqué.
+    empreinte = hashlib.sha1(url.encode("utf-8")).hexdigest()[:8] if query else ""
+    nom = f"{slug}-{empreinte}" if empreinte else slug
+    return f"{nom}{extension_pour(url, content_type)}"
 
 
 async def telecharger(client: httpx.AsyncClient, url: str) -> tuple[bytes, str | None] | None:

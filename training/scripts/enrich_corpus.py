@@ -21,7 +21,7 @@ MIN_INSTRUCTION, MAX_INSTRUCTION = 10, 500
 MIN_OUTPUT, MAX_OUTPUT = 50, 2000
 
 # Sources reconnues (au moins une attendue dans les réponses techniques).
-SOURCES = ("CNRA", "ANADER", "Conseil du Café-Cacao", "FAO")
+SOURCES = ("CNRA", "ANADER", "Conseil du Café-Cacao", "FAO", "FIRCA")
 
 # Dosage chiffré associé à un produit phytosanitaire — interdit dans le corpus.
 _RE_DOSAGE = re.compile(

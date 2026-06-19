@@ -6,7 +6,20 @@ from pathlib import Path
 
 import httpx
 
-from app.curation.sources import charger_sources, extension_pour, telecharger
+from app.curation.sources import (
+    charger_sources,
+    extension_pour,
+    nom_depuis_url,
+    telecharger,
+)
+
+
+def test_nom_depuis_url_query_unique() -> None:
+    n1 = nom_depuis_url("http://x.ci/index.php?id=111&Itemid=184", "text/html")
+    n2 = nom_depuis_url("http://x.ci/index.php?id=112&Itemid=184", "text/html")
+    assert n1.endswith(".html")
+    assert "id-111" in n1
+    assert n1 != n2  # deux articles distincts -> deux noms distincts
 
 
 def test_charger_sources(tmp_path: Path) -> None:

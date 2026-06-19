@@ -20,7 +20,7 @@ import tempfile
 from pathlib import Path
 
 # Sources reconnues, citées dans les réponses du corpus.
-SOURCES: tuple[str, ...] = ("CNRA", "ANADER", "Conseil du Café-Cacao", "FAO")
+SOURCES: tuple[str, ...] = ("CNRA", "ANADER", "Conseil du Café-Cacao", "FAO", "FIRCA")
 
 # Arrondi des vecteurs : index ~2× plus léger, sans impact sur le cosinus.
 _DECIMALES = 6

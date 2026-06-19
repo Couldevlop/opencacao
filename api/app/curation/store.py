@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 # validée ici doit passer la validation d'entraînement, sans surprise à l'assemblage.
 _MIN_INSTRUCTION, _MAX_INSTRUCTION = 10, 500
 _MIN_OUTPUT, _MAX_OUTPUT = 50, 2000
-_SOURCES = ("CNRA", "ANADER", "Conseil du Café-Cacao", "FAO")
+_SOURCES = ("CNRA", "ANADER", "Conseil du Café-Cacao", "FAO", "FIRCA")
 
 
 class DosageRefuse(Exception):

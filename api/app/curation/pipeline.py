@@ -52,7 +52,7 @@ logger = get_logger(__name__)
 # Bornes alignées sur la validation du corpus (store.py / enrich_corpus.py).
 _MIN_INSTRUCTION, _MAX_INSTRUCTION = 10, 500
 _MIN_OUTPUT, _MAX_OUTPUT = 50, 2000
-_SOURCES = ("CNRA", "ANADER", "Conseil du Café-Cacao", "FAO")
+_SOURCES = ("CNRA", "ANADER", "Conseil du Café-Cacao", "FAO", "FIRCA")
 _ESPACES = re.compile(r"\s+")
 # Résilience de la vectorisation (constitution) : tentatives par lot + pause.
 _EMBED_TENTATIVES = 3
@@ -417,11 +417,18 @@ class PipelineService:
         Raises:
             DocumentInvalide: Si le format/contenu n'est pas exploitable.
         """
-        client = self._http_factory(True)
-        try:
-            resultat = await telecharger(client, url)
-        finally:
-            await client.aclose()
+        # URL fournie explicitement par l'utilisateur (de confiance) : on essaie
+        # d'abord avec vérification TLS, puis SANS (de nombreux sites officiels
+        # ivoiriens ont un certificat incomplet).
+        resultat = None
+        for verifie in (True, False):
+            client = self._http_factory(verifie)
+            try:
+                resultat = await telecharger(client, url)
+            finally:
+                await client.aclose()
+            if resultat:
+                break
         if not resultat:
             return None
         donnees, content_type = resultat
