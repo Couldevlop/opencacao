@@ -16,6 +16,7 @@ Deux actions :
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -174,8 +175,8 @@ class PipelineService:
             # (pas les vecteurs ni le fichier entier) pour dédupliquer, puis on
             # ajoute les nouvelles entrées en fin de fichier. Indispensable sur un
             # gros index (dizaines de Mo) avec une console à faible mémoire.
-            textes_connus = lire_textes_indexes(self._index_path)
-            paires = charger_paires([self._corpus_cure])
+            textes_connus = await asyncio.to_thread(lire_textes_indexes, self._index_path)
+            paires = await asyncio.to_thread(charger_paires, [self._corpus_cure])
             nouvelles = filtrer_nouvelles(textes_connus, paires)
             total_actuel = len(textes_connus)
             await self._jobs.maj(
@@ -202,7 +203,7 @@ class PipelineService:
                 return
 
             entrees = construire_entrees(nouvelles, vecteurs)
-            ajouter_entrees(self._index_path, entrees)
+            await asyncio.to_thread(ajouter_entrees, self._index_path, entrees)
             total = total_actuel + len(entrees)
             await self._jobs.maj(job_id, log=f"{len(entrees)} entrée(s) ajoutée(s) — total {total}")
 
@@ -257,7 +258,10 @@ class PipelineService:
             job_id: Identifiant du job à suivre.
         """
         try:
-            extraits = self._documents.extraits()
+            # Travail bloquant (extraction PDF/HTML) déporté en thread : la boucle
+            # asyncio reste libre pour répondre à la sonde de vivacité (sinon le pod
+            # est tué pendant les longues extractions).
+            extraits = await asyncio.to_thread(self._documents.extraits)
             if not extraits:
                 await self._jobs.maj(
                     job_id,
@@ -266,7 +270,7 @@ class PipelineService:
                 )
                 return
 
-            connus = lire_textes_indexes(self._index_path)
+            connus = await asyncio.to_thread(lire_textes_indexes, self._index_path)
             total_actuel = len(connus)
             nouveaux: list[tuple[str, str]] = []  # (source, extrait)
             for source, extrait in extraits:
@@ -293,7 +297,7 @@ class PipelineService:
             if entrees is None:
                 return  # embeddings indisponibles (job déjà marqué en échec)
 
-            ajouter_entrees(self._index_path, entrees)
+            await asyncio.to_thread(ajouter_entrees, self._index_path, entrees)
             total = total_actuel + len(entrees)
             await self._jobs.maj(job_id, log=f"{len(entrees)} extrait(s) ajouté(s) — total {total}")
 
