@@ -116,13 +116,26 @@ class CurationStore:
         return items
 
     def statistiques(self) -> dict[str, int]:
-        """Compte des interactions par statut."""
+        """Compte des interactions par statut et satisfaction (retours 👍/👎).
+
+        Le taux de satisfaction est le pourcentage de votes positifs sur le total
+        des votes exprimés (0 si aucun vote). ``votes`` agrège chaque retour, y
+        compris ceux portant sur des interactions déjà curées ou des refus.
+        """
         statuts = self._statuts()
+        votes = self._votes()
+        positifs = sum(v["up"] for v in votes.values())
+        negatifs = sum(v["down"] for v in votes.values())
+        total_votes = positifs + negatifs
         return {
             "total": len(self._lire_jsonl("interactions.jsonl")),
             "a_curer": len(self.a_curer()),
             "valides": sum(1 for s in statuts.values() if s == "valide"),
             "rejetes": sum(1 for s in statuts.values() if s == "rejete"),
+            "votes": total_votes,
+            "positifs": positifs,
+            "negatifs": negatifs,
+            "satisfaction": round(positifs / total_votes * 100) if total_votes else 0,
         }
 
     # --- Écriture ---

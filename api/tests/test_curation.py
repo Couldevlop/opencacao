@@ -61,6 +61,32 @@ def test_a_curer_priorise_et_exclut_refus(tmp_path: Path) -> None:
     assert set(ids) == {"a" * 8, "b" * 8}
 
 
+def test_statistiques_agrege_la_satisfaction(tmp_path: Path) -> None:
+    """Le taux de satisfaction = % de 👍 sur l'ensemble des votes exprimés."""
+    _ecrire(
+        tmp_path / "feedback.jsonl",
+        [
+            {"id": "a" * 8, "vote": "up"},
+            {"id": "a" * 8, "vote": "up"},
+            {"id": "b" * 8, "vote": "up"},
+            {"id": "c" * 8, "vote": "down"},
+            {"id": "d" * 8, "vote": "n'importe quoi"},  # ignoré (vote invalide)
+        ],
+    )
+    stats = _store(tmp_path).statistiques()
+    assert stats["votes"] == 4
+    assert stats["positifs"] == 3
+    assert stats["negatifs"] == 1
+    assert stats["satisfaction"] == 75
+
+
+def test_statistiques_satisfaction_sans_vote(tmp_path: Path) -> None:
+    """Sans aucun vote, la satisfaction vaut 0 (pas de division par zéro)."""
+    stats = _store(tmp_path).statistiques()
+    assert stats["votes"] == 0
+    assert stats["satisfaction"] == 0
+
+
 async def test_valider_ecrit_le_corpus_et_marque(tmp_path: Path) -> None:
     """Valider écrit une paire au format corpus et retire l'item de la liste."""
     _ecrire(

@@ -36,7 +36,8 @@ function montrerConsole() {
 async function rafraichirStats() {
   try {
     const s = await api("/api/stats");
-    $("stats").textContent = `À curer : ${s.a_curer} · Validés : ${s.valides} · Rejetés : ${s.rejetes} · Total : ${s.total}`;
+    const satisfaction = s.votes ? ` · Satisfaction : ${s.satisfaction}% (${s.votes} vote${s.votes > 1 ? "s" : ""})` : "";
+    $("stats").textContent = `À curer : ${s.a_curer} · Validés : ${s.valides} · Rejetés : ${s.rejetes} · Total : ${s.total}${satisfaction}`;
     const compteur = $("onglet-compteur");
     if (compteur) compteur.textContent = s.a_curer ? `(${s.a_curer})` : "";
   } catch (e) {
@@ -470,8 +471,9 @@ function carteStat(libelle, valeur) {
 
 async function chargerStats() {
   let a;
+  let s = {};
   try {
-    a = await api("/api/analytics");
+    [a, s] = await Promise.all([api("/api/analytics"), api("/api/stats")]);
   } catch (e) {
     if (e instanceof NonAutorise) montrerLogin();
     return;
@@ -484,6 +486,7 @@ async function chargerStats() {
     ["Ce mois", a.mois],
     ["Cette année", a.annee],
     ["Total", a.total],
+    ["Satisfaction", s.votes ? `${s.satisfaction}%` : "—"],
   ].forEach(([lib, val]) => cartes.appendChild(carteStat(lib, val)));
 
   const chart = $("chart-jours");
