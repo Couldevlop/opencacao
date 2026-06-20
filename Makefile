@@ -1,5 +1,5 @@
 .PHONY: help corpus-check corpus-rag corpus-rag-collect corpus-cure corpus-assemble \
-	rag-index train merge redeploy-model build up down test lint format
+	rag-index train merge eval redeploy-model build up down test lint format
 
 help:
 	@echo "Cibles disponibles :"
@@ -11,6 +11,7 @@ help:
 	@echo "  rag-index       Construit l'index RAG (embeddings) depuis le corpus"
 	@echo "  train           Lance l'entraînement LoRA (GPU)"
 	@echo "  merge           Fusionne l'adaptateur LoRA + modèle de base"
+	@echo "  eval            Évalue le modèle servi (garde-fous + qualité) — ENDPOINT=... MODEL=..."
 	@echo "  redeploy-model  Redéploie un GGUF (GGUF=... [VERSION=...])"
 	@echo "  build         Construit les images Docker du service"
 	@echo "  demo-base     Démarre la démo flux complet (Mistral-7B de base, GPU)"
@@ -60,6 +61,13 @@ merge:
 		--base mistralai/Ministral-3-8B-Instruct-2512-BF16 \
 		--adapter models/lora-adapter \
 		--output models/opencacao-8b
+
+# Évalue le modèle servi sur le jeu de tests figé (garde-fous + qualité).
+#   make eval ENDPOINT=http://localhost:8000 MODEL=opencacao-8b
+eval:
+	python training/scripts/evaluate.py \
+		--endpoint $(or $(ENDPOINT),http://localhost:8000) \
+		--model $(or $(MODEL),opencacao-8b)
 
 # Redéploie un nouveau GGUF sur le cluster (purge le cache, recharge l'inférence).
 #   make redeploy-model GGUF=models/opencacao-8b-Q4_K_M.gguf VERSION=1.1.0
