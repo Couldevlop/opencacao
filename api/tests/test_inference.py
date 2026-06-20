@@ -103,6 +103,34 @@ async def test_max_tokens_configurable_envoye_dans_le_payload() -> None:
     await client.close()
 
 
+async def test_params_decodage_envoyes_dans_le_payload() -> None:
+    """Température, top_p et frequency_penalty configurés sont transmis à l'inférence."""
+    vu: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        vu.update(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+    transport = httpx.MockTransport(handler)
+    http = httpx.AsyncClient(transport=transport, base_url="http://inference:8000")
+    client = InferenceClient(
+        "http://inference:8000",
+        "opencacao-8b",
+        10.0,
+        temperature=0.15,
+        top_p=0.85,
+        frequency_penalty=0.4,
+        client=http,
+    )
+    await client.generer("Comment sécher mes fèves ?")
+    assert vu["temperature"] == 0.15
+    assert vu["top_p"] == 0.85
+    assert vu["frequency_penalty"] == 0.4
+    await client.close()
+
+
 # --- Streaming (generer_stream) ---
 
 _SSE = (

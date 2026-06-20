@@ -30,6 +30,9 @@ class InferenceClient:
         model_name: str,
         timeout_s: float,
         max_tokens: int = 512,
+        temperature: float = 0.2,
+        top_p: float = 0.9,
+        frequency_penalty: float = 0.3,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         """Initialise le client d'inférence.
@@ -39,11 +42,17 @@ class InferenceClient:
             model_name: Nom du modèle à demander.
             timeout_s: Timeout des requêtes, en secondes.
             max_tokens: Plafond de génération par défaut (réglable).
+            temperature: Température d'échantillonnage par défaut (basse = ancré).
+            top_p: Noyau de probabilité (nucleus sampling).
+            frequency_penalty: Pénalité de répétition (réduit le remplissage).
             client: Client httpx injectable (pour les tests).
         """
         self._base_url = base_url.rstrip("/")
         self._model_name = model_name
         self._max_tokens = max_tokens
+        self._temperature = temperature
+        self._top_p = top_p
+        self._frequency_penalty = frequency_penalty
         self._client = client or httpx.AsyncClient(timeout=timeout_s)
 
     @classmethod
@@ -54,12 +63,23 @@ class InferenceClient:
             model_name=settings.model_name,
             timeout_s=settings.request_timeout_s,
             max_tokens=settings.inference_max_tokens,
+            temperature=settings.inference_temperature,
+            top_p=settings.inference_top_p,
+            frequency_penalty=settings.inference_frequency_penalty,
         )
+
+    def _params_decodage(self, temperature: float | None) -> dict:
+        """Paramètres de décodage communs aux deux modes (complet et flux)."""
+        return {
+            "temperature": self._temperature if temperature is None else temperature,
+            "top_p": self._top_p,
+            "frequency_penalty": self._frequency_penalty,
+        }
 
     async def generer(
         self,
         question: str,
-        temperature: float = 0.3,
+        temperature: float | None = None,
         max_tokens: int | None = None,
         contexte: str | None = None,
         historique: list[dict[str, str]] | None = None,
@@ -82,8 +102,8 @@ class InferenceClient:
         payload = {
             "model": self._model_name,
             "messages": build_messages(question, contexte, historique),
-            "temperature": temperature,
             "max_tokens": max_tokens if max_tokens is not None else self._max_tokens,
+            **self._params_decodage(temperature),
         }
         try:
             response = await self._client.post(
@@ -99,7 +119,7 @@ class InferenceClient:
     async def generer_stream(
         self,
         question: str,
-        temperature: float = 0.3,
+        temperature: float | None = None,
         max_tokens: int | None = None,
         contexte: str | None = None,
         historique: list[dict[str, str]] | None = None,
@@ -122,9 +142,9 @@ class InferenceClient:
         payload = {
             "model": self._model_name,
             "messages": build_messages(question, contexte, historique),
-            "temperature": temperature,
             "max_tokens": max_tokens if max_tokens is not None else self._max_tokens,
             "stream": True,
+            **self._params_decodage(temperature),
         }
         try:
             async with self._client.stream(

@@ -44,6 +44,15 @@ class Settings(BaseSettings):
     # rebuild via INFERENCE_MAX_TOKENS.
     inference_max_tokens: int = 512
 
+    # Paramètres de décodage (qualité de génération). Réglés bas/conservateurs pour
+    # un petit modèle CPU : réponses ancrées et factuelles plutôt que créatives.
+    #  - temperature basse  -> moins d'hallucination/digression ;
+    #  - top_p (noyau)      -> coupe la longue traîne improbable ;
+    #  - frequency_penalty  -> réduit les répétitions et le remplissage.
+    inference_temperature: float = 0.2
+    inference_top_p: float = 0.9
+    inference_frequency_penalty: float = 0.3
+
     # --- RAG (génération augmentée par récupération) ---
     # Désactivé tant que l'index n'est pas construit et le service d'embeddings prêt.
     rag_enabled: bool = False
