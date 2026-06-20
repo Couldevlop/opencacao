@@ -14,18 +14,34 @@ DISCLAIMER = (
 )
 
 
+class Message(BaseModel):
+    """Un tour de conversation (pour le dialogue multi-tours).
+
+    Attributes:
+        role: Auteur du message (``user`` ou ``assistant``).
+        content: Contenu textuel du message.
+    """
+
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=2000)
+
+
 class ChatRequest(BaseModel):
     """Requête de conseil agronomique.
 
     Attributes:
-        question: Question posée par le producteur.
+        question: Question posée par le producteur (dernier message).
         langue: Langue de la question (fr par défaut).
         canal: Canal d'origine de la question.
+        historique: Tours précédents de la conversation (clarifications). Le serveur
+            est sans état : le client renvoie l'historique à chaque tour. Borné à
+            20 messages pour éviter les abus.
     """
 
     question: str = Field(min_length=3, max_length=2000)
     langue: Langue = Langue.FR
     canal: Canal = Canal.WEB
+    historique: list[Message] = Field(default_factory=list, max_length=20)
 
 
 class ChatResponse(BaseModel):

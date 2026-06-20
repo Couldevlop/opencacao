@@ -62,6 +62,7 @@ class InferenceClient:
         temperature: float = 0.3,
         max_tokens: int | None = None,
         contexte: str | None = None,
+        historique: list[dict[str, str]] | None = None,
     ) -> str:
         """Génère une réponse agronomique pour la question donnée.
 
@@ -70,6 +71,7 @@ class InferenceClient:
             temperature: Température d'échantillonnage.
             max_tokens: Nombre maximum de tokens générés.
             contexte: Extraits récupérés (RAG) à injecter, ou None.
+            historique: Tours précédents de la conversation, ou None.
 
         Returns:
             Le texte de la réponse du modèle.
@@ -79,7 +81,7 @@ class InferenceClient:
         """
         payload = {
             "model": self._model_name,
-            "messages": build_messages(question, contexte),
+            "messages": build_messages(question, contexte, historique),
             "temperature": temperature,
             "max_tokens": max_tokens if max_tokens is not None else self._max_tokens,
         }
@@ -100,6 +102,7 @@ class InferenceClient:
         temperature: float = 0.3,
         max_tokens: int | None = None,
         contexte: str | None = None,
+        historique: list[dict[str, str]] | None = None,
     ) -> AsyncIterator[str]:
         """Génère une réponse en flux (SSE), morceau par morceau.
 
@@ -108,6 +111,7 @@ class InferenceClient:
             temperature: Température d'échantillonnage.
             max_tokens: Nombre maximum de tokens générés.
             contexte: Extraits récupérés (RAG) à injecter, ou None.
+            historique: Tours précédents de la conversation, ou None.
 
         Yields:
             Les fragments de texte (deltas) au fur et à mesure de la génération.
@@ -117,7 +121,7 @@ class InferenceClient:
         """
         payload = {
             "model": self._model_name,
-            "messages": build_messages(question, contexte),
+            "messages": build_messages(question, contexte, historique),
             "temperature": temperature,
             "max_tokens": max_tokens if max_tokens is not None else self._max_tokens,
             "stream": True,

@@ -44,8 +44,9 @@ async def chat(
         HTTPException: 429 si rate-limit dépassé, 503 si inférence indisponible.
     """
     await _journaliser_visite(request, client_ip, payload.canal.value, journal)
+    historique = [m.model_dump() for m in payload.historique]
     try:
-        conseil = await service.conseiller(payload.question, payload.langue, client_ip)
+        conseil = await service.conseiller(payload.question, payload.langue, client_ip, historique)
     except RateLimitDepasse as exc:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -81,11 +82,12 @@ async def chat_stream(
     statut HTTP reste 200 ; les erreurs métier sont portées par un événement.
     """
     await _journaliser_visite(request, client_ip, payload.canal.value, journal)
+    historique = [m.model_dump() for m in payload.historique]
 
     async def flux() -> object:
         try:
             async for evenement in service.conseiller_stream(
-                payload.question, payload.langue, client_ip
+                payload.question, payload.langue, client_ip, historique
             ):
                 yield f"data: {json.dumps(evenement, ensure_ascii=False)}\n\n"
         except RateLimitDepasse:

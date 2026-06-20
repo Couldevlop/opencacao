@@ -35,7 +35,7 @@ export function creerCasUsageConseilStream(client) {
    * @param {(texte: string) => void} onToken
    * @returns {Promise<object>} entité Conseil finale
    */
-  return async function demanderConseilStream(question, onToken) {
-    return client.demanderStream(valider(question), onToken);
+  return async function demanderConseilStream(question, onToken, historique = []) {
+    return client.demanderStream(valider(question), onToken, historique);
   };
 }

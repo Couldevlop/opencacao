@@ -20,6 +20,7 @@ class InferencePort(Protocol):
         temperature: float = ...,
         max_tokens: int = ...,
         contexte: str | None = ...,
+        historique: list[dict[str, str]] | None = ...,
     ) -> str:
         """Génère une réponse pour la question. Lève InferenceUnavailable si KO."""
         ...
@@ -30,6 +31,7 @@ class InferencePort(Protocol):
         temperature: float = ...,
         max_tokens: int = ...,
         contexte: str | None = ...,
+        historique: list[dict[str, str]] | None = ...,
     ) -> AsyncIterator[str]:
         """Génère une réponse en flux (deltas). Lève InferenceUnavailable si KO."""
         ...

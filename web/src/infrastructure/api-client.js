@@ -24,13 +24,13 @@ function erreurDepuisKind(kind) {
 export function creerClientApi(lireBaseUrl) {
   const baseCourante = () => String(lireBaseUrl() || "").replace(/\/+$/, "");
 
-  async function demander(question) {
+  async function demander(question, historique = []) {
     let resp;
     try {
       resp = await fetch(baseCourante() + "/v1/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ question, langue: "fr", canal: "web" }),
+        body: JSON.stringify({ question, langue: "fr", canal: "web", historique }),
       });
     } catch {
       throw new ConseilError(ErreurKind.RESEAU, "API injoignable");
@@ -51,14 +51,15 @@ export function creerClientApi(lireBaseUrl) {
    * renvoie l'entité Conseil finale (réponse complète + métadonnées).
    * @param {string} question
    * @param {(texte: string) => void} onToken
+   * @param {Array<{role: string, content: string}>} historique - tours précédents
    */
-  async function demanderStream(question, onToken) {
+  async function demanderStream(question, onToken, historique = []) {
     let resp;
     try {
       resp = await fetch(baseCourante() + "/v1/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-        body: JSON.stringify({ question, langue: "fr", canal: "web" }),
+        body: JSON.stringify({ question, langue: "fr", canal: "web", historique }),
       });
     } catch {
       throw new ConseilError(ErreurKind.RESEAU, "API injoignable");

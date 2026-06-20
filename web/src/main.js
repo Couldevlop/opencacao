@@ -31,6 +31,11 @@ const refs = {
 
 let baseUrl = localStorage.getItem(CLE_API) || API_DEFAUT;
 let enCours = false;
+// Historique de conversation (multi-tours) : permet au modèle d'ouvrir une
+// discussion (ex. demander la ville) et de tenir compte des échanges précédents.
+// Serveur sans état : on renvoie ces tours à chaque requête. Borné à 20 messages.
+let historique = [];
+const MAX_HISTORIQUE = 20;
 
 // Injection de dépendances (dépendances pointant vers l'intérieur).
 const client = creerClientApi(() => baseUrl);
@@ -70,19 +75,29 @@ async function envoyer(question) {
 
   let bulle = null;
   try {
-    const conseil = await demanderConseilStream(q, (texte) => {
-      if (!bulle) {
-        vue.cacherSaisie();
-        bulle = vue.demarrerBot();
-      }
-      bulle.append(texte);
-    });
+    // On envoie les tours précédents (pas la question courante).
+    const conseil = await demanderConseilStream(
+      q,
+      (texte) => {
+        if (!bulle) {
+          vue.cacherSaisie();
+          bulle = vue.demarrerBot();
+        }
+        bulle.append(texte);
+      },
+      historique
+    );
     if (!bulle) {
       // Aucun token reçu (cas limite) : on rend la réponse d'un bloc.
       vue.cacherSaisie();
       bulle = vue.demarrerBot();
     }
     bulle.finaliser(conseil);
+    // Mémorise l'échange pour permettre la discussion (clarifications) au tour suivant.
+    if (conseil?.reponse) {
+      historique.push({ role: "user", content: q }, { role: "assistant", content: conseil.reponse });
+      if (historique.length > MAX_HISTORIQUE) historique = historique.slice(-MAX_HISTORIQUE);
+    }
   } catch (e) {
     vue.cacherSaisie();
     vue.ajouterErreur(messageErreur(e));

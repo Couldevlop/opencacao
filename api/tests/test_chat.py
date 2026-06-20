@@ -45,6 +45,66 @@ def test_chat_garde_fou_phyto(client) -> None:
     assert "ANADER" in data["reponse"]
 
 
+def test_chat_multitours_accepte_historique(client) -> None:
+    """Une requête avec historique (multi-tours) est acceptée et répond."""
+    resp = client.post(
+        "/v1/chat",
+        json={
+            "question": "Et pour le séchage ?",
+            "canal": "web",
+            "historique": [
+                {"role": "user", "content": "Comment récolter le cacao ?"},
+                {"role": "assistant", "content": "Récoltez les cabosses mûres."},
+            ],
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json()["reponse"]
+
+
+def test_chat_injecte_contact_local_si_ville_connue(client) -> None:
+    """Demande de contact + ville citée : le contact local exact est ajouté."""
+    resp = client.post(
+        "/v1/chat",
+        json={"question": "Quel est le numéro de l'ANADER à Daloa ?", "canal": "web"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["redirection_anader"] is True
+    assert "Direction Régionale Centre-Ouest" in data["reponse"]
+    assert "ANADER" in data["sources"]
+
+
+def test_chat_pas_de_contact_si_ville_inconnue(client) -> None:
+    """Sans ville reconnaissable, aucun contact n'est injecté (le modèle demandera la ville)."""
+    resp = client.post(
+        "/v1/chat",
+        json={"question": "Quel est le numéro de l'ANADER ?", "canal": "web"},
+    )
+    assert resp.status_code == 200
+    assert "Direction Régionale" not in resp.json()["reponse"]
+
+
+def test_chat_garde_fou_avec_contact_local(client) -> None:
+    """Un refus phyto avec une ville connue ajoute le contact ANADER de la zone."""
+    resp = client.post(
+        "/v1/chat",
+        json={"question": "Quelle dose de fongicide utiliser à Korhogo ?", "canal": "sms"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["redirection_anader"] is True
+    assert "Direction Régionale Nord" in data["reponse"]
+
+
+def test_chat_multitours_ignore_le_cache(client, fake_inference) -> None:
+    """Une requête multi-tours ne lit pas le cache (réponse dépendante du contexte)."""
+    body = {"question": "Comment préparer une pépinière de cacaoyer demain ?", "canal": "web"}
+    client.post("/v1/chat", json=body)
+    client.post("/v1/chat", json={**body, "historique": [{"role": "user", "content": "bonjour"}]})
+    assert len(fake_inference.appels) == 2  # le 2e (multi-tours) ne vient pas du cache
+
+
 def test_chat_utilise_le_cache(client, fake_inference) -> None:
     """La deuxième requête identique est servie par le cache (pas de 2e inférence)."""
     body = {"question": "Comment préparer une pépinière de cacaoyer ?", "canal": "web"}

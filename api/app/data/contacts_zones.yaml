@@ -1,0 +1,104 @@
+# Annuaire ANADER + Conseil du Café-Cacao — pour la mise en relation locale.
+#
+# Découpage officiel ANADER : 10 Directions Régionales / 60 zones, en vigueur
+# depuis le 15 décembre 2024 (source : anader.ci).
+#
+# ⚠️ CONTACTS À VALIDER : les numéros ci-dessous proviennent de sources publiques
+# en ligne (site ANADER, annuaires) et doivent être confirmés avant diffusion large.
+# `verifie: false` = à confirmer. Ne jamais diffuser un contact non vérifié sans
+# le signaler. Le contact est injecté par le code (jamais généré par le modèle).
+
+siege:
+  nom: "ANADER — Siège national"
+  adresse: "Plateau, Boulevard de la Paix, BPV 183 Abidjan"
+  tel: "+225 27 20 21 67 00"
+  email: "anader@anader.ci"
+  verifie: true
+
+conseil_cafe_cacao:
+  nom: "Conseil du Café-Cacao"
+  adresse: "Immeuble CAISTAB, Boulevard Botreau-Roussel, Plateau, Abidjan"
+  tel: "+225 20 25 69 69"
+  email: "info@conseilcafecacao.ci"
+  verifie: false
+
+directions_regionales:
+  - code: DRC
+    nom: "Direction Régionale Centre"
+    siege: "Bouaké"
+    tel: "+225 31 63 04 59"
+    email: ""
+    verifie: false
+    zones: [Béoumi, Bouaké, Dabakala, Katiola, Sakassou]
+
+  - code: DRCO
+    nom: "Direction Régionale Centre-Ouest"
+    siege: "Daloa"
+    tel: ""
+    email: "drcoanader@yahoo.fr"
+    verifie: false
+    zones: [Bouaflé, Daloa, Gagnoa, Issia, Oumé, Sinfra, Vavoua, Zuénoula]
+
+  - code: DRCE
+    nom: "Direction Régionale Centre-Est"
+    siege: "Yamoussoukro"
+    tel: ""
+    email: ""
+    verifie: false
+    zones: [Bocanda, Bongouanou, Daoukro, Dimbokro, "M'Bahiakro", Tiébissou, Toumodi, Yamoussoukro]
+
+  - code: DRE
+    nom: "Direction Régionale Est"
+    siege: "Abengourou"
+    tel: "+225 27 35 91 39 44"
+    email: "dr.abengourou@anader.ci"
+    verifie: false
+    zones: [Abengourou, Aboisso, Adzopé, Agnibilékrou, Alépé]
+
+  - code: DRN
+    nom: "Direction Régionale Nord"
+    siege: "Korhogo"
+    tel: "+225 27 36 86 49 61"
+    email: "dr.korhogo@anader.ci"
+    verifie: false
+    zones: [Boundiali, Ferkessédougou, Korhogo, Tengréla]
+
+  - code: DRNE
+    nom: "Direction Régionale Nord-Est"
+    siege: "Bondoukou"
+    tel: "+225 01 40 89 83 32"
+    email: "zone.bondoukou@anader.ci"
+    verifie: false
+    zones: [Bondoukou, Bouna, Tanda, Téhini]
+
+  - code: DRNO
+    nom: "Direction Régionale Nord-Ouest"
+    siege: "Odienné"
+    tel: "+225 02 03 53 32"
+    email: "zoneodienne@anader.ci"
+    verifie: false
+    zones: [Mankono, Minignan, Odienné, Séguéla, Touba]
+
+  - code: DRO
+    nom: "Direction Régionale Ouest"
+    siege: "Man"
+    tel: "+225 33 79 34 39"
+    email: "anaderd_droman@yahoo.fr"
+    verifie: false
+    zones: [Bangolo, Biankouma, Danané, Duékoué, Guiglo, Kouibly, Man, Toulepleu]
+
+  - code: DRS
+    nom: "Direction Régionale Sud"
+    siege: "Abidjan"
+    tel: "+225 27 21 35 08 63"
+    email: "dr.sud@anader.ci"
+    verifie: false
+    zones: [Abidjan, Agboville, Dabou, Divo, Grand-Lahou, Guitry, Lakota, Tiassalé]
+
+  - code: DRSO
+    nom: "Direction Régionale Sud-Ouest"
+    siege: "San Pedro"
+    tel: "+225 34 71 82 61"
+    email: "drsoanader@gmail.com"
+    verifie: false
+    zones: [Buyo, "San Pedro", Sassandra, Soubré, Tabou]
