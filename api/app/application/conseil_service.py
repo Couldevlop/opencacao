@@ -73,16 +73,24 @@ class ConseilService:
         """
         if not (conseil.redirection_anader or contacts.intention_contact(texte_conversation)):
             return conseil
+        lignes: list[str] = []
         contact = contacts.chercher(texte_conversation)
-        if contact is None:
-            return conseil
-        ligne = contacts.formater(contact)
-        if ligne in conseil.reponse:
+        if contact is not None:
+            lignes.append(contacts.formater(contact))
+        # Repli garanti : tant que la DR locale n'est pas vérifiée (ou inconnue), on
+        # ajoute le siège (coordonnée confirmée) pour que le producteur ait toujours
+        # une ligne fiable.
+        if contact is None or not contact.verifie:
+            siege = contacts.siege()
+            if siege is not None:
+                lignes.append(contacts.formater(siege))
+        ajout = "\n".join(ligne for ligne in lignes if ligne and ligne not in conseil.reponse)
+        if not ajout:
             return conseil
         sources = conseil.sources if "ANADER" in conseil.sources else [*conseil.sources, "ANADER"]
         return replace(
             conseil,
-            reponse=f"{conseil.reponse}\n\n{ligne}",
+            reponse=f"{conseil.reponse}\n\n{ajout}",
             sources=sources,
             redirection_anader=True,
         )

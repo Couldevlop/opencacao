@@ -75,14 +75,16 @@ def test_chat_injecte_contact_local_si_ville_connue(client) -> None:
     assert "ANADER" in data["sources"]
 
 
-def test_chat_pas_de_contact_si_ville_inconnue(client) -> None:
-    """Sans ville reconnaissable, aucun contact n'est injecté (le modèle demandera la ville)."""
+def test_chat_repli_siege_si_ville_inconnue(client) -> None:
+    """Sans ville reconnaissable, le siège confirmé est fourni (repli fiable garanti)."""
     resp = client.post(
         "/v1/chat",
         json={"question": "Quel est le numéro de l'ANADER ?", "canal": "web"},
     )
     assert resp.status_code == 200
-    assert "Direction Régionale" not in resp.json()["reponse"]
+    reponse = resp.json()["reponse"]
+    assert "Direction Régionale" not in reponse  # aucune DR locale (ville inconnue)
+    assert "Siège national" in reponse  # mais le siège confirmé est donné
 
 
 def test_chat_garde_fou_avec_contact_local(client) -> None:
