@@ -20,11 +20,12 @@ resources:
   - ingress.yaml
   - networkpolicy.yaml
   - cron-enrichissement.yaml
+  - cron-watchdog.yaml
 
 images:
   - name: opencacao-api
     newName: docker.io/thomcoul/opencacao-api   # <-- ton compte Docker Hub
-    newTag: "0.1.36"
+    newTag: "0.1.37"
   - name: opencacao-web
     newName: docker.io/thomcoul/opencacao-web    # <-- ton compte Docker Hub
     newTag: "0.1.7"

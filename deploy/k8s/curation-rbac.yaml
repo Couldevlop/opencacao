@@ -29,3 +29,27 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: curation
+---
+# Le watchdog (supervision) doit lire l'état du CronJob d'enrichissement pour
+# détecter un arrêt/suspension/échec. Droit minimal : get sur ce SEUL CronJob.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: curation-watch-cron
+rules:
+  - apiGroups: ["batch"]
+    resources: ["cronjobs"]
+    resourceNames: ["enrichissement-rag"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: curation-watch-cron
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: curation-watch-cron
+subjects:
+  - kind: ServiceAccount
+    name: curation

@@ -37,6 +37,18 @@ spec:
                 - { name: EMBEDDINGS_URL, value: "http://embeddings:8001" }
                 - { name: API_DEPLOYMENT, value: "api" }
                 - { name: LOG_LEVEL, value: "INFO" }
+                # Alerte email en cas d'échec (Zoho ZeptoMail, cf. app/core/email.py).
+                - { name: ZEPTOMAIL_API_URL, value: "https://api.zeptomail.com/v1.1/email" }
+                # Expéditeur vérifié dans le Mail Agent ZeptoMail (noreply@ -> SM_147 refusé).
+                - { name: EMAIL_FROM, value: "waopron@openlabconsulting.com" }
+                - { name: EMAIL_FROM_NAME, value: "OpenCacao" }
+                - { name: EMAIL_TEAM, value: "waopron@openlabconsulting.com" }
+                - name: ZEPTOMAIL_TOKEN # optionnel : absent -> email simplement sauté
+                  valueFrom:
+                    secretKeyRef:
+                      name: opencacao-email
+                      key: ZEPTOMAIL_TOKEN
+                      optional: true
               volumeMounts:
                 - name: dataset
                   mountPath: /data

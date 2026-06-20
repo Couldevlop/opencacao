@@ -64,6 +64,35 @@ class ClusterClient:
             self._client = httpx.AsyncClient(verify=self._verify, timeout=15.0)
         return self._client
 
+    @property
+    def namespace(self) -> str:
+        """Namespace courant (celui du ServiceAccount monté)."""
+        return self._namespace
+
+    async def get_json(self, chemin: str) -> dict:
+        """Lit une ressource de l'API server (GET) et renvoie le JSON décodé.
+
+        Args:
+            chemin: Chemin d'API absolu (ex.
+                ``/apis/batch/v1/namespaces/opencacao/cronjobs/enrichissement-rag``).
+
+        Returns:
+            Le corps JSON de la ressource.
+
+        Raises:
+            ClusterIndisponible: Si l'API server refuse ou est injoignable.
+        """
+        try:
+            reponse = await self._http().get(
+                f"{self._hote}{chemin}",
+                headers={"Authorization": f"Bearer {self._token}"},
+            )
+            reponse.raise_for_status()
+            return reponse.json()
+        except httpx.HTTPError as exc:
+            logger.error("get_json_echec", chemin=chemin, error=str(exc))
+            raise ClusterIndisponible(f"lecture de {chemin} impossible") from exc
+
     @classmethod
     def from_serviceaccount(cls, sa: Path = _SA, hote: str = _HOTE_DEFAUT) -> ClusterClient:
         """Construit le client depuis le ServiceAccount monté dans le pod.
