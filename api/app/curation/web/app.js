@@ -130,6 +130,7 @@ const STATUT_LIB = {
 };
 const TYPE_LIB = {
   recherche_sources: "Recherche sources",
+  decouverte_sources: "Découverte sources",
   rag_constitution: "Constitution RAG",
   rag_reindex: "RAG (faits curés)",
   finetuning_prepare: "Fine-tuning",
@@ -146,7 +147,7 @@ function ligneJob(job) {
   msg.className = "job-msg";
   msg.textContent = job.message || "…";
   div.appendChild(msg);
-  // Barre de progression (tâches longues en cours : recherche, constitution).
+  // Barre de progression (tâches longues en cours : recherche, découverte, constitution).
   const d = job.details || {};
   if (job.statut === "en_cours" && d.objectif) {
     const pct = Math.min(100, Math.round((100 * (d.courant || 0)) / d.objectif));
@@ -160,6 +161,15 @@ function ligneJob(job) {
     etiquette.className = "progress-pct";
     etiquette.textContent = `${pct}% (${d.courant || 0}/${d.objectif})`;
     div.append(barre, etiquette);
+  } else if (job.statut === "en_cours") {
+    // Job lancé mais objectif pas encore connu : barre indéterminée (rassure
+    // l'utilisateur que la recherche tourne réellement).
+    const barre = document.createElement("div");
+    barre.className = "progress";
+    const jauge = document.createElement("div");
+    jauge.className = "progress-jauge indetermine";
+    barre.appendChild(jauge);
+    div.appendChild(barre);
   }
   // Procédure d'entraînement (fine-tuning) : affichée telle quelle.
   if (job.details && job.details.procedure) {
@@ -332,6 +342,10 @@ $("btn-rag").addEventListener("click", () =>
 
 $("btn-recherche").addEventListener("click", () =>
   lancerAction("btn-recherche", "etat-upload", "/api/recherche", "Recherche des sources")
+);
+
+$("btn-decouverte").addEventListener("click", () =>
+  lancerAction("btn-decouverte", "etat-upload", "/api/decouverte", "Découverte des sources")
 );
 
 $("btn-archiver").addEventListener("click", async () => {
