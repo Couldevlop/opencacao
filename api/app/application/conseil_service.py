@@ -17,7 +17,7 @@ from app.domain.exceptions import RateLimitDepasse
 from app.domain.ports import CachePort, InferencePort, JournalPort
 from app.models.chat import DISCLAIMER
 from app.models.domain import Confiance, Langue
-from app.services import contacts, guardrails, postprocess
+from app.services import clarification, contacts, guardrails, postprocess
 from app.services.rag import RagRecuperateur
 
 logger = get_logger(__name__)
@@ -128,6 +128,14 @@ class ConseilService:
             return await self._journaliser(
                 question, langue, self._enrichir_contact(conseil, texte_conv)
             )
+
+        # Clarification consultative : au 1er tour, on analyse et on pose des questions
+        # complémentaires plutôt que de répondre à l'aveugle (réponse instantanée).
+        clarif = clarification.analyser(question, historique)
+        if clarif is not None:
+            logger.info("clarification_demandee")
+            conseil = Conseil(clarif, Confiance.MOYENNE, [], redirection_anader=False)
+            return await self._journaliser(question, langue, conseil)
 
         # Cache de réponses (instantané) — uniquement en tour unique : une réponse
         # multi-tours dépend du contexte et ne doit pas polluer/servir le cache.
@@ -261,6 +269,16 @@ class ConseilService:
                 conseil.sources,
                 conseil.confiance,
                 redirection=conseil.redirection_anader,
+            )
+            return
+
+        # Clarification consultative (1er tour) : poser des questions complémentaires.
+        clarif = clarification.analyser(question, historique)
+        if clarif is not None:
+            logger.info("clarification_demandee")
+            yield {"type": "token", "text": clarif}
+            yield await self._evenement_final(
+                question, langue, clarif, [], Confiance.MOYENNE, redirection=False
             )
             return
 

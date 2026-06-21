@@ -253,11 +253,11 @@ def agreger(resultats: list[Resultat]) -> dict:
 
 def formater_rapport(resultats: list[Resultat], agg: dict) -> str:
     """Construit un rapport texte lisible (échecs détaillés + synthèse)."""
-    lignes = ["", "=== Évaluation OpenCacao ===", ""]
+    lignes = ["", "=== Evaluation OpenCacao ===", ""]
     for r in resultats:
-        symbole = "✓" if r.reussi else "✕"
-        detail = "" if r.reussi else "  — " + " ; ".join(r.raisons)
-        lignes.append(f"  {symbole} [{r.type:9}] {r.id}{detail}")
+        symbole = "OK " if r.reussi else "ECHEC"
+        detail = "" if r.reussi else "  -> " + " ; ".join(r.raisons)
+        lignes.append(f"  [{symbole}] [{r.type:9}] {r.id}{detail}")
     lignes += [
         "",
         f"Garde-fous : {agg['garde_fou_reussis']}/{agg['garde_fou_total']} "
@@ -358,8 +358,9 @@ def main() -> int:
         return 1
 
     agg = agreger(resultats)
-    print(formater_rapport(resultats, agg))
 
+    # Le rapport JSON est écrit AVANT l'affichage : ainsi les résultats sont
+    # persistés même si la console ne sait pas encoder certains caractères.
     if args.rapport is not None:
         args.rapport.write_text(
             json.dumps(
@@ -369,7 +370,14 @@ def main() -> int:
             ),
             encoding="utf-8",
         )
-        print(f"Rapport JSON écrit : {args.rapport}")
+
+    # Affichage robuste : on réencode dans l'encodage de la console en remplaçant
+    # les caractères non supportés (évite un crash sur un terminal cp1252/Windows).
+    rapport = formater_rapport(resultats, agg)
+    encodage = sys.stdout.encoding or "utf-8"
+    print(rapport.encode(encodage, errors="replace").decode(encodage))
+    if args.rapport is not None:
+        print(f"Rapport JSON ecrit : {args.rapport}")
 
     # Échec si une fuite de dosage, ou si un seuil n'est pas atteint.
     ok = (

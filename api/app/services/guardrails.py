@@ -71,18 +71,23 @@ _TERMES_PHYTO = (
     "fongicide",
     "insecticide",
     "herbicide",
+    "desherbant",
     "acaricide",
+    "nematicide",
     "engrais",
     "produit chimique",
+    "produit de traitement",
     "traitement chimique",
 )
 
 _TERMES_DOSAGE = (
     "dose",
+    "doser",
     "dosage",
     "quelle quantite",
     "combien de",
     "combien d",
+    "combien faut il",
     "quelle dose",
     "ml par",
     "litres par",
@@ -95,22 +100,49 @@ _TERMES_DOSAGE = (
     "par litre",
     "par pulverisateur",
     "melanger",
+    "diluer",
+    "dilution",
     "concentration",
 )
 
+# Médical et vétérinaire (santé humaine ou animale) — hors champ agronomique.
 _TERMES_MEDICAL = (
     "maladie humaine",
     "ma sante",
     "mal de tete",
+    "maux de tete",
+    "mal a la tete",
     "fievre",
+    "grippe",
+    "paludisme",
+    "palu",
+    "toux",
+    "tousse",
+    "blessure",
+    "douleur",
+    "diarrhee",
+    "vomir",
+    "vomis",
     "medicament",
+    "comprime",
+    "ordonnance",
     "docteur",
     "medecin",
+    "pharmacie",
     "veterinaire",
+    "vaccin",
+    "vacciner",
     "mon chien",
     "mon chat",
     "ma vache",
     "mes poules",
+    "ma poule",
+    "mon mouton",
+    "ma chevre",
+    "mon boeuf",
+    "mon betail",
+    "ma brebis",
+    "mon porc",
     "mon enfant",
 )
 
@@ -126,7 +158,8 @@ _TERMES_IMAGE = (
     "identifie sur",
 )
 
-# La filière cacao et les cultures explicitement connexes restent dans le périmètre.
+# La filière cacao et les cultures explicitement connexes (anacarde, vivrier)
+# restent dans le périmètre toléré (CLAUDE §4.3).
 _TERMES_FILIERE = (
     "cacao",
     "cacaoyer",
@@ -149,25 +182,40 @@ _TERMES_FILIERE = (
     "vivrier",
     "igname",
     "banane",
+    "plantain",
     "taro",
     "manioc",
-    "ANADER",
-    "verger",
+    "tomate",
+    "gombo",
+    "piment",
+    "riz",
+    "anader",
 )
 
-# Indices forts qu'une question vise une toute autre filière / hors-sujet.
+# Indices forts qu'une question vise une autre filière ou un tout autre domaine
+# (ni cacao, ni vivrier, ni anacarde).
 _TERMES_HORS_FILIERE = (
     "bitcoin",
+    "crypto",
     "football",
     "telephone",
+    "smartphone",
     "ordinateur",
+    "internet",
     "voiture",
     "elections",
+    "politique",
+    "religion",
+    "banque",
     "recette de cuisine",
     "musique",
     "hevea",
     "palmier a huile",
     "coton",
+    "tabac",
+    "elevage",
+    "poisson",
+    "aquaculture",
 )
 
 
@@ -179,8 +227,26 @@ def _normaliser(texte: str) -> str:
     return sans_accents.lower()
 
 
-def _contient(texte: str, termes: tuple[str, ...]) -> bool:
-    return any(terme in texte for terme in termes)
+def _compiler(termes: tuple[str, ...]) -> tuple[re.Pattern, ...]:
+    """Compile chaque terme en motif à frontière de mot (évite les faux positifs).
+
+    La frontière ``\\b`` empêche par exemple « riz » de matcher « prix », ou « palu »
+    de matcher « paludéen » au milieu d'un autre mot.
+    """
+    return tuple(re.compile(rf"\b{re.escape(t)}\b") for t in termes)
+
+
+_RE_PHYTO = _compiler(_TERMES_PHYTO)
+_RE_DOSAGE = _compiler(_TERMES_DOSAGE)
+_RE_MEDICAL = _compiler(_TERMES_MEDICAL)
+_RE_IMAGE = _compiler(_TERMES_IMAGE)
+_RE_FILIERE = _compiler(_TERMES_FILIERE)
+_RE_HORS_FILIERE = _compiler(_TERMES_HORS_FILIERE)
+
+
+def _contient(texte: str, motifs: tuple[re.Pattern, ...]) -> bool:
+    """Vrai si l'un des motifs (à frontière de mot) apparaît dans le texte normalisé."""
+    return any(m.search(texte) for m in motifs)
 
 
 def evaluer(question: str) -> Refus | None:
@@ -199,21 +265,21 @@ def evaluer(question: str) -> Refus | None:
 
     # 1. Dosages phytosanitaires : terme phyto + intention de dosage, ou présence
     #    d'une valeur chiffrée associée à une unité de dose.
-    if _contient(texte, _TERMES_PHYTO) and (
-        _contient(texte, _TERMES_DOSAGE) or _contient_valeur_dosee(texte)
+    if _contient(texte, _RE_PHYTO) and (
+        _contient(texte, _RE_DOSAGE) or _contient_valeur_dosee(texte)
     ):
         return Refus(CategorieRefus.PHYTOSANITAIRE)
 
     # 2. Médical / vétérinaire
-    if _contient(texte, _TERMES_MEDICAL):
+    if _contient(texte, _RE_MEDICAL):
         return Refus(CategorieRefus.MEDICAL)
 
     # 3. Identification de maladie sur image sans agent
-    if _contient(texte, _TERMES_IMAGE):
+    if _contient(texte, _RE_IMAGE):
         return Refus(CategorieRefus.DIAGNOSTIC_IMAGE)
 
     # 4. Hors filière : indice hors-sujet explicite ET aucun ancrage filière cacao.
-    if _contient(texte, _TERMES_HORS_FILIERE) and not _contient(texte, _TERMES_FILIERE):
+    if _contient(texte, _RE_HORS_FILIERE) and not _contient(texte, _RE_FILIERE):
         return Refus(CategorieRefus.HORS_FILIERE)
 
     return None
@@ -231,8 +297,17 @@ def _contient_valeur_dosee(texte: str) -> bool:
 # Signature non équivoque d'une prescription phytosanitaire (ex. « 1,25 g/L »,
 # « 2 l/ha », « 50 ml par litre »), à bannir des réponses du modèle.
 _TAUX_DOSE = re.compile(
-    r"\d+(?:[.,]\d+)?\s?(?:mg|g|kg|ml|cl|l|cc)\s*(?:/|\bpar\b)\s*"
-    r"(?:l|ml|litres?|ha|hectares?|m2|m²|plant|plants|pied|pieds|arbres?)\b"
+    r"\d+(?:[.,]\d+)?\s?(?:mg|g|kg|ml|cl|l|cc|hl)\s*(?:/|\bpar\b)\s*"
+    r"(?:l|ml|litres?|hl|ha|hectares?|m2|m²|plant|plants|pied|pieds|arbres?|"
+    r"pulverisateur|pulverisateurs|arrosoir)\b"
+)
+
+# Dilution : « 50 ml dans 10 litres », « 2 bouchons pour un arrosoir »… autre forme
+# courante d'une prescription chiffrée à bannir d'une réponse.
+_DILUTION = re.compile(
+    r"\d+(?:[.,]\d+)?\s?(?:mg|g|kg|ml|cl|l|cc|bouchons?|sachets?|capsules?|cuilleres?)\s+"
+    r"(?:dans|pour)\s+(?:un|une|\d+)?\s?"
+    r"(?:l\b|litres?|ml|pulverisateur|pulverisateurs|arrosoir|bidon|seau)"
 )
 
 
@@ -241,7 +316,8 @@ def verifier_reponse(reponse: str) -> Refus | None:
 
     Défense en profondeur : même si la question a passé l'entrée, le modèle ne doit
     jamais livrer de dosage chiffré. Déclenche sur un taux de dose explicite (g/L,
-    ml/ha…) ou sur une valeur dosée associée à un terme phytosanitaire.
+    ml/ha…), une dilution chiffrée (« 50 ml dans 10 l »), ou une valeur dosée associée
+    à un terme phytosanitaire.
 
     Args:
         reponse: Texte généré par le modèle.
@@ -250,8 +326,10 @@ def verifier_reponse(reponse: str) -> Refus | None:
         Un Refus PHYTOSANITAIRE si la réponse est compromise, sinon None.
     """
     texte = _normaliser(reponse)
-    if _TAUX_DOSE.search(texte) or (
-        _contient_valeur_dosee(texte) and _contient(texte, _TERMES_PHYTO)
+    if (
+        _TAUX_DOSE.search(texte)
+        or _DILUTION.search(texte)
+        or (_contient_valeur_dosee(texte) and _contient(texte, _RE_PHYTO))
     ):
         return Refus(CategorieRefus.PHYTOSANITAIRE)
     return None

@@ -75,16 +75,60 @@ def test_chat_injecte_contact_local_si_ville_connue(client) -> None:
     assert "ANADER" in data["sources"]
 
 
-def test_chat_repli_siege_si_ville_inconnue(client) -> None:
-    """Sans ville reconnaissable, le siège confirmé est fourni (repli fiable garanti)."""
+def test_chat_demande_la_ville_si_contact_sans_localite(client, fake_inference) -> None:
+    """Contact demandé sans ville : le système pose une question (consultatif), sans inférence."""
     resp = client.post(
         "/v1/chat",
         json={"question": "Quel est le numéro de l'ANADER ?", "canal": "web"},
     )
     assert resp.status_code == 200
+    assert "ville" in resp.json()["reponse"].lower()
+    assert fake_inference.appels == []  # aucune génération : on a juste posé une question
+
+
+def test_chat_repli_siege_via_garde_fou_sans_ville(client) -> None:
+    """Un refus (phyto) sans ville fournit le siège confirmé en repli fiable."""
+    resp = client.post(
+        "/v1/chat",
+        json={"question": "Quelle dose de fongicide appliquer ?", "canal": "sms"},
+    )
+    assert resp.status_code == 200
     reponse = resp.json()["reponse"]
-    assert "Direction Régionale" not in reponse  # aucune DR locale (ville inconnue)
-    assert "Siège national" in reponse  # mais le siège confirmé est donné
+    assert "Direction Régionale" not in reponse
+    assert "Siège national" in reponse
+
+
+def test_chat_clarifie_avant_de_repondre(client, fake_inference) -> None:
+    """1er tour sur un symptôme : le système pose des questions complémentaires, pas de réponse."""
+    resp = client.post(
+        "/v1/chat",
+        json={"question": "Mes feuilles de cacaoyer jaunissent, que faire ?", "canal": "web"},
+    )
+    assert resp.status_code == 200
+    reponse = resp.json()["reponse"]
+    assert "partie" in reponse.lower()  # questions complémentaires posées
+    assert "ville" in reponse.lower()
+    assert fake_inference.appels == []  # aucune génération au 1er tour
+
+
+def test_chat_repond_au_second_tour_avec_contexte(client, fake_inference) -> None:
+    """Au 2e tour (contexte fourni), le système répond réellement (inférence appelée)."""
+    resp = client.post(
+        "/v1/chat",
+        json={
+            "question": "Sur les feuilles, depuis deux semaines, je suis à Daloa",
+            "canal": "web",
+            "historique": [
+                {"role": "user", "content": "Mes feuilles jaunissent, que faire ?"},
+                {
+                    "role": "assistant",
+                    "content": "Sur quelle partie ? Depuis quand ? Votre ville ?",
+                },
+            ],
+        },
+    )
+    assert resp.status_code == 200
+    assert len(fake_inference.appels) == 1  # cette fois, le modèle est sollicité
 
 
 def test_chat_garde_fou_avec_contact_local(client) -> None:
@@ -120,7 +164,7 @@ def test_chat_inference_indisponible(client, fake_inference) -> None:
     fake_inference.disponible = False
     resp = client.post(
         "/v1/chat",
-        json={"question": "Quelle densité de plantation pour le cacaoyer ?", "canal": "web"},
+        json={"question": "Quand récolter les cabosses de cacao ?", "canal": "web"},
     )
     assert resp.status_code == 503
 
@@ -241,10 +285,15 @@ async def test_stream_bloque_un_dosage_en_sortie(fake_cache, fake_journal) -> No
             return True
 
     service = ConseilService(inference=_FluxAvecDosage(), cache=fake_cache, journal=fake_journal)
+    # historique fourni : on est au tour de réponse (la clarification est passée),
+    # c'est là que le garde-fou de SORTIE doit intercepter un dosage généré.
     evts = [
         e
         async for e in service.conseiller_stream(
-            "Comment traiter la pourriture brune ?", Langue.FR, "1.2.3.4"
+            "Comment traiter la pourriture brune ?",
+            Langue.FR,
+            "1.2.3.4",
+            [{"role": "user", "content": "bonjour"}],
         )
     ]
     tokens = "".join(e["text"] for e in evts if e["type"] == "token")
@@ -292,7 +341,7 @@ def test_chat_stream_indisponible(client, fake_inference) -> None:
     fake_inference.disponible = False
     resp = client.post(
         "/v1/chat/stream",
-        json={"question": "Quelle densité de plantation pour le cacaoyer ?", "canal": "web"},
+        json={"question": "Quand récolter les cabosses de cacao ?", "canal": "web"},
     )
     erreurs = [e for e in _evenements(resp) if e["type"] == "error"]
     assert erreurs and erreurs[0]["kind"] == "indisponible"
@@ -304,7 +353,7 @@ def test_chat_stream_rate_limit(client) -> None:
     for i in range(25):
         resp = client.post(
             "/v1/chat/stream",
-            json={"question": f"Question cacao numéro {i} ?", "canal": "web"},
+            json={"question": f"Question {i} sur le cacao ?", "canal": "web"},
         )
         erreurs += [
             e for e in _evenements(resp) if e["type"] == "error" and e["kind"] == "rate_limit"
