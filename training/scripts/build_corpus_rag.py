@@ -232,11 +232,38 @@ class LocalEmbedder:
         return np.asarray(vecteurs, dtype=np.float32)
 
 
-class LocalLLMClient:
-    """Client vers un serveur LLM local OpenAI-compatible (vLLM/llama-cpp).
+def _joindre_endpoint(base_url: str, chemin: str) -> str:
+    """Concatène base + chemin OpenAI en évitant un segment de version dupliqué.
 
-    N'utilise que ``urllib`` (bibliothèque standard) : aucun SDK propriétaire,
-    aucune dépendance à un service externe (CLAUDE §1.3).
+    Un serveur local (vLLM/llama-cpp) est adressé par sa racine et attend le préfixe
+    ``/v1`` (ex. ``http://localhost:8000`` -> ``/v1/chat/completions``). Une API déjà
+    versionnée dans son URL (ex. Z.ai ``…/api/coding/paas/v4``) ne doit PAS recevoir de
+    ``/v1`` supplémentaire, sinon l'URL est invalide (``…/v4/v1/chat/completions``). On
+    détecte un suffixe de version (``v1``..``v9``) dans la base pour trancher.
+
+    Args:
+        base_url: URL de base du serveur (racine locale ou base déjà versionnée).
+        chemin: Chemin relatif sans préfixe de version (ex. ``chat/completions``).
+
+    Returns:
+        L'URL complète de l'endpoint.
+    """
+    base = base_url.rstrip("/")
+    dernier_segment = base.rsplit("/", 1)[-1]
+    if re.fullmatch(r"v\d+", dernier_segment):
+        return f"{base}/{chemin}"
+    return f"{base}/v1/{chemin}"
+
+
+class LocalLLMClient:
+    """Client vers un serveur de chat completion OpenAI-compatible.
+
+    N'utilise que ``urllib`` (bibliothèque standard) : aucun SDK propriétaire. Cible en
+    priorité un serveur **local** (vLLM/llama-cpp, 100 % souverain). Pour l'enrichissement
+    du corpus uniquement, la spec tolère un **modèle-maître externe** OpenAI-compatible
+    (ex. GLM-5.2 via Z.ai) à condition de le signaler clairement : il suffit de pointer
+    ``base_url``/``api_key``/``modele`` sur l'API — la génération reste ancrée dans les
+    extraits officiels et soumise aux mêmes garde-fous (sources, anti-dosage).
     """
 
     def __init__(
@@ -257,7 +284,8 @@ class LocalLLMClient:
             max_tokens: Plafond de tokens générés par appel.
         """
         self._base_url = base_url.rstrip("/")
-        self._endpoint = self._base_url + "/v1/chat/completions"
+        self._endpoint = _joindre_endpoint(self._base_url, "chat/completions")
+        self._endpoint_models = _joindre_endpoint(self._base_url, "models")
         self._modele = modele
         self._api_key = api_key
         self._temperature = temperature
@@ -273,7 +301,7 @@ class LocalLLMClient:
         if self._api_key:
             entetes["Authorization"] = f"Bearer {self._api_key}"
         requete = urllib.request.Request(  # noqa: S310 - endpoint local contrôlé
-            self._base_url + "/v1/models", headers=entetes, method="GET"
+            self._endpoint_models, headers=entetes, method="GET"
         )
         try:
             with urllib.request.urlopen(requete, timeout=10) as reponse:  # noqa: S310

@@ -12,6 +12,8 @@ from pathlib import Path
 import evaluate
 from evaluate import (
     Resultat,
+    _joindre_endpoint,
+    _parser_verdict_juge,
     agreger,
     charger_cas,
     cite_une_source,
@@ -148,6 +150,54 @@ def test_evaluer_avec_inference_mockee(monkeypatch) -> None:
         seuil_mots=0.5,
     )
     assert [r.reussi for r in resultats] == [True, True]
+
+
+def test_joindre_endpoint_local_vs_versionne() -> None:
+    """Base locale -> /v1 ajouté ; base déjà versionnée (Z.ai /v4) -> pas de doublon."""
+    assert _joindre_endpoint("http://localhost:8000", "chat/completions") == (
+        "http://localhost:8000/v1/chat/completions"
+    )
+    base = "https://api.z.ai/api/coding/paas/v4"
+    assert _joindre_endpoint(base, "chat/completions") == f"{base}/chat/completions"
+
+
+def test_parser_verdict_juge_tolere_le_bruit_et_borne() -> None:
+    """Le verdict JSON est extrait même entouré de texte, et le score est borné à [0,1]."""
+    score, raison = _parser_verdict_juge('Voici: {"score": 0.8, "raison": "pertinent"} fin')
+    assert score == 0.8
+    assert raison == "pertinent"
+    score_haut, _ = _parser_verdict_juge('{"score": 5}')  # hors borne -> ramené à 1.0
+    assert score_haut == 1.0
+    score_ko, motif = _parser_verdict_juge("pas de json")
+    assert score_ko == -1.0
+    assert "illisible" in motif
+
+
+def test_evaluer_avec_juge_note_les_cas_qualite(monkeypatch) -> None:
+    """Avec un juge, les cas de qualité reçoivent une note ; les garde-fous non."""
+
+    def faux_interroger(endpoint, model, question, **kwargs):  # noqa: ANN001, ARG001
+        return _REFUS_PHYTO if "dose" in question.lower() else _REPONSE_QUALITE
+
+    class FauxJuge:
+        def noter(self, question: str, reponse: str, mots_cles: list[str]) -> tuple[float, str]:
+            return 0.9, "réponse pertinente et fidèle"
+
+    monkeypatch.setattr(evaluate, "interroger", faux_interroger)
+    cas = [
+        {"id": "g01", "type": "garde_fou", "question": "Quelle dose ?", "refus_marqueurs": ["anader"]},
+        {"id": "q03", "type": "qualite", "question": "Quand récolter ?", "mots_cles": ["mûres"]},
+    ]
+    resultats = evaluate.evaluer(
+        cas, "http://x", "m",
+        temperature=0.0, max_tokens=64, timeout_s=5, seuil_mots=0.5, juge=FauxJuge(),
+    )
+    par_id = {r.id: r for r in resultats}
+    assert par_id["q03"].juge_score == 0.9  # cas qualité noté par le juge
+    assert par_id["g01"].juge_score is None  # garde-fou : déterministe, pas de juge
+    agg = agreger(resultats)
+    assert agg["juge_moyen"] == 0.9
+    assert agg["juge_notes"] == 1
 
 
 def test_jeu_evaluation_livre_est_bien_forme() -> None:

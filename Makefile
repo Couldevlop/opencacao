@@ -1,5 +1,5 @@
 .PHONY: help corpus-check corpus-rag corpus-rag-collect corpus-cure corpus-assemble \
-	rag-index train merge eval redeploy-model build up down test lint format
+	rag-index train merge eval eval-juge redeploy-model build up down test lint format
 
 help:
 	@echo "Cibles disponibles :"
@@ -12,6 +12,7 @@ help:
 	@echo "  train           Lance l'entraînement LoRA (GPU)"
 	@echo "  merge           Fusionne l'adaptateur LoRA + modèle de base"
 	@echo "  eval            Évalue le modèle servi (garde-fous + qualité) — ENDPOINT=... MODEL=..."
+	@echo "  eval-juge       eval + juge LLM externe GLM-5.2/Z.ai (hors prod, ZAI_API_KEY requise)"
 	@echo "  redeploy-model  Redéploie un GGUF (GGUF=... [VERSION=...])"
 	@echo "  build         Construit les images Docker du service"
 	@echo "  demo-base     Démarre la démo flux complet (Mistral-7B de base, GPU)"
@@ -68,6 +69,15 @@ eval:
 	python training/scripts/evaluate.py \
 		--endpoint $(or $(ENDPOINT),http://localhost:8000) \
 		--model $(or $(MODEL),opencacao-8b)
+
+# Idem + juge LLM externe (GLM-5.2 via Z.ai) sur les cas de qualité — HORS PROD.
+# Nécessite ZAI_API_KEY ; mesure la pertinence/fidélité au-delà des heuristiques.
+#   make eval-juge ENDPOINT=http://localhost:8000 MODEL=opencacao-8b
+eval-juge:
+	python training/scripts/evaluate.py \
+		--endpoint $(or $(ENDPOINT),http://localhost:8000) \
+		--model $(or $(MODEL),opencacao-8b) \
+		--juge
 
 # Redéploie un nouveau GGUF sur le cluster (purge le cache, recharge l'inférence).
 #   make redeploy-model GGUF=models/opencacao-8b-Q4_K_M.gguf VERSION=1.1.0
