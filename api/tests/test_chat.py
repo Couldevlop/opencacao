@@ -336,6 +336,45 @@ async def test_rag_injecte_le_contexte_a_l_inference(fake_cache, fake_journal) -
     assert capture.contexte == "[1] (source : CNRA) Récoltez les cabosses mûres."
 
 
+async def test_rag_requete_contextualisee_en_multitours(fake_cache, fake_journal) -> None:
+    """Une question de suivi récupère le contexte RAG ré-ancré sur le tour précédent."""
+
+    class _InferenceSimple:
+        async def generer(self, question: str, **_: object) -> str:
+            return "Réponse. Sources : CNRA."
+
+        async def generer_stream(self, question: str, **_: object):
+            yield "Réponse. "
+
+        async def ready(self) -> bool:
+            return True
+
+    class _RagCapture:
+        def __init__(self) -> None:
+            self.requete: str | None = None
+
+        async def contexte_pour(self, requete: str) -> str:
+            self.requete = requete
+            return "[1] (source : CNRA) Nettoyez la parcelle des cabosses malades."
+
+    rag = _RagCapture()
+    service = ConseilService(
+        inference=_InferenceSimple(), cache=fake_cache, journal=fake_journal, rag=rag
+    )
+    await service.conseiller(
+        "Et à quelle fréquence dois-je le faire ?",
+        Langue.FR,
+        "1.2.3.4",
+        [
+            {"role": "user", "content": "Comment nettoyer mon champ contre la pourriture brune ?"},
+            {"role": "assistant", "content": "Enlevez les cabosses malades."},
+        ],
+    )
+    assert rag.requete is not None
+    assert "pourriture brune" in rag.requete  # ancrage : le thème du tour précédent
+    assert "fréquence" in rag.requete  # la question de suivi reste présente
+
+
 def test_chat_stream_indisponible(client, fake_inference) -> None:
     """Si l'inférence échoue, le flux émet un événement d'erreur 'indisponible'."""
     fake_inference.disponible = False

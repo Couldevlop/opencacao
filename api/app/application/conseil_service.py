@@ -50,11 +50,15 @@ class ConseilService:
         self._journal = journal
         self._rag = rag
 
-    async def _contexte(self, question: str) -> str | None:
-        """Récupère le contexte RAG si activé (best-effort), sinon None."""
+    async def _contexte(self, requete: str) -> str | None:
+        """Récupère le contexte RAG si activé (best-effort), sinon None.
+
+        Args:
+            requete: Requête de récupération (contextualisée en multi-tours).
+        """
         if self._rag is None:
             return None
-        return await self._rag.contexte_pour(question)
+        return await self._rag.contexte_pour(requete)
 
     def _enrichir_contact(self, conseil: Conseil, texte_conversation: str) -> Conseil:
         """Ajoute le contact ANADER local exact si une mise en relation est pertinente.
@@ -159,7 +163,9 @@ class ConseilService:
             raise RateLimitDepasse
 
         # Inférence (peut lever InferenceUnavailable), augmentée par RAG si activé.
-        contexte = await self._contexte(question)
+        # La requête RAG est ré-ancrée sur le thème en cours (multi-tours) pour ne pas
+        # récupérer des passages hors sujet sur une question de suivi.
+        contexte = await self._contexte(_requete_rag(question, historique))
         texte = await self._inference.generer(question, contexte=contexte, historique=historique)
 
         # Garde-fou de SORTIE (défense en profondeur) : ne jamais livrer un dosage.
@@ -315,7 +321,7 @@ class ConseilService:
         tampon = ""
         compromis = False
 
-        contexte = await self._contexte(question)
+        contexte = await self._contexte(_requete_rag(question, historique))
         async for delta in self._inference.generer_stream(
             question, contexte=contexte, historique=historique
         ):
@@ -407,6 +413,29 @@ class ConseilService:
             "disclaimer": DISCLAIMER,
             "interaction_id": interaction_id,
         }
+
+
+def _requete_rag(question: str, historique: list[dict[str, str]]) -> str:
+    """Construit la requête de récupération RAG, ré-ancrée sur le thème en cours.
+
+    Une question de suivi (« Et à quelle fréquence ? ») est, seule, dépourvue d'ancrage
+    agronomique : interrogée telle quelle, l'index remonte des passages hors sujet et la
+    réponse décroche. On préfixe donc le dernier tour utilisateur de l'historique pour
+    rattacher la recherche au sujet déjà engagé. Déterministe (aucun appel au modèle) ;
+    en tour unique, retourne la question inchangée.
+
+    Args:
+        question: Dernière question du producteur.
+        historique: Tours précédents de la conversation.
+
+    Returns:
+        La requête de récupération, contextualisée si un tour utilisateur précède.
+    """
+    dernier_user = next(
+        (t.get("content", "") for t in reversed(historique) if t.get("role") == "user"),
+        "",
+    )
+    return f"{dernier_user} {question}".strip() if dernier_user else question
 
 
 def _texte_conversation(question: str, historique: list[dict[str, str]]) -> str:
