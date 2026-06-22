@@ -1,0 +1,21 @@
+# syntax=docker/dockerfile:1
+# Image du GÉNÉRATEUR de corpus (CPU). Interroge le modèle-maître auto-hébergé
+# (service « teacher » de docker-compose.corpus.yml) et écrit les paires Q/R.
+#
+# Souveraineté (CLAUDE §1.3, §13) : aucune API tierce. Les embeddings et la
+# déduplication tournent localement sur CPU (le GPU est dédié au modèle-maître).
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    HF_HOME=/cache/huggingface
+
+WORKDIR /workspace
+
+COPY requirements-corpus.txt ./
+RUN pip install --no-cache-dir -r requirements-corpus.txt
+
+COPY scripts ./scripts
+
+# Par défaut : affiche l'aide. La commande réelle est fournie par
+# docker-compose.corpus.yml (cible, sortie, manifeste).
+CMD ["python", "scripts/build_corpus_rag.py", "--help"]

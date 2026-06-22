@@ -1,11 +1,13 @@
 .PHONY: help corpus-check corpus-rag corpus-rag-collect corpus-cure corpus-assemble \
-	rag-index train merge eval eval-juge redeploy-model build up down test lint format
+	corpus-souverain rag-index train merge eval eval-juge redeploy-model build up down \
+	test lint format
 
 help:
 	@echo "Cibles disponibles :"
 	@echo "  corpus-check    Valide le corpus (format, garde-fous)"
 	@echo "  corpus-rag      Construit le corpus Q/R via RAG (LLM local requis)"
 	@echo "  corpus-rag-collect Télécharge + découpe les sources (sans LLM)"
+	@echo "  corpus-souverain Génère le corpus via un modèle-maître ouvert auto-hébergé (GPU, souverain)"
 	@echo "  corpus-cure     Récupère le corpus curé depuis le cluster"
 	@echo "  corpus-assemble Assemble + valide + déduplique le corpus d'entraînement"
 	@echo "  rag-index       Construit l'index RAG (embeddings) depuis le corpus"
@@ -78,6 +80,13 @@ eval-juge:
 		--endpoint $(or $(ENDPOINT),http://localhost:8000) \
 		--model $(or $(MODEL),opencacao-8b) \
 		--juge
+
+# Génération SOUVERAINE du corpus (option B) : modèle-maître ouvert auto-hébergé
+# (vLLM) + générateur, sur un hôte GPU. Aucun appel externe. Voir docs/corpus_souverain.md.
+#   make corpus-souverain HF_TOKEN=hf_xxx TARGET=2000
+corpus-souverain:
+	HF_TOKEN=$(HF_TOKEN) TARGET=$(or $(TARGET),10000) \
+		docker compose -f docker-compose.corpus.yml up --build
 
 # Redéploie un nouveau GGUF sur le cluster (purge le cache, recharge l'inférence).
 #   make redeploy-model GGUF=models/opencacao-8b-Q4_K_M.gguf VERSION=1.1.0
