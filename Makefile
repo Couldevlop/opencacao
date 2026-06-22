@@ -33,10 +33,14 @@ corpus-cure:
 	bash training/scripts/fetch_curation.sh
 
 # Combine sources + corpus curé en un corpus d'entraînement validé/dédupliqué.
+# Assemble le corpus d'entraînement : le corpus souverain (teacher) est placé EN
+# PREMIER pour gagner la priorité sur doublon exact ; le corpus rag historique
+# l'augmente, plus l'amorce, les refus (garde-fous) et la curation. Dédupliqué + validé.
 corpus-assemble:
 	python training/scripts/assemble_corpus.py \
-		--sources corpus/corpus_cacao_rag.jsonl corpus/corpus_cacao_demarrage.jsonl \
-			corpus/corpus_refus.jsonl corpus/corpus_cure.jsonl \
+		--sources corpus/corpus_cacao_teacher.jsonl corpus/corpus_cacao_rag.jsonl \
+			corpus/corpus_cacao_demarrage.jsonl corpus/corpus_refus.jsonl \
+			corpus/corpus_cure.jsonl \
 		--out corpus/corpus_entrainement.jsonl
 
 # Construit l'index RAG (embeddings). Service d'embeddings requis (EMBEDDINGS_URL).
@@ -56,7 +60,9 @@ corpus-rag:
 corpus-rag-collect:
 	python training/scripts/build_corpus_rag.py --collect-only
 
-train:
+# Réassemble d'abord le corpus (teacher + rag + amorce + refus + cure), puis entraîne
+# la LoRA sur ce corpus unique, validé et dédupliqué (garde-fous inclus).
+train: corpus-assemble
 	docker compose -f docker-compose.training.yml up --build
 
 merge:
