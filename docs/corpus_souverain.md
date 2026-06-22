@@ -15,21 +15,41 @@ La production n'est **jamais** concernée : le modèle servi reste opencacao-8b
 (Ministral) auto-hébergé. Le modèle-maître ne sert qu'**hors ligne**, une fois, pour
 produire les données ; il n'apparaît jamais dans le chemin de réponse aux producteurs.
 
-## Démarrage rapide
+## Deux façons de lancer
 
-Sur un hôte avec **1 GPU ≥ 40 Go** (A100/H100/A6000…), Docker et le NVIDIA Container
-Toolkit installés :
+### A. Workflow dissocié — pod = modèle-maître, RAG en local (recommandé)
 
+Le pod GPU ne fait **que** servir le modèle-maître ; la génération RAG (sources,
+embeddings, dédup) tourne sur **ta machine** et n'envoie au pod que les requêtes de
+rédaction. Le pod n'exécute aucun RAG.
+
+**Sur le pod GPU** (RunPod, etc.) :
 ```bash
-# Lot de mesure (2 000 paires) avec le modèle-maître par défaut
-HF_TOKEN=hf_xxx TARGET=2000 docker compose -f docker-compose.corpus.yml up --build
-
-# Corpus complet (10 000 paires)
-HF_TOKEN=hf_xxx TARGET=10000 docker compose -f docker-compose.corpus.yml up --build
+export CORPUS_LLM_API_KEY=...     # clé partagée pod <-> local (sinon générée + affichée)
+bash training/scripts/pod_corpus_souverain.sh
 ```
+Le script installe vLLM, sert le modèle-maître (Qwen2.5-72B-AWQ par défaut) avec une
+clé d'API, et affiche l'endpoint à utiliser (`https://<POD_ID>-8000.proxy.runpod.net`).
 
+**En local**, contre ce pod :
+```bash
+export CORPUS_LLM_BASE_URL=https://<POD_ID>-8000.proxy.runpod.net
+export CORPUS_LLM_API_KEY=...     # la même clé
+bash training/scripts/generate_souverain_local.sh 2000   # lot de mesure
+```
+→ écrit `corpus/corpus_cacao_teacher.jsonl`. L'endpoint du pod est protégé par la clé
+(il est exposé via le proxy public). Aucune donnée ne part vers un service tiers.
+
+### B. Tout-en-un sur un seul hôte GPU (Docker)
+
+Si tu disposes d'un hôte GPU avec Docker + NVIDIA Container Toolkit et que tu veux tout
+au même endroit :
+```bash
+# Lot de mesure (2 000) ou corpus complet (10 000)
+HF_TOKEN=hf_xxx TARGET=2000 docker compose -f docker-compose.corpus.yml up --build
+```
 Le service `teacher` (vLLM) sert le modèle-maître en interne ; le service `generator`
-l'interroge via `http://teacher:8000` (jamais une URL externe) et écrit
+l'interroge via `http://teacher:8000` (jamais une URL externe) et écrit le même
 `corpus/corpus_cacao_teacher.jsonl`. Les embeddings et la déduplication tournent sur
 CPU dans le générateur (le GPU est dédié au modèle-maître).
 
