@@ -1,0 +1,73 @@
+# Génération SOUVERAINE du corpus Q/R (option B). Modèle-maître OUVERT auto-hébergé
+# (vLLM) + générateur, sur un hôte GPU. AUCUN appel à une API tierce : les extraits
+# officiels ne sortent jamais vers un service externe (CLAUDE §1.3 souveraineté, §13).
+#
+# Pré-requis hôte : 1 GPU >= 40 Go (ex. A100/H100), Docker + NVIDIA Container Toolkit.
+# Lancer (sur un GPU loué) :
+#   HF_TOKEN=hf_xxx TARGET=2000 docker compose -f docker-compose.corpus.yml up --build
+# Le corpus est écrit dans ./corpus/corpus_cacao_teacher.jsonl (volume monté).
+#
+# Modèle-maître par défaut : Qwen2.5-72B-Instruct quantifié AWQ (~40 Go, tient sur un
+# seul GPU 48 Go ; tourne aussi bien sur Ampere que sur Hopper). Surchargeable :
+#   TEACHER_MODEL=meta-llama/Llama-3.3-70B-Instruct TEACHER_QUANT=fp8 docker compose ...
+# Voir docs/corpus_souverain.md pour le comparatif des modèles et les frictions.
+services:
+  teacher:
+    # NB : épingler une version testée avant un run long (ici tag mobile pour rester
+    # compatible avec les GPU récents). Le modèle-maître ne sert JAMAIS en production.
+    image: vllm/vllm-openai:latest
+    command: >-
+      --model ${TEACHER_MODEL:-Qwen/Qwen2.5-72B-Instruct-AWQ}
+      --served-model-name teacher
+      --quantization ${TEACHER_QUANT:-awq}
+      --max-model-len 8192
+      --gpu-memory-utilization 0.92
+    environment:
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN}
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    ports:
+      - "8000:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      # Le générateur n'attaque que lorsque le modèle répond vraiment (200 sur /models).
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/models', timeout=3)
+      interval: 30s
+      timeout: 5s
+      retries: 60
+      # Le chargement d'un 70B (téléchargement + init) peut prendre ~15-25 min.
+      start_period: 1500s
+
+  generator:
+    build:
+      context: ./training
+      dockerfile: Dockerfile.corpus
+    depends_on:
+      teacher:
+        condition: service_healthy
+    environment:
+      # Pointe le pipeline sur le modèle-maître interne (et NON sur une API externe).
+      CORPUS_LLM_BASE_URL: http://teacher:8000
+      CORPUS_LLM_MODEL: teacher
+    volumes:
+      - ./corpus:/corpus
+    command: >-
+      python scripts/build_corpus_rag.py
+      --manifeste /corpus/sources/sources_officielles.yaml
+      --sources-dir /workspace/train
+      --target ${TARGET:-10000}
+      --concurrence ${CONCURRENCE:-8}
+      --out /corpus/corpus_cacao_teacher.jsonl
+
+volumes:
+  hf-cache:

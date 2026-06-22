@@ -1,11 +1,13 @@
 .PHONY: help corpus-check corpus-rag corpus-rag-collect corpus-cure corpus-assemble \
-	rag-index train merge eval eval-juge redeploy-model build up down test lint format
+	corpus-souverain rag-index train merge eval eval-juge redeploy-model build up down \
+	test lint format
 
 help:
 	@echo "Cibles disponibles :"
 	@echo "  corpus-check    Valide le corpus (format, garde-fous)"
 	@echo "  corpus-rag      Construit le corpus Q/R via RAG (LLM local requis)"
 	@echo "  corpus-rag-collect Télécharge + découpe les sources (sans LLM)"
+	@echo "  corpus-souverain Génère le corpus via un modèle-maître ouvert auto-hébergé (GPU, souverain)"
 	@echo "  corpus-cure     Récupère le corpus curé depuis le cluster"
 	@echo "  corpus-assemble Assemble + valide + déduplique le corpus d'entraînement"
 	@echo "  rag-index       Construit l'index RAG (embeddings) depuis le corpus"
@@ -31,10 +33,14 @@ corpus-cure:
 	bash training/scripts/fetch_curation.sh
 
 # Combine sources + corpus curé en un corpus d'entraînement validé/dédupliqué.
+# Assemble le corpus d'entraînement : le corpus souverain (teacher) est placé EN
+# PREMIER pour gagner la priorité sur doublon exact ; le corpus rag historique
+# l'augmente, plus l'amorce, les refus (garde-fous) et la curation. Dédupliqué + validé.
 corpus-assemble:
 	python training/scripts/assemble_corpus.py \
-		--sources corpus/corpus_cacao_rag.jsonl corpus/corpus_cacao_demarrage.jsonl \
-			corpus/corpus_refus.jsonl corpus/corpus_cure.jsonl \
+		--sources corpus/corpus_cacao_teacher.jsonl corpus/corpus_cacao_rag.jsonl \
+			corpus/corpus_cacao_demarrage.jsonl corpus/corpus_refus.jsonl \
+			corpus/corpus_cure.jsonl \
 		--out corpus/corpus_entrainement.jsonl
 
 # Construit l'index RAG (embeddings). Service d'embeddings requis (EMBEDDINGS_URL).
@@ -54,7 +60,9 @@ corpus-rag:
 corpus-rag-collect:
 	python training/scripts/build_corpus_rag.py --collect-only
 
-train:
+# Réassemble d'abord le corpus (teacher + rag + amorce + refus + cure), puis entraîne
+# la LoRA sur ce corpus unique, validé et dédupliqué (garde-fous inclus).
+train: corpus-assemble
 	docker compose -f docker-compose.training.yml up --build
 
 merge:
@@ -78,6 +86,13 @@ eval-juge:
 		--endpoint $(or $(ENDPOINT),http://localhost:8000) \
 		--model $(or $(MODEL),opencacao-8b) \
 		--juge
+
+# Génération SOUVERAINE du corpus (option B) : modèle-maître ouvert auto-hébergé
+# (vLLM) + générateur, sur un hôte GPU. Aucun appel externe. Voir docs/corpus_souverain.md.
+#   make corpus-souverain HF_TOKEN=hf_xxx TARGET=2000
+corpus-souverain:
+	HF_TOKEN=$(HF_TOKEN) TARGET=$(or $(TARGET),10000) \
+		docker compose -f docker-compose.corpus.yml up --build
 
 # Redéploie un nouveau GGUF sur le cluster (purge le cache, recharge l'inférence).
 #   make redeploy-model GGUF=models/opencacao-8b-Q4_K_M.gguf VERSION=1.1.0

@@ -1,6 +1,6 @@
 """Fusion de l'adaptateur LoRA avec le modèle de base (CLAUDE §6).
 
-Produit le modèle fusionné ``opencacao-7b/`` prêt pour vLLM, et écrit un hash
+Produit le modèle fusionné ``opencacao-8b/`` prêt pour vLLM, et écrit un hash
 SHA-256 du modèle pour le versionnement (CLAUDE §11.2).
 
 La base doit être la MÊME variante que celle de l'entraînement : la BF16
@@ -11,7 +11,7 @@ Usage :
     python training/scripts/merge_and_export.py \
         --base mistralai/Ministral-3-8B-Instruct-2512-BF16 \
         --adapter models/lora-adapter \
-        --output models/opencacao-7b
+        --output models/opencacao-8b
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ def fusionner(base: str, adapter: Path, output: Path) -> None:
     tokenizer.save_pretrained(str(output))
 
     digest = _hash_dossier(output)
-    (output / "SHA256SUM").write_text(f"{digest}  opencacao-7b\n", encoding="utf-8")
+    (output / "SHA256SUM").write_text(f"{digest}  {output.name}\n", encoding="utf-8")
     print(f"Modèle fusionné exporté dans {output}")
     print(f"SHA-256 : {digest}")
 
@@ -66,7 +66,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Fusion LoRA + modèle de base.")
     parser.add_argument("--base", default="mistralai/Ministral-3-8B-Instruct-2512-BF16")
     parser.add_argument("--adapter", type=Path, required=True)
-    parser.add_argument("--output", type=Path, default=Path("models/opencacao-7b"))
+    parser.add_argument("--output", type=Path, default=Path("models/opencacao-8b"))
     args = parser.parse_args()
 
     fusionner(args.base, args.adapter, args.output)

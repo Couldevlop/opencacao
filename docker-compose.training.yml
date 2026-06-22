@@ -9,9 +9,12 @@ services:
       - ./corpus:/corpus:ro
       - ./models:/models
       - hf-cache:/cache/huggingface
+    # Entraîne sur le corpus ASSEMBLÉ (teacher + rag + amorce + refus + cure), produit
+    # par `make corpus-assemble` (lancé automatiquement par `make train`). Inclut donc
+    # les exemples de refus/garde-fous, contrairement à l'ancien rag+amorce brut.
     command: >-
       python scripts/train_lora.py
-      --corpus /corpus/corpus_cacao_rag.jsonl /corpus/corpus_cacao_demarrage.jsonl
+      --corpus /corpus/corpus_entrainement.jsonl
       --output /models/lora-adapter
     deploy:
       resources:
