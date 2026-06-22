@@ -15,8 +15,10 @@ import numpy as np
 import build_corpus_rag as bcr
 from build_corpus_rag import (
     Chunk,
+    LocalLLMClient,
     SourceDoc,
     _indices_diversifies,
+    _joindre_endpoint,
     _nettoyer_texte,
     charger_manifeste,
     construire_corpus,
@@ -77,6 +79,32 @@ class FakeLLM:
             },
         ]
         return "Voici les paires :\n" + json.dumps(paires, ensure_ascii=False)
+
+
+def test_joindre_endpoint_serveur_local_ajoute_v1() -> None:
+    """Un serveur local (racine sans version) reçoit le préfixe /v1."""
+    assert _joindre_endpoint("http://localhost:8000", "chat/completions") == (
+        "http://localhost:8000/v1/chat/completions"
+    )
+    assert _joindre_endpoint("http://localhost:8000/", "models") == (
+        "http://localhost:8000/v1/models"
+    )
+
+
+def test_joindre_endpoint_api_versionnee_ne_duplique_pas() -> None:
+    """Une base déjà versionnée (ex. Z.ai /v4) ne reçoit pas un /v1 en double."""
+    base = "https://api.z.ai/api/coding/paas/v4"
+    assert _joindre_endpoint(base, "chat/completions") == f"{base}/chat/completions"
+    assert _joindre_endpoint(base, "models") == f"{base}/models"
+
+
+def test_client_resout_les_endpoints_selon_la_base() -> None:
+    """LocalLLMClient construit ses URLs via la résolution tolérante de version."""
+    local = LocalLLMClient(base_url="http://localhost:8000", modele="ministral")
+    assert local._endpoint == "http://localhost:8000/v1/chat/completions"
+    externe = LocalLLMClient(base_url="https://api.z.ai/api/coding/paas/v4", modele="glm-5.2")
+    assert externe._endpoint == "https://api.z.ai/api/coding/paas/v4/chat/completions"
+    assert externe._endpoint_models == "https://api.z.ai/api/coding/paas/v4/models"
 
 
 def test_charger_manifeste_reel() -> None:
