@@ -6,11 +6,12 @@ Centraliser ces accès permet de les surcharger en test via
 
 from __future__ import annotations
 
-from fastapi import Request
+from fastapi import Depends, Request
 
 from app.application.conseil_service import ConseilService
+from app.application.dialogue_session import DialogueSessionService
 from app.core.config import Settings, get_settings
-from app.domain.ports import CachePort, InferencePort, JournalPort
+from app.domain.ports import CachePort, InferencePort, JournalPort, SessionStorePort
 
 
 def get_app_settings() -> Settings:
@@ -33,6 +34,11 @@ def get_journal(request: Request) -> JournalPort:
     return request.app.state.journal
 
 
+def get_session_store(request: Request) -> SessionStorePort:
+    """Retourne le dépôt de sessions de conversation stocké dans l'état de l'application."""
+    return request.app.state.sessions
+
+
 def get_conseil_service(request: Request) -> ConseilService:
     """Construit le cas d'usage à partir des ports en état d'application."""
     return ConseilService(
@@ -40,6 +46,24 @@ def get_conseil_service(request: Request) -> ConseilService:
         cache=request.app.state.cache,
         journal=request.app.state.journal,
         rag=getattr(request.app.state, "rag", None),
+    )
+
+
+def get_dialogue_service(
+    conseil: ConseilService = Depends(get_conseil_service),
+    sessions: SessionStorePort = Depends(get_session_store),
+    settings: Settings = Depends(get_settings),
+) -> DialogueSessionService:
+    """Construit le cas d'usage de dialogue avec mémoire serveur (sessions V2).
+
+    Dépend de :func:`get_conseil_service` afin que les surcharges de test du
+    service de conseil s'appliquent aussi au dialogue avec session.
+    """
+    return DialogueSessionService(
+        conseil,
+        sessions,
+        fenetre=settings.sessions_fenetre_messages,
+        seuil_resume=settings.sessions_resume_seuil,
     )
 
 
