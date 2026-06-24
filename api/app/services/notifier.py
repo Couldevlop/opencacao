@@ -36,11 +36,20 @@ def _corps(lien: str) -> str:
 
 
 class ConsoleNotifier:
-    """Journalise le lien au lieu de l'envoyer (souverain, sans dépendance réseau)."""
+    """Journalise le lien au lieu de l'envoyer (souverain, sans dépendance réseau).
+
+    ⚠️ Réservé au DÉVELOPPEMENT : journaliser le lien expose le jeton dans les logs
+    (OWASP A09 — Security Logging). En production, utiliser :class:`SmtpNotifier`.
+    """
 
     async def envoyer_lien(self, email: str, lien: str) -> None:
-        """« Envoie » le lien en le journalisant (visible dans les logs serveur)."""
-        logger.info("lien_magique_console", email=email, lien=lien)
+        """« Envoie » le lien en le journalisant — canal DEV (jeton exposé en logs)."""
+        logger.warning(
+            "lien_magique_console_dev",
+            email=email,
+            lien=lien,
+            avertissement="canal DEV : jeton exposé en logs, utiliser SMTP en prod",
+        )
 
 
 class SmtpNotifier:

@@ -58,15 +58,26 @@ async def demander_lien(
 @router.post("/verify", response_model=IdentiteResponse)
 async def verifier_lien(
     payload: VerifierLienRequest,
+    client_ip: str = Depends(get_client_ip),
+    cache: CachePort = Depends(get_cache_client),
     auth: AuthService = Depends(get_auth_service),
     settings: Settings = Depends(get_settings),
 ) -> IdentiteResponse:
     """Vérifie un jeton de lien magique et renvoie l'identité de compte.
 
+    Rate-limité par IP (OWASP A07 — anti-brute-force, bien que le jeton soit à haute
+    entropie et à usage unique).
+
     Raises:
-        HTTPException: 404 si l'auth est désactivée, 400 si le lien est invalide/expiré.
+        HTTPException: 404 si l'auth est désactivée, 429 si le rate-limit est dépassé,
+            400 si le lien est invalide/expiré.
     """
     _verifier_actif(settings)
+    if await cache.hit_rate_limit(client_ip):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Trop de tentatives, veuillez réessayer dans une minute.",
+        )
     identite = await auth.verifier(payload.token)
     if identite is None:
         raise HTTPException(
