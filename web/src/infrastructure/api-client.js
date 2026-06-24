@@ -9,6 +9,7 @@ import {
   versSession,
   versSessionAvecMessages,
 } from "../domain/models.js";
+import { lireCompte } from "./auth-store-local.js";
 import { lireDeviceId } from "./device-id.js";
 
 const ERREURS_HTTP = {
@@ -33,9 +34,14 @@ function erreurDepuisKind(kind) {
 export function creerClientApi(lireBaseUrl) {
   const baseCourante = () => String(lireBaseUrl() || "").replace(/\/+$/, "");
 
-  // Toutes les requêtes portent l'identité anonyme de l'appareil (D1) : le serveur
-  // cloisonne ainsi les conversations par navigateur.
-  const enTetes = (extra = {}) => ({ "X-Device-Id": lireDeviceId(), ...extra });
+  // Identité portée par chaque requête (en-tête X-Device-Id) : l'identifiant de
+  // compte si l'utilisateur est connecté (D2 — ses conversations le suivent d'un
+  // appareil à l'autre), sinon l'identité anonyme de l'appareil (D1).
+  const identite = () => {
+    const compte = lireCompte();
+    return compte ? compte.accountId : lireDeviceId();
+  };
+  const enTetes = (extra = {}) => ({ "X-Device-Id": identite(), ...extra });
 
   /**
    * Construit le corps d'une requête de chat. Avec un sessionId, l'historique fait
@@ -254,6 +260,45 @@ export function creerClientApi(lireBaseUrl) {
     return Array.isArray(data) ? data.map(versSession) : [];
   }
 
+  /* ---------- Authentification par lien magique (D2) ---------- */
+
+  /** Demande l'envoi d'un lien magique à l'email. Résout si la demande est acceptée. */
+  async function demanderLien(email) {
+    let resp;
+    try {
+      resp = await fetch(baseCourante() + "/v1/auth/request", {
+        method: "POST",
+        headers: enTetes({ "Content-Type": "application/json", Accept: "application/json" }),
+        body: JSON.stringify({ email }),
+      });
+    } catch {
+      throw new ConseilError(ErreurKind.RESEAU, "API injoignable");
+    }
+    if (resp.status === 404) throw new ConseilError(ErreurKind.AUTH_INDISPONIBLE, "Auth désactivée");
+    if (resp.status === 422) throw new ConseilError(ErreurKind.VALIDATION, "Email invalide");
+    if (ERREURS_HTTP[resp.status]) throw new ConseilError(ERREURS_HTTP[resp.status], "Erreur");
+    if (!resp.ok) throw new ConseilError(ErreurKind.HTTP, "Erreur HTTP " + resp.status);
+  }
+
+  /** Vérifie un jeton de lien. Renvoie { accountId, email } ou null si invalide/expiré. */
+  async function verifierAuth(token) {
+    let resp;
+    try {
+      resp = await fetch(baseCourante() + "/v1/auth/verify", {
+        method: "POST",
+        headers: enTetes({ "Content-Type": "application/json", Accept: "application/json" }),
+        body: JSON.stringify({ token }),
+      });
+    } catch {
+      throw new ConseilError(ErreurKind.RESEAU, "API injoignable");
+    }
+    if (resp.status === 400) return null; // lien invalide ou expiré
+    if (resp.status === 404) throw new ConseilError(ErreurKind.AUTH_INDISPONIBLE, "Auth désactivée");
+    if (!resp.ok) throw new ConseilError(ErreurKind.HTTP, "Erreur HTTP " + resp.status);
+    const data = await resp.json();
+    return { accountId: data.account_id, email: data.email };
+  }
+
   return Object.freeze({
     demander,
     demanderStream,
@@ -264,5 +309,7 @@ export function creerClientApi(lireBaseUrl) {
     supprimerSession,
     renommerSession,
     rechercherSessions,
+    demanderLien,
+    verifierAuth,
   });
 }
