@@ -33,15 +33,18 @@ class ChatRequest(BaseModel):
         question: Question posée par le producteur (dernier message).
         langue: Langue de la question (fr par défaut).
         canal: Canal d'origine de la question.
-        historique: Tours précédents de la conversation (clarifications). Le serveur
-            est sans état : le client renvoie l'historique à chaque tour. Borné à
-            20 messages pour éviter les abus.
+        historique: Tours précédents de la conversation (clarifications). Utilisé
+            uniquement en mode « sans état » (sans session_id) : le client renvoie
+            l'historique à chaque tour. Borné à 20 messages pour éviter les abus.
+        session_id: Session de conversation persistée (V2). Si fourni, l'historique
+            fait autorité côté serveur et le champ ``historique`` est ignoré.
     """
 
     question: str = Field(min_length=3, max_length=2000)
     langue: Langue = Langue.FR
     canal: Canal = Canal.WEB
     historique: list[Message] = Field(default_factory=list, max_length=20)
+    session_id: str | None = Field(default=None, max_length=64)
 
 
 class ChatResponse(BaseModel):
@@ -54,6 +57,7 @@ class ChatResponse(BaseModel):
         redirection_anader: Vrai si la réponse oriente vers l'ANADER.
         disclaimer: Mention légale obligatoire.
         interaction_id: Identifiant pour rattacher un retour 👍/👎 (si journalisé).
+        session_id: Session de conversation (V2), renvoyée si la requête en utilisait une.
     """
 
     reponse: str
@@ -62,6 +66,7 @@ class ChatResponse(BaseModel):
     redirection_anader: bool = False
     disclaimer: str = DISCLAIMER
     interaction_id: str | None = None
+    session_id: str | None = None
 
 
 class FeedbackRequest(BaseModel):

@@ -19,7 +19,7 @@ from app.core.journal import JournalFichier
 from app.core.logging import configure_logging, get_logger
 from app.core.security import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 from app.core.sessions import SessionStore
-from app.routers import chat, feedback, health
+from app.routers import chat, feedback, health, sessions
 from app.services.inference import InferenceClient
 
 logger = get_logger(__name__)
@@ -147,6 +147,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(chat.router)
     app.include_router(feedback.router)
+    app.include_router(sessions.router)
     _monter_interface(app, settings)
     return app
 

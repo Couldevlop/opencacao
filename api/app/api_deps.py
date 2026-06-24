@@ -6,9 +6,10 @@ Centraliser ces accès permet de les surcharger en test via
 
 from __future__ import annotations
 
-from fastapi import Request
+from fastapi import Depends, Request
 
 from app.application.conseil_service import ConseilService
+from app.application.dialogue_session import DialogueSessionService
 from app.core.config import Settings, get_settings
 from app.domain.ports import CachePort, InferencePort, JournalPort, SessionStorePort
 
@@ -46,6 +47,18 @@ def get_conseil_service(request: Request) -> ConseilService:
         journal=request.app.state.journal,
         rag=getattr(request.app.state, "rag", None),
     )
+
+
+def get_dialogue_service(
+    conseil: ConseilService = Depends(get_conseil_service),
+    sessions: SessionStorePort = Depends(get_session_store),
+) -> DialogueSessionService:
+    """Construit le cas d'usage de dialogue avec mémoire serveur (sessions V2).
+
+    Dépend de :func:`get_conseil_service` afin que les surcharges de test du
+    service de conseil s'appliquent aussi au dialogue avec session.
+    """
+    return DialogueSessionService(conseil, sessions)
 
 
 def get_client_ip(request: Request) -> str:

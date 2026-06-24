@@ -63,3 +63,17 @@ class SessionAvecMessages(BaseModel):
 
     session: Session
     messages: list[ConversationMessage] = Field(default_factory=list)
+
+
+class CreerSessionRequest(BaseModel):
+    """Corps (optionnel) de création d'une session de conversation.
+
+    Attributes:
+        titre: Titre initial de la conversation (auto-généré plus tard, voir B3).
+        langue: Langue de la conversation.
+        canal: Canal d'origine de la conversation.
+    """
+
+    titre: str = Field(default=TITRE_PAR_DEFAUT, min_length=1, max_length=200)
+    langue: Langue = Langue.FR
+    canal: Canal = Canal.WEB
