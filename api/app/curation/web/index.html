@@ -61,10 +61,37 @@
               <span class="menu-ico" aria-hidden="true">📊</span>
               <span class="menu-txt">Statistiques</span>
             </button>
+            <button type="button" class="onglet" id="tab-parametres" data-vue="vue-parametres">
+              <span class="menu-ico" aria-hidden="true">✉️</span>
+              <span class="menu-txt">Paramètres</span>
+            </button>
           </nav>
         </aside>
 
         <div class="contenu">
+
+      <div id="vue-parametres" class="vue" hidden>
+        <section class="parametres">
+          <h2>✉️ Expéditeur des emails (connexion)</h2>
+          <p class="param-aide">
+            Adresse utilisée pour envoyer les liens de connexion. Elle doit être
+            <strong>vérifiée chez le fournisseur d'emails</strong>. Affichée masquée
+            pour la confidentialité ; la modification est prise en compte immédiatement.
+          </p>
+          <p class="param-actuel">
+            Expéditeur actuel : <strong id="exp-actuel">—</strong>
+            <span id="exp-nom" class="param-nom"></span>
+          </p>
+          <form id="form-expediteur" autocomplete="off">
+            <label for="exp-email">Nouvelle adresse expéditrice</label>
+            <input id="exp-email" type="email" placeholder="adresse@domaine.tld" maxlength="254" />
+            <label for="exp-nom-input">Nom affiché</label>
+            <input id="exp-nom-input" type="text" value="OpenCacao" maxlength="80" />
+            <button type="submit" class="btn" id="btn-expediteur">Enregistrer</button>
+            <span class="etat" id="exp-etat" aria-live="polite"></span>
+          </form>
+        </section>
+      </div>
 
       <div id="vue-pipeline" class="vue" hidden>
       <section class="pipeline" id="pipeline">

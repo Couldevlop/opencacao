@@ -25,7 +25,14 @@ from fastapi import Path as PathParam
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
+from app.core.parametres import (
+    CLE_EMAIL_EXPEDITEUR,
+    CLE_NOM_EXPEDITEUR,
+    ParametresStore,
+    brouiller_email,
+)
 from app.core.security import BodySizeLimitMiddleware
 from app.curation.analytics import analytique
 from app.curation.documents import DocumentInvalide, DocumentStore
@@ -34,6 +41,7 @@ from app.curation.models import (
     DocumentUpload,
     DocumentUrl,
     LoginRequest,
+    ParametreExpediteurRequest,
     RejetRequest,
     ValidationRequest,
 )
@@ -44,6 +52,7 @@ from app.curation.store import CurationStore, DosageRefuse, ValidationInvalide
 logger = get_logger(__name__)
 
 _store = CurationStore.from_env()
+_parametres = ParametresStore.from_settings(get_settings())
 _jobs = JobsRegistry.from_env()
 # Au démarrage (console mono-réplica) : tout job resté "en_cours" est orphelin
 # (pod tué/redémarré) -> on le marque en échec pour ne pas bloquer l'anti-concurrence.
@@ -415,6 +424,31 @@ async def job_detail(
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job introuvable.")
     return job
+
+
+@app.get("/api/parametres/expediteur")
+async def parametres_expediteur(_: Session) -> dict:
+    """Réglage courant de l'expéditeur des emails — adresse **brouillée** (jamais en clair)."""
+    email = await _parametres.obtenir(CLE_EMAIL_EXPEDITEUR)
+    nom = await _parametres.obtenir(CLE_NOM_EXPEDITEUR)
+    return {
+        "email_masque": brouiller_email(email) if email else "",
+        "nom": nom or "",
+        "defini": email is not None,
+    }
+
+
+@app.post("/api/parametres/expediteur")
+async def definir_expediteur(payload: ParametreExpediteurRequest, _: Session) -> dict:
+    """Définit l'adresse d'expédition (prise en compte à chaud par l'API, sans redémarrage).
+
+    L'adresse n'est jamais renvoyée en clair : seule sa forme masquée est exposée.
+    """
+    await _parametres.initialiser()  # idempotent : garantit la table même si l'API ne l'a pas créée
+    await _parametres.definir(CLE_EMAIL_EXPEDITEUR, payload.email)
+    await _parametres.definir(CLE_NOM_EXPEDITEUR, payload.nom)
+    logger.info("expediteur_modifie", email_masque=brouiller_email(payload.email))
+    return {"email_masque": brouiller_email(payload.email), "nom": payload.nom, "defini": True}
 
 
 @app.exception_handler(Exception)
