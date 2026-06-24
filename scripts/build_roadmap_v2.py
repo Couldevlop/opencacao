@@ -613,5 +613,116 @@ for rid, desc, imp, prob, mit in risks:
     risk.row_dimensions[r].height = 40
     r += 1
 
+# ==========================================================================
+# 9. EXTENSION V2 — EFFICACITÉ DU MODÈLE
+# ==========================================================================
+eff = wb.create_sheet("8. Efficacité modèle")
+eff.sheet_view.showGridLines = False
+set_widths(eff, {"A": 7, "B": 24, "C": 60, "D": 11, "E": 8, "F": 14})
+title_block(
+    eff,
+    "Extension V2 — Efficacité du modèle",
+    "Qualité + latence : entraînement RunPod (GPU 24 Go) → service K3s CX53 (CPU, GGUF llama.cpp)",
+    span=6,
+)
+
+# --- Diagnostic (état mesuré au 24 juin 2026) ---
+diag = [
+    ("Modèle", "Ministral-3-8B-Instruct-2512 · QLoRA r=16/α=32 NF4 · 1 epoch · GGUF Q4_K_M (~5 Go)."),
+    ("Service", "llama.cpp CPU sur CX53 (16 vCPU/32 Go), -c 4096, -t 12 ≈ 10-15 tok/s ≈ 1 min/réponse."),
+    ("Corpus", "10 000 paires AUTO-générées par Ministral-8B lui-même (pas un maître) + 17 refus + 20 amorce."),
+    ("Point faible #1", "Auto-distillation : le fine-tune ne peut PAS dépasser le modèle de base. Plafond de qualité bridé."),
+    ("Point faible #2", "Seulement 17 exemples de refus ; éval = 20 cas ; pas de validation pilotant le choix de checkpoint."),
+    ("Point faible #3", "Latence ~1 min/réponse (UX) ; quantization Q4_K_M sans imatrix ; pas de cache de préfixe ni KV-quant."),
+    ("Atouts en place", "Pipeline RunPod complet, maître souverain dispo (GLM-5.2 / Qwen2.5-72B), RAG actif, journal 👍/👎."),
+]
+r = 4
+for cle, txt in diag:
+    cc = eff.cell(row=r, column=1, value=cle)
+    cc.fill = fill(DARK if not cle.startswith("Point faible") else ORANGE_DARK)
+    cc.font = Font(bold=True, color=WHITE, size=9)
+    cc.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    eff.merge_cells(start_row=r, start_column=1, end_row=r, end_column=1)
+    eff.merge_cells(start_row=r, start_column=2, end_row=r, end_column=6)
+    dc = eff.cell(row=r, column=2, value=txt)
+    dc.fill = fill(ORANGE_PALE if r % 2 == 0 else WHITE)
+    dc.font = Font(size=9, color=DARK)
+    dc.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True, indent=1)
+    for c in (1, 2):
+        eff.cell(row=r, column=c).border = BORDER
+    eff.row_dimensions[r].height = 24
+    r += 1
+
+# --- Backlog F — leviers d'efficacité ---
+r += 1
+header_row(eff, r, ["ID", "Lot", "Levier (user story)", "Priorité", "SP", "Phase"])
+backlog_eff = [
+    ("F1", "1 Mesure", "Étendre l'éval (20 → ~150 cas, multi-tours/refus) + bench de latence + juge GLM-5.2 intégré.", "Must", 5, "Ext-S1"),
+    ("F2", "2 Corpus maître", "Distiller depuis un VRAI maître (GLM-5.2 ceiling + Qwen2.5-72B-AWQ souverain) au lieu de l'auto-génération.", "Must", 8, "Ext-S1"),
+    ("F3", "2 Corpus maître", "Élargir les refus 17 → ~300 (évasion dose multi-tours, médical, image, hors-filière).", "Must", 5, "Ext-S1"),
+    ("F4", "3 Entraînement", "Recette pilotée par l'éval : sweep epochs (1/2/3) × rang LoRA (16/32/64) × lr ; meilleur checkpoint ; max_seq 1024→1536.", "Should", 5, "Ext-S2"),
+    ("F5", "4 Alignement", "DPO/ORPO sur ~1-2k paires de préférence (concision « SMS », citation de source, refus nets).", "Should", 8, "Ext-S2"),
+    ("F11", "7 Boucle", "Juge GLM-5.2 sur le journal de prod (👍/👎) → corpus curé → ré-entraînement périodique.", "Must", 5, "Ext-S2"),
+    ("F6", "5 Quantization", "Quantization imatrix (calibration sur le corpus domaine) → Q4_K_M-imatrix ; comparer Q4_K_M-imatrix vs Q5_K_M.", "Should", 3, "Ext-S3"),
+    ("F7", "5 Serving", "llama.cpp : flash-attn, KV-cache q8, cache de préfixe (prompt système figé), threads, max_tokens 512→384.", "Should", 5, "Ext-S3"),
+    ("F8", "5 Serving", "Décodage spéculatif (petit modèle brouillon) pour accélérer la génération sur CPU.", "Could", 5, "Ext-S3"),
+    ("F9", "6 RAG", "Embeddings plus forts (multilingual-e5 / BGE-M3) + top_k 8 → reranking → 3 ; calibrer le seuil.", "Should", 5, "Ext-S3"),
+    ("F10", "6 RAG", "Récupération hybride BM25 + dense (recall sur noms de maladies/variétés).", "Could", 3, "Ext-S3"),
+    ("F12", "1 Mesure", "Harnais A/B (qualité + latence) comparant les versions de modèle, choix de la version à déployer.", "Could", 3, "Ext-S3"),
+]
+PHASE_COLOR = {"Ext-S1": "1565C0", "Ext-S2": "2E7D32", "Ext-S3": "6A1B9A"}
+r += 1
+for fid, lot, story, prio, sp, phase in backlog_eff:
+    eff.cell(row=r, column=1, value=fid).font = Font(bold=True, size=9)
+    eff.cell(row=r, column=1).alignment = Alignment(horizontal="center", vertical="center")
+    eff.cell(row=r, column=2, value=lot).font = Font(size=8, color=GREY_HEAD)
+    eff.cell(row=r, column=2).alignment = Alignment(horizontal="left", vertical="center", wrap_text=True, indent=1)
+    eff.cell(row=r, column=3, value=story).font = Font(size=10, color=DARK)
+    eff.cell(row=r, column=3).alignment = Alignment(horizontal="left", vertical="center", wrap_text=True, indent=1)
+    pc = eff.cell(row=r, column=4, value=prio)
+    pbg, pfg = MOSCOW[prio]
+    pc.fill = fill(pbg)
+    pc.font = Font(bold=True, color=pfg, size=10)
+    pc.alignment = Alignment(horizontal="center", vertical="center")
+    spc = eff.cell(row=r, column=5, value=sp)
+    spc.font = Font(bold=True, size=10)
+    spc.alignment = Alignment(horizontal="center", vertical="center")
+    ph = eff.cell(row=r, column=6, value=phase)
+    ph.fill = fill(PHASE_COLOR[phase])
+    ph.font = Font(bold=True, color=WHITE, size=9)
+    ph.alignment = Alignment(horizontal="center", vertical="center")
+    for c in range(1, 7):
+        eff.cell(row=r, column=c).border = BORDER
+    eff.row_dimensions[r].height = 30
+    r += 1
+
+# --- Combinaison recommandée ---
+r += 1
+eff.merge_cells(start_row=r, start_column=1, end_row=r, end_column=6)
+titre_combi = eff.cell(row=r, column=1, value="Combinaison recommandée (qualité × latence × souveraineté)")
+titre_combi.fill = fill(ORANGE)
+titre_combi.font = Font(bold=True, color=WHITE, size=11)
+titre_combi.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+eff.row_dimensions[r].height = 22
+r += 1
+combi = (
+    "Maître : GLM-5.2 (plafond de qualité) sur un sous-ensemble curé + Qwen2.5-72B-AWQ (volume souverain) "
+    "→ corpus ~10-12k + 300 refus.  Entraînement : LoRA r=32, 2 epochs, choix de checkpoint par l'éval, "
+    "puis DPO sur préférences.  Quantization : Q4_K_M avec imatrix domaine.  Service : flash-attn + KV q8 + "
+    "cache de préfixe + max_tokens 384 (threads calibrés).  RAG : embeddings multilingual-e5 + reranking.  "
+    "Boucle : juge GLM-5.2 sur le journal → curation → ré-entraînement mensuel.  "
+    "Toute combinaison est jugée sur l'éval étendu (F1) : on ne déploie une version que si garde-fous = 100 % "
+    "ET qualité ≥ baseline ET latence acceptable."
+)
+eff.merge_cells(start_row=r, start_column=1, end_row=r, end_column=6)
+cc = eff.cell(row=r, column=1, value=combi)
+cc.fill = fill(ORANGE_LIGHT)
+cc.font = Font(size=10, color=DARK)
+cc.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True, indent=1)
+eff.row_dimensions[r].height = 92
+
+# Mise à jour de la page de garde : périmètre étendu.
+cover["A16"] = "Assistant conversationnel — mémoire, sessions & efficacité du modèle"
+
 wb.save(OUT)
 print(f"OK -> {OUT}")
