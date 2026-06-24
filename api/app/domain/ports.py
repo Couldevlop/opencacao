@@ -102,9 +102,7 @@ class SessionStorePort(Protocol):
         """Retourne les métadonnées d'une session, ou None si inconnue."""
         ...
 
-    async def obtenir_session_avec_messages(
-        self, session_id: str
-    ) -> SessionAvecMessages | None:
+    async def obtenir_session_avec_messages(self, session_id: str) -> SessionAvecMessages | None:
         """Retourne une session et tous ses messages, ou None si inconnue."""
         ...
 

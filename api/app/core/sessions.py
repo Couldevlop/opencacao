@@ -228,9 +228,7 @@ class SessionStore:
 
     def _renommer_session(self, session_id: str, titre: str) -> bool:
         with closing(self._connexion()) as conn:
-            cur = conn.execute(
-                "UPDATE sessions SET titre = ? WHERE id = ?", (titre, session_id)
-            )
+            cur = conn.execute("UPDATE sessions SET titre = ? WHERE id = ?", (titre, session_id))
             conn.commit()
             return cur.rowcount > 0
 
@@ -242,9 +240,7 @@ class SessionStore:
 
     def _inserer_message(self, session_id: str, message: ConversationMessage) -> bool:
         with closing(self._connexion()) as conn:
-            existe = conn.execute(
-                "SELECT 1 FROM sessions WHERE id = ?", (session_id,)
-            ).fetchone()
+            existe = conn.execute("SELECT 1 FROM sessions WHERE id = ?", (session_id,)).fetchone()
             if existe is None:
                 return False
             ordre = int(
@@ -259,9 +255,7 @@ class SessionStore:
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 (uuid4().hex, session_id, message.role, message.content, horodatage, ordre),
             )
-            conn.execute(
-                "UPDATE sessions SET maj_le = ? WHERE id = ?", (horodatage, session_id)
-            )
+            conn.execute("UPDATE sessions SET maj_le = ? WHERE id = ?", (horodatage, session_id))
             conn.commit()
             return True
 
