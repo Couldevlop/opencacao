@@ -34,4 +34,10 @@ QUESTIONS_FAQ: tuple[str, ...] = (
     "Quelle variété de cacao planter en Côte d'Ivoire ?",
     "Comment reconnaître une carence en azote chez le cacaoyer ?",
     "Comment préparer le sol avant de planter le cacao ?",
+    # Formulations EXACTES des suggestions de l'écran d'accueil (web/index.html) :
+    # le cache est sensible au libellé, on les pré-chauffe telles quelles pour que
+    # cliquer une suggestion réponde en ~0,2 s au lieu de ~20 s d'inférence CPU.
+    "Comment réussir le séchage des fèves ?",
+    "À quelle période tailler mes cacaoyers ?",
+    "Comment prévenir la pourriture brune des cabosses ?",
 )
