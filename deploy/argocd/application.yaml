@@ -12,7 +12,7 @@
 # Prérequis appliqués HORS de cet objet (cf. deploy/argocd/README.md) :
 #   - Namespace `opencacao` + GGUF chargé sur la PVC `modele-gguf` (kubectl).
 #   - ArgoCD + ArgoCD Image Updater installés dans le namespace `argocd`.
-#   - Les images `0.7.0` doivent EXISTER sur GHCR (1er run de release.yml) AVANT
+#   - Les images `0.6.3` doivent EXISTER sur GHCR (1er run de release.yml) AVANT
 #     d'appliquer cette Application — sinon ImagePullBackOff.
 apiVersion: argoproj.io/v1alpha1
 kind: Application

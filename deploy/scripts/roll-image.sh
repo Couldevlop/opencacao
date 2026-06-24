@@ -7,7 +7,7 @@
 # l'upgrade d'ArgoCD, ce script applique le nouveau tag directement (kubectl set image).
 #
 # Usage :
-#   KUBECONFIG=kubeconfig-hetzner.yaml deploy/scripts/roll-image.sh 0.7.0
+#   KUBECONFIG=kubeconfig-hetzner.yaml deploy/scripts/roll-image.sh 0.6.3
 set -euo pipefail
 
 TAG="${1:?Usage: roll-image.sh <X.Y.Z>}"
