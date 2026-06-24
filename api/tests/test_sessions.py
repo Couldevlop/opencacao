@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import closing
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -256,3 +257,38 @@ async def test_recherche_echappe_les_jokers_sql(tmp_path: Path) -> None:
     await store.creer_session(titre="Sans rapport", proprietaire="A")
     resultats = await store.rechercher_sessions("100%", proprietaire="A")
     assert [s.id for s in resultats] == [cible.id]
+
+
+# --- Rétention RGPD : purge automatique (E2) ---
+
+
+async def test_purge_supprime_les_conversations_expirees(tmp_path: Path) -> None:
+    """Les conversations inactives au-delà de la rétention sont purgées (messages compris)."""
+    chemin = tmp_path / "sessions.db"
+    store = await _store_pret(chemin)
+    vieille = await store.creer_session(titre="Vieille")
+    await store.ajouter_message(vieille.id, "user", "ancien message")
+    recente = await store.creer_session(titre="Récente")
+
+    # Antidate la session « vieille » à 400 jours (dernier message ancien).
+    passe = (datetime.now(UTC) - timedelta(days=400)).isoformat()
+    with closing(sqlite3.connect(str(chemin))) as conn:
+        conn.execute("UPDATE sessions SET maj_le = ? WHERE id = ?", (passe, vieille.id))
+        conn.commit()
+
+    assert await store.purger_anciennes(365) == 1
+    assert await store.obtenir_session(vieille.id) is None  # purgée
+    assert await store.obtenir_session(recente.id) is not None  # conservée
+    with closing(sqlite3.connect(str(chemin))) as conn:
+        restants = conn.execute(
+            "SELECT COUNT(*) FROM messages WHERE session_id = ?", (vieille.id,)
+        ).fetchone()[0]
+    assert restants == 0  # messages partis en cascade
+
+
+async def test_purge_desactivee_si_retention_nulle(tmp_path: Path) -> None:
+    """Une rétention <= 0 ne supprime rien (conservation indéfinie)."""
+    store = await _store_pret(tmp_path / "sessions.db")
+    await store.creer_session()
+    assert await store.purger_anciennes(0) == 0
+    assert len(await store.lister_sessions()) == 1

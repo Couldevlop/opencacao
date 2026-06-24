@@ -52,6 +52,16 @@ def test_body_size_limit_et_entetes() -> None:
     assert petit.headers["content-security-policy"]
 
 
+def test_purge_sessions_desactivee_si_retention_nulle() -> None:
+    """Avec une rétention <= 0, aucune tâche de purge n'est lancée (E2)."""
+    from app.core.config import Settings
+    from app.main import _lancer_purge_sessions
+
+    settings = Settings(sessions_retention_jours=0)
+    app = SimpleNamespace(state=SimpleNamespace())
+    assert _lancer_purge_sessions(app, settings) is None
+
+
 def test_csp_permissive_pour_html_stricte_pour_json() -> None:
     """La CSP autorise l'UI (HTML) à charger ses ressources, mais reste stricte en API.
 

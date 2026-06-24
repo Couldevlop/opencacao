@@ -35,8 +35,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.cache = CacheClient.from_settings(settings)
     app.state.journal = JournalFichier.from_settings(settings)
     app.state.sessions = SessionStore.from_settings(settings)
+    app.state.purge_task = None
     if settings.sessions_enabled:
         await app.state.sessions.initialiser()
+        app.state.purge_task = _lancer_purge_sessions(app, settings)
     app.state.embeddings, app.state.rag = _construire_rag(settings)
     from app.services.geo import GeoLocalisateur
 
@@ -50,11 +52,45 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         if app.state.prewarm_task is not None:
             app.state.prewarm_task.cancel()
+        if app.state.purge_task is not None:
+            app.state.purge_task.cancel()
         await app.state.inference.close()
         await app.state.cache.close()
         if app.state.embeddings is not None:
             await app.state.embeddings.close()
         logger.info("arret")
+
+
+def _lancer_purge_sessions(app: FastAPI, settings: Settings) -> object | None:
+    """Démarre la purge RGPD des conversations expirées (E2) en tâche de fond.
+
+    Purge une fois au démarrage, puis une fois par jour. Non bloquant et tolérant aux
+    pannes : une erreur de purge n'interrompt jamais le service.
+
+    Returns:
+        La tâche asyncio créée, ou None si la rétention est désactivée.
+    """
+    if settings.sessions_retention_jours <= 0:
+        return None
+    import asyncio
+
+    async def boucle() -> None:
+        while True:
+            try:
+                nombre = await app.state.sessions.purger_anciennes(
+                    settings.sessions_retention_jours
+                )
+                if nombre:
+                    logger.info(
+                        "sessions_purgees",
+                        nombre=nombre,
+                        retention_jours=settings.sessions_retention_jours,
+                    )
+            except Exception as exc:  # purge best-effort : ne jamais propager
+                logger.warning("purge_sessions_echouee", error=str(exc))
+            await asyncio.sleep(86_400)
+
+    return asyncio.create_task(boucle())
 
 
 def _lancer_prechauffage(app: FastAPI, settings: Settings) -> object | None:
