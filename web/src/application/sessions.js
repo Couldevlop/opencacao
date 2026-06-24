@@ -28,5 +28,11 @@ export function creerCasUsageSessions(client) {
 
     /** Supprime une conversation. true si la suppression a abouti. */
     supprimer: (id) => client.supprimerSession(id),
+
+    /** Renomme une conversation (C3). Renvoie la session à jour, ou null si absente. */
+    renommer: (id, titre) => client.renommerSession(id, titre),
+
+    /** Recherche plein-texte dans les conversations de l'appareil (C5). */
+    rechercher: (requete) => client.rechercherSessions(requete),
   });
 }

@@ -98,24 +98,38 @@ class SessionStorePort(Protocol):
         """Crée une session vide et retourne ses métadonnées."""
         ...
 
-    async def obtenir_session(self, session_id: str) -> Session | None:
-        """Retourne les métadonnées d'une session, ou None si inconnue."""
+    async def obtenir_session(
+        self, session_id: str, proprietaire: str | None = ...
+    ) -> Session | None:
+        """Retourne les métadonnées d'une session, ou None si inconnue/non possédée."""
         ...
 
-    async def obtenir_session_avec_messages(self, session_id: str) -> SessionAvecMessages | None:
-        """Retourne une session et tous ses messages, ou None si inconnue."""
+    async def obtenir_session_avec_messages(
+        self, session_id: str, proprietaire: str | None = ...
+    ) -> SessionAvecMessages | None:
+        """Retourne une session et tous ses messages, ou None si inconnue/non possédée."""
         ...
 
-    async def lister_sessions(self, limite: int = ..., decalage: int = ...) -> list[Session]:
-        """Liste les sessions, de la plus récemment active à la plus ancienne."""
+    async def lister_sessions(
+        self, limite: int = ..., decalage: int = ..., proprietaire: str = ...
+    ) -> list[Session]:
+        """Liste les sessions d'un appareil, de la plus récemment active à la plus ancienne."""
         ...
 
-    async def renommer_session(self, session_id: str, titre: str) -> bool:
-        """Renomme une session. True si elle existait."""
+    async def rechercher_sessions(
+        self, requete: str, proprietaire: str = ..., limite: int = ...
+    ) -> list[Session]:
+        """Recherche plein-texte (titre + messages) dans les conversations d'un appareil."""
         ...
 
-    async def supprimer_session(self, session_id: str) -> bool:
-        """Supprime une session et ses messages. True si elle existait."""
+    async def renommer_session(
+        self, session_id: str, titre: str, proprietaire: str | None = ...
+    ) -> bool:
+        """Renomme une session. True si elle existait (et appartient à l'appareil)."""
+        ...
+
+    async def supprimer_session(self, session_id: str, proprietaire: str | None = ...) -> bool:
+        """Supprime une session et ses messages. True si elle existait (et possédée)."""
         ...
 
     async def ajouter_message(

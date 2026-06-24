@@ -5,23 +5,26 @@
 
 const TITRE_VIDE = "Aucune conversation pour l'instant.";
 
-export function creerSidebar(refs, { onNouvelle, onSelectionner, onSupprimer } = {}) {
-  /** Bouton de suppression (croix) d'une conversation. */
-  function boutonSupprimer(id, titre) {
+export function creerSidebar(
+  refs,
+  { onNouvelle, onSelectionner, onSupprimer, onRenommer, onRechercher } = {}
+) {
+  /** Petit bouton d'action (renommer / supprimer) d'une conversation. */
+  function boutonAction(classe, libelle, symbole, gestion) {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "session-suppr";
-    btn.setAttribute("aria-label", `Supprimer la conversation « ${titre} »`);
-    btn.title = "Supprimer";
-    btn.textContent = "✕";
+    btn.className = classe;
+    btn.setAttribute("aria-label", libelle);
+    btn.title = libelle;
+    btn.textContent = symbole;
     btn.addEventListener("click", (e) => {
-      e.stopPropagation(); // ne pas ouvrir la conversation qu'on supprime
-      if (typeof onSupprimer === "function") onSupprimer(id, titre);
+      e.stopPropagation(); // ne pas ouvrir/sélectionner la conversation visée
+      gestion();
     });
     return btn;
   }
 
-  /** Une entrée de la liste : bouton de sélection + bouton de suppression. */
+  /** Une entrée de la liste : sélection + actions renommer/supprimer. */
   function elementSession(session, idActif) {
     const li = document.createElement("li");
     li.className = "session-item" + (session.id === idActif ? " actif" : "");
@@ -35,7 +38,18 @@ export function creerSidebar(refs, { onNouvelle, onSelectionner, onSupprimer } =
       if (typeof onSelectionner === "function") onSelectionner(session.id);
     });
 
-    li.append(ouvrir, boutonSupprimer(session.id, session.titre));
+    const actions = document.createElement("span");
+    actions.className = "session-actions";
+    actions.append(
+      boutonAction("session-renommer", `Renommer « ${session.titre} »`, "✎", () => {
+        if (typeof onRenommer === "function") onRenommer(session.id, session.titre);
+      }),
+      boutonAction("session-suppr", `Supprimer « ${session.titre} »`, "✕", () => {
+        if (typeof onSupprimer === "function") onSupprimer(session.id, session.titre);
+      })
+    );
+
+    li.append(ouvrir, actions);
     return li;
   }
 
@@ -44,12 +58,12 @@ export function creerSidebar(refs, { onNouvelle, onSelectionner, onSupprimer } =
    * @param {Array} sessions
    * @param {string|null} idActif
    */
-  function rendre(sessions, idActif) {
+  function rendre(sessions, idActif, messageVide = TITRE_VIDE) {
     refs.liste.textContent = "";
     if (!sessions || sessions.length === 0) {
       const vide = document.createElement("li");
       vide.className = "session-vide";
-      vide.textContent = TITRE_VIDE;
+      vide.textContent = messageVide;
       refs.liste.appendChild(vide);
       return;
     }
@@ -78,5 +92,20 @@ export function creerSidebar(refs, { onNouvelle, onSelectionner, onSupprimer } =
     if (typeof onNouvelle === "function") onNouvelle();
   });
 
-  return Object.freeze({ rendre, ouvrir, fermer, basculer });
+  // Recherche (C5) : déclenchée après une courte pause de frappe (anti-rafale).
+  let minuteur = null;
+  refs.recherche?.addEventListener("input", () => {
+    if (minuteur) clearTimeout(minuteur);
+    const valeur = refs.recherche.value;
+    minuteur = setTimeout(() => {
+      if (typeof onRechercher === "function") onRechercher(valeur);
+    }, 220);
+  });
+
+  /** Réinitialise le champ de recherche (ex. après « Nouvelle »). */
+  function viderRecherche() {
+    if (refs.recherche) refs.recherche.value = "";
+  }
+
+  return Object.freeze({ rendre, ouvrir, fermer, basculer, viderRecherche });
 }

@@ -36,6 +36,7 @@ const refs = {
   toggle: $("sidebarToggle"),
   liste: $("sessionList"),
   nouvelle: $("nouvelleConv"),
+  recherche: $("rechercheConv"),
 };
 
 let baseUrl = localStorage.getItem(CLE_API) || API_DEFAUT;
@@ -59,7 +60,13 @@ const sidebar = creerSidebar(refs, {
   onNouvelle: () => nouvelleConversation(),
   onSelectionner: (id) => ouvrirConversation(id),
   onSupprimer: (id, titre) => supprimerConversation(id, titre),
+  onRenommer: (id, titre) => renommerConversation(id, titre),
+  onRechercher: (valeur) => rechercher(valeur),
 });
+
+// Terme de recherche courant (C5) : tant qu'il est non vide, la liste affiche les
+// résultats filtrés plutôt que toutes les conversations.
+let rechercheActive = "";
 
 // Message doux et orienté producteur quand le modèle ne peut pas répondre.
 const MESSAGE_SANS_REPONSE =
@@ -82,14 +89,39 @@ function messageErreur(e) {
 
 /* ---------- conversations (sidebar) ---------- */
 
-/** Recharge la liste des conversations et surligne l'active (best-effort). */
-async function rafraichirSidebar() {
+/** Recharge la liste (ou les résultats de recherche) et surligne l'active. */
+async function rafraichirListe() {
   if (!sessionsDispo) return;
   try {
-    const liste = await sessions.lister();
-    sidebar.rendre(liste, sessionActive);
+    if (rechercheActive) {
+      const res = await sessions.rechercher(rechercheActive);
+      sidebar.rendre(res, sessionActive, `Aucun résultat pour « ${rechercheActive} ».`);
+    } else {
+      const liste = await sessions.lister();
+      sidebar.rendre(liste, sessionActive);
+    }
   } catch {
     /* la liste n'est pas critique : on n'interrompt pas l'expérience */
+  }
+}
+
+/** Filtre la liste par un terme de recherche (C5). */
+async function rechercher(valeur) {
+  rechercheActive = (valeur || "").trim();
+  await rafraichirListe();
+}
+
+/** Renomme une conversation après saisie d'un nouveau titre (C3). */
+async function renommerConversation(id, titreActuel) {
+  const saisi = window.prompt("Renommer la conversation :", titreActuel);
+  if (saisi === null) return; // annulé
+  const titre = saisi.trim();
+  if (!titre || titre === titreActuel) return;
+  try {
+    await sessions.renommer(id, titre);
+    await rafraichirListe();
+  } catch (e) {
+    vue.ajouterErreur(messageErreur(e));
   }
 }
 
@@ -106,14 +138,14 @@ async function ouvrirConversation(id) {
       sessionActive = null;
       ecrireSessionActive(null);
       vue.reinitialiser();
-      await rafraichirSidebar();
+      await rafraichirListe();
       sidebar.fermer();
       return;
     }
     sessionActive = detail.session.id;
     ecrireSessionActive(sessionActive);
     vue.rejouer(detail.messages);
-    await rafraichirSidebar();
+    await rafraichirListe();
   } catch (e) {
     vue.ajouterErreur(messageErreur(e));
   } finally {
@@ -126,8 +158,10 @@ function nouvelleConversation() {
   sessionActive = null;
   ecrireSessionActive(null);
   historique = [];
+  rechercheActive = "";
+  sidebar.viderRecherche();
   vue.reinitialiser();
-  rafraichirSidebar();
+  rafraichirListe();
   sidebar.fermer();
   refs.input.focus();
 }
@@ -142,7 +176,7 @@ async function supprimerConversation(id, titre) {
       ecrireSessionActive(null);
       vue.reinitialiser();
     }
-    await rafraichirSidebar();
+    await rafraichirListe();
   } catch (e) {
     vue.ajouterErreur(messageErreur(e));
   }
@@ -195,7 +229,7 @@ async function envoyer(question) {
 
     if (sessionsDispo) {
       // Le serveur a pu auto-générer le titre (B3) et réordonner : on rafraîchit.
-      await rafraichirSidebar();
+      await rafraichirListe();
     } else if (conseil?.reponse) {
       historique.push({ role: "user", content: q }, { role: "assistant", content: conseil.reponse });
       if (historique.length > MAX_HISTORIQUE) historique = historique.slice(-MAX_HISTORIQUE);
@@ -206,7 +240,7 @@ async function envoyer(question) {
       // La conversation a disparu côté serveur : on repart proprement.
       sessionActive = null;
       ecrireSessionActive(null);
-      await rafraichirSidebar();
+      await rafraichirListe();
       vue.ajouterErreur("Cette conversation n'est plus disponible. Reposez votre question pour en ouvrir une nouvelle.");
     } else {
       vue.ajouterErreur(messageErreur(e));

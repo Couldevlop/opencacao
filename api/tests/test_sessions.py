@@ -31,7 +31,7 @@ async def test_initialiser_cree_le_schema_et_la_version(tmp_path: Path) -> None:
             row[0]
             for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
-    assert version == 1
+    assert version == 2  # migration 1 (schéma) + migration 2 (proprietaire, D1)
     assert {"sessions", "messages"} <= tables
 
 
@@ -193,3 +193,66 @@ def test_from_settings(tmp_path: Path) -> None:
     store = SessionStore.from_settings(settings)
     assert isinstance(store, SessionStore)
     assert store.max_messages == 42
+
+
+# --- Identité par appareil (D1) ---
+
+
+async def test_listage_cloisonne_par_appareil(tmp_path: Path) -> None:
+    """Chaque appareil ne voit que ses propres conversations."""
+    store = await _store_pret(tmp_path / "sessions.db")
+    a = await store.creer_session(proprietaire="appareil-A")
+    await store.creer_session(proprietaire="appareil-B")
+
+    liste_a = await store.lister_sessions(proprietaire="appareil-A")
+    assert [s.id for s in liste_a] == [a.id]
+    assert await store.lister_sessions(proprietaire="appareil-A", decalage=0)  # non vide
+    assert len(await store.lister_sessions(proprietaire="appareil-B")) == 1
+
+
+async def test_acces_refuse_a_un_autre_appareil(tmp_path: Path) -> None:
+    """Lire/renommer/supprimer la session d'un autre appareil échoue (cloisonnement)."""
+    store = await _store_pret(tmp_path / "sessions.db")
+    session = await store.creer_session(proprietaire="appareil-A")
+
+    assert await store.obtenir_session(session.id, proprietaire="appareil-B") is None
+    assert await store.obtenir_session(session.id, proprietaire="appareil-A") is not None
+    assert await store.renommer_session(session.id, "X", proprietaire="appareil-B") is False
+    assert await store.supprimer_session(session.id, proprietaire="appareil-B") is False
+    # Le propriétaire, lui, peut agir.
+    assert await store.renommer_session(session.id, "Mien", proprietaire="appareil-A") is True
+
+
+async def test_acces_interne_sans_filtre_proprietaire(tmp_path: Path) -> None:
+    """Sans proprietaire (None), l'accès interne (chat) ignore le cloisonnement."""
+    store = await _store_pret(tmp_path / "sessions.db")
+    session = await store.creer_session(proprietaire="appareil-A")
+    assert await store.obtenir_session(session.id) is not None  # proprietaire=None
+
+
+# --- Recherche plein-texte (C5) ---
+
+
+async def test_recherche_par_titre_et_par_contenu(tmp_path: Path) -> None:
+    """La recherche trouve par titre ET par contenu de message, scopée par appareil."""
+    store = await _store_pret(tmp_path / "sessions.db")
+    s_titre = await store.creer_session(titre="Séchage des fèves", proprietaire="A")
+    s_msg = await store.creer_session(titre="Autre sujet", proprietaire="A")
+    await store.ajouter_message(s_msg.id, "user", "Comment lutter contre la pourriture brune ?")
+    await store.creer_session(titre="Séchage chez le voisin", proprietaire="B")
+
+    par_titre = await store.rechercher_sessions("séchage", proprietaire="A")
+    assert [s.id for s in par_titre] == [s_titre.id]  # la session de B est exclue
+    par_contenu = await store.rechercher_sessions("pourriture", proprietaire="A")
+    assert [s.id for s in par_contenu] == [s_msg.id]
+    assert await store.rechercher_sessions("introuvable", proprietaire="A") == []
+    assert await store.rechercher_sessions("   ", proprietaire="A") == []
+
+
+async def test_recherche_echappe_les_jokers_sql(tmp_path: Path) -> None:
+    """Les caractères LIKE (%, _) saisis sont cherchés littéralement, pas comme jokers."""
+    store = await _store_pret(tmp_path / "sessions.db")
+    cible = await store.creer_session(titre="Remise 100%", proprietaire="A")
+    await store.creer_session(titre="Sans rapport", proprietaire="A")
+    resultats = await store.rechercher_sessions("100%", proprietaire="A")
+    assert [s.id for s in resultats] == [cible.id]

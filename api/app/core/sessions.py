@@ -65,6 +65,14 @@ class SessionStore:
         CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, ordre);
         CREATE INDEX IF NOT EXISTS idx_sessions_maj ON sessions(maj_le DESC);
         """,
+        # Migration 2 (V2, sprint 5) : identité anonyme par appareil (D1). Chaque
+        # session est rattachée à un identifiant opaque de navigateur ; listes et accès
+        # sont ainsi cloisonnés par appareil (jamais d'IP — RGPD). Les sessions
+        # antérieures restent rattachées à '' (espace « hérité », sans appareil).
+        """
+        ALTER TABLE sessions ADD COLUMN proprietaire TEXT NOT NULL DEFAULT '';
+        CREATE INDEX IF NOT EXISTS idx_sessions_proprio ON sessions(proprietaire, maj_le DESC);
+        """,
     )
 
     def __init__(self, chemin: Path, max_messages: int = 200) -> None:
@@ -112,8 +120,9 @@ class SessionStore:
         langue: Langue = Langue.FR,
         canal: Canal = Canal.WEB,
         titre: str = TITRE_PAR_DEFAUT,
+        proprietaire: str = "",
     ) -> Session:
-        """Crée une session vide et retourne ses métadonnées."""
+        """Crée une session vide (rattachée à un appareil) et retourne ses métadonnées."""
         maintenant = datetime.now(UTC)
         session = Session(
             id=uuid4().hex,
@@ -124,35 +133,57 @@ class SessionStore:
             maj_le=maintenant,
         )
         async with self._verrou:
-            await asyncio.to_thread(self._inserer_session, session)
+            await asyncio.to_thread(self._inserer_session, session, proprietaire)
         return session
 
-    async def obtenir_session(self, session_id: str) -> Session | None:
-        """Retourne les métadonnées d'une session, ou None si inconnue."""
-        return await asyncio.to_thread(self._lire_session, session_id)
+    async def obtenir_session(
+        self, session_id: str, proprietaire: str | None = None
+    ) -> Session | None:
+        """Retourne les métadonnées d'une session, ou None si inconnue.
 
-    async def obtenir_session_avec_messages(self, session_id: str) -> SessionAvecMessages | None:
-        """Retourne une session et tous ses messages, ou None si inconnue."""
-        session = await self.obtenir_session(session_id)
+        Si ``proprietaire`` est fourni, la session n'est rendue que si elle appartient
+        à cet appareil (cloisonnement D1). ``None`` = accès interne sans filtre.
+        """
+        return await asyncio.to_thread(self._lire_session, session_id, proprietaire)
+
+    async def obtenir_session_avec_messages(
+        self, session_id: str, proprietaire: str | None = None
+    ) -> SessionAvecMessages | None:
+        """Retourne une session et tous ses messages, ou None si inconnue/non possédée."""
+        session = await self.obtenir_session(session_id, proprietaire)
         if session is None:
             return None
         messages = await self.lister_messages(session_id)
         return SessionAvecMessages(session=session, messages=messages)
 
-    async def lister_sessions(self, limite: int = 50, decalage: int = 0) -> list[Session]:
-        """Liste les sessions, de la plus récemment active à la plus ancienne."""
-        return await asyncio.to_thread(self._lister_sessions, limite, decalage)
+    async def lister_sessions(
+        self, limite: int = 50, decalage: int = 0, proprietaire: str = ""
+    ) -> list[Session]:
+        """Liste les sessions d'un appareil, de la plus récemment active à la plus ancienne."""
+        return await asyncio.to_thread(self._lister_sessions, limite, decalage, proprietaire)
 
-    async def renommer_session(self, session_id: str, titre: str) -> bool:
-        """Renomme une session. Retourne True si la session existait."""
+    async def rechercher_sessions(
+        self, requete: str, proprietaire: str = "", limite: int = 50
+    ) -> list[Session]:
+        """Recherche plein-texte (titre + contenu des messages) dans les conversations
+        d'un appareil. Renvoie les sessions correspondantes, plus récentes en tête."""
+        requete = requete.strip()
+        if not requete:
+            return []
+        return await asyncio.to_thread(self._rechercher_sessions, requete, proprietaire, limite)
+
+    async def renommer_session(
+        self, session_id: str, titre: str, proprietaire: str | None = None
+    ) -> bool:
+        """Renomme une session. Retourne True si elle existait (et appartient à l'appareil)."""
         titre = titre.strip()[:200] or TITRE_PAR_DEFAUT
         async with self._verrou:
-            return await asyncio.to_thread(self._renommer_session, session_id, titre)
+            return await asyncio.to_thread(self._renommer_session, session_id, titre, proprietaire)
 
-    async def supprimer_session(self, session_id: str) -> bool:
-        """Supprime une session et ses messages (cascade). True si elle existait."""
+    async def supprimer_session(self, session_id: str, proprietaire: str | None = None) -> bool:
+        """Supprime une session et ses messages (cascade). True si elle existait/possédée."""
         async with self._verrou:
-            return await asyncio.to_thread(self._supprimer_session, session_id)
+            return await asyncio.to_thread(self._supprimer_session, session_id, proprietaire)
 
     async def ajouter_message(
         self, session_id: str, role: str, content: str
@@ -197,11 +228,11 @@ class SessionStore:
                 conn.execute(f"PRAGMA user_version = {indice + 1}")
             conn.commit()
 
-    def _inserer_session(self, session: Session) -> None:
+    def _inserer_session(self, session: Session, proprietaire: str = "") -> None:
         with closing(self._connexion()) as conn:
             conn.execute(
-                "INSERT INTO sessions (id, titre, langue, canal, cree_le, maj_le) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO sessions (id, titre, langue, canal, cree_le, maj_le, proprietaire) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     session.id,
                     session.titre,
@@ -209,32 +240,63 @@ class SessionStore:
                     session.canal.value,
                     session.cree_le.isoformat(),
                     session.maj_le.isoformat(),
+                    proprietaire,
                 ),
             )
             conn.commit()
 
-    def _lire_session(self, session_id: str) -> Session | None:
+    def _lire_session(self, session_id: str, proprietaire: str | None = None) -> Session | None:
+        clause, params = "id = ?", [session_id]
+        if proprietaire is not None:
+            clause += " AND proprietaire = ?"
+            params.append(proprietaire)
         with closing(self._connexion()) as conn:
-            row = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
+            row = conn.execute(f"SELECT * FROM sessions WHERE {clause}", params).fetchone()
         return _ligne_vers_session(row) if row is not None else None
 
-    def _lister_sessions(self, limite: int, decalage: int) -> list[Session]:
+    def _lister_sessions(self, limite: int, decalage: int, proprietaire: str = "") -> list[Session]:
         with closing(self._connexion()) as conn:
             rows = conn.execute(
-                "SELECT * FROM sessions ORDER BY maj_le DESC LIMIT ? OFFSET ?",
-                (limite, decalage),
+                "SELECT * FROM sessions WHERE proprietaire = ? "
+                "ORDER BY maj_le DESC LIMIT ? OFFSET ?",
+                (proprietaire, limite, decalage),
             ).fetchall()
         return [_ligne_vers_session(row) for row in rows]
 
-    def _renommer_session(self, session_id: str, titre: str) -> bool:
+    def _rechercher_sessions(self, requete: str, proprietaire: str, limite: int) -> list[Session]:
+        # Recherche insensible à la casse via LIKE ; on échappe les jokers SQL pour que
+        # « % » ou « _ » saisis par l'utilisateur soient cherchés littéralement.
+        motif = "%" + requete.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         with closing(self._connexion()) as conn:
-            cur = conn.execute("UPDATE sessions SET titre = ? WHERE id = ?", (titre, session_id))
+            rows = conn.execute(
+                "SELECT * FROM sessions WHERE proprietaire = ? AND ("
+                "  titre LIKE ? ESCAPE '\\' OR id IN ("
+                "    SELECT session_id FROM messages WHERE contenu LIKE ? ESCAPE '\\'"
+                "  )"
+                ") ORDER BY maj_le DESC LIMIT ?",
+                (proprietaire, motif, motif, limite),
+            ).fetchall()
+        return [_ligne_vers_session(row) for row in rows]
+
+    def _renommer_session(
+        self, session_id: str, titre: str, proprietaire: str | None = None
+    ) -> bool:
+        clause, params = "id = ?", [titre, session_id]
+        if proprietaire is not None:
+            clause += " AND proprietaire = ?"
+            params.append(proprietaire)
+        with closing(self._connexion()) as conn:
+            cur = conn.execute(f"UPDATE sessions SET titre = ? WHERE {clause}", params)
             conn.commit()
             return cur.rowcount > 0
 
-    def _supprimer_session(self, session_id: str) -> bool:
+    def _supprimer_session(self, session_id: str, proprietaire: str | None = None) -> bool:
+        clause, params = "id = ?", [session_id]
+        if proprietaire is not None:
+            clause += " AND proprietaire = ?"
+            params.append(proprietaire)
         with closing(self._connexion()) as conn:
-            cur = conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+            cur = conn.execute(f"DELETE FROM sessions WHERE {clause}", params)
             conn.commit()
             return cur.rowcount > 0
 

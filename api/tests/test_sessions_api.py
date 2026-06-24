@@ -181,6 +181,63 @@ def test_chat_titre_auto_depuis_la_premiere_question(client) -> None:
     assert titre == "Comment bien sécher mes fèves de cacao"
 
 
+# --- Identité par appareil (D1), renommage (C3), recherche (C5) ---
+
+
+def _dev(id_appareil: str) -> dict[str, str]:
+    """En-tête d'identité d'appareil pour cloisonner les conversations."""
+    return {"X-Device-Id": id_appareil}
+
+
+def test_sessions_cloisonnees_par_appareil(client) -> None:
+    """Un appareil ne liste que ses propres conversations (D1)."""
+    client.post("/v1/sessions", json={"titre": "Chez A"}, headers=_dev("A"))
+    client.post("/v1/sessions", json={"titre": "Chez B"}, headers=_dev("B"))
+
+    titres_a = [s["titre"] for s in client.get("/v1/sessions", headers=_dev("A")).json()]
+    assert titres_a == ["Chez A"]
+    titres_b = [s["titre"] for s in client.get("/v1/sessions", headers=_dev("B")).json()]
+    assert titres_b == ["Chez B"]
+
+
+def test_acces_session_autre_appareil_404(client) -> None:
+    """Lire/supprimer la conversation d'un autre appareil renvoie 404 (D1)."""
+    sid = client.post("/v1/sessions", headers=_dev("A")).json()["id"]
+    assert client.get(f"/v1/sessions/{sid}", headers=_dev("B")).status_code == 404
+    assert client.delete(f"/v1/sessions/{sid}", headers=_dev("B")).status_code == 404
+    assert client.get(f"/v1/sessions/{sid}", headers=_dev("A")).status_code == 200
+
+
+def test_renommer_session(client) -> None:
+    """PATCH renomme la conversation et renvoie ses métadonnées à jour (C3)."""
+    sid = client.post("/v1/sessions", headers=_dev("A")).json()["id"]
+    resp = client.patch(f"/v1/sessions/{sid}", json={"titre": "Séchage à Daloa"}, headers=_dev("A"))
+    assert resp.status_code == 200
+    assert resp.json()["titre"] == "Séchage à Daloa"
+    assert client.get(f"/v1/sessions/{sid}", headers=_dev("A")).json()["session"]["titre"] == (
+        "Séchage à Daloa"
+    )
+
+
+def test_renommer_session_autre_appareil_404(client) -> None:
+    sid = client.post("/v1/sessions", headers=_dev("A")).json()["id"]
+    resp = client.patch(f"/v1/sessions/{sid}", json={"titre": "X"}, headers=_dev("B"))
+    assert resp.status_code == 404
+
+
+def test_recherche_sessions(client) -> None:
+    """GET /v1/sessions/recherche trouve par titre, scopé par appareil (C5)."""
+    client.post("/v1/sessions", json={"titre": "Séchage des fèves"}, headers=_dev("A"))
+    client.post("/v1/sessions", json={"titre": "Taille du cacaoyer"}, headers=_dev("A"))
+    client.post("/v1/sessions", json={"titre": "Séchage chez B"}, headers=_dev("B"))
+
+    res = client.get("/v1/sessions/recherche", params={"q": "séchage"}, headers=_dev("A")).json()
+    assert [s["titre"] for s in res] == ["Séchage des fèves"]
+    # « recherche » n'est pas confondu avec un id de session.
+    autre = client.get("/v1/sessions/recherche", params={"q": "taille"}, headers=_dev("A"))
+    assert autre.status_code == 200
+
+
 def test_chat_garde_fou_dose_ancre_sur_le_fil(client, fake_inference) -> None:
     """Une demande de dosage étalée sur deux tours est refusée (B4).
 
