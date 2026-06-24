@@ -46,6 +46,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.notifier = construire_notifier(settings)
     if settings.auth_enabled:
         await app.state.auth_store.initialiser()
+        if settings.auth_canal == "console":
+            # OWASP A09 : le canal console expose les jetons dans les logs.
+            logger.warning(
+                "auth_canal_console_en_prod",
+                message="Auth active avec canal console : les liens (jetons) "
+                "apparaissent dans les logs. Réservé au dev — configurer SMTP en production.",
+            )
     app.state.embeddings, app.state.rag = _construire_rag(settings)
     from app.services.geo import GeoLocalisateur
 

@@ -43,6 +43,14 @@ def test_verifier_jeton_invalide(auth_client) -> None:
     assert auth_client.post("/v1/auth/verify", json={"token": "x" * 20}).status_code == 400
 
 
+def test_verify_rate_limite(auth_client) -> None:
+    """La vérification est rate-limitée par IP (OWASP A07 — anti-brute-force)."""
+    statuts = {
+        auth_client.post("/v1/auth/verify", json={"token": "x" * 20}).status_code for _ in range(25)
+    }
+    assert 429 in statuts
+
+
 def test_demander_email_invalide(auth_client) -> None:
     assert auth_client.post("/v1/auth/request", json={"email": "pas-un-email"}).status_code == 422
 
