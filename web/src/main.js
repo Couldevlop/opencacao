@@ -2,10 +2,12 @@
 // C'est le seul module qui touche au DOM concret et qui injecte les dépendances
 // (client API -> cas d'usage -> vues). Aucune logique métier ici.
 
+import { creerCasUsageAuth } from "./application/auth.js";
 import { creerCasUsageConseilStream } from "./application/conseil.js";
 import { creerCasUsageSessions } from "./application/sessions.js";
 import { ConseilError, ErreurKind } from "./domain/models.js";
 import { creerClientApi } from "./infrastructure/api-client.js";
+import { ecrireCompte, lireCompte } from "./infrastructure/auth-store-local.js";
 import { ecrireSessionActive, lireSessionActive } from "./infrastructure/session-store-local.js";
 import { creerVue } from "./ui/chat-view.js";
 import { creerSidebar } from "./ui/sidebar-view.js";
@@ -37,6 +39,13 @@ const refs = {
   liste: $("sessionList"),
   nouvelle: $("nouvelleConv"),
   recherche: $("rechercheConv"),
+  // Authentification (D2)
+  compteBtn: $("compteBtn"),
+  authModal: $("authModal"),
+  authEmail: $("authEmail"),
+  authSend: $("authSend"),
+  authCancel: $("authCancel"),
+  authMessage: $("authMessage"),
 };
 
 let baseUrl = localStorage.getItem(CLE_API) || API_DEFAUT;
@@ -53,6 +62,7 @@ const MAX_HISTORIQUE = 20;
 const client = creerClientApi(() => baseUrl);
 const demanderConseilStream = creerCasUsageConseilStream(client);
 const sessions = creerCasUsageSessions(client);
+const auth = creerCasUsageAuth(client);
 const vue = creerVue(refs, {
   onFeedback: (interactionId, vote) => client.envoyerFeedback(interactionId, vote),
 });
@@ -349,5 +359,111 @@ async function initialiserSessions() {
   sidebar.rendre(liste, sessionActive);
 }
 
+/* ---------- authentification par lien magique (D2) ---------- */
+function majCompte() {
+  const compte = lireCompte();
+  if (compte) {
+    refs.compteBtn.textContent = "Déconnexion · " + (compte.email || "compte");
+    refs.compteBtn.title = "Se déconnecter de " + (compte.email || "votre compte");
+  } else {
+    refs.compteBtn.textContent = "Se connecter";
+    refs.compteBtn.title = "Recevoir un lien de connexion par email";
+  }
+}
+
+function messageAuth(texte, type) {
+  refs.authMessage.textContent = texte;
+  refs.authMessage.className = "auth-message" + (type ? " " + type : "");
+  refs.authMessage.hidden = !texte;
+}
+
+function ouvrirAuth() {
+  messageAuth("", "");
+  refs.authEmail.value = "";
+  refs.authModal.hidden = false;
+  refs.authEmail.focus();
+}
+function fermerAuth() {
+  refs.authModal.hidden = true;
+}
+
+/** Réinitialise l'espace de conversations après un changement d'identité. */
+function appliquerIdentite() {
+  sessionActive = null;
+  ecrireSessionActive(null);
+  rechercheActive = "";
+  sidebar.viderRecherche();
+  vue.reinitialiser();
+  rafraichirListe();
+}
+
+async function envoyerLien() {
+  const email = (refs.authEmail.value || "").trim();
+  refs.authSend.disabled = true;
+  try {
+    await auth.demander(email);
+    messageAuth("Lien envoyé ! Consultez votre email et cliquez sur le lien.", "ok");
+  } catch (e) {
+    if (e instanceof ConseilError && e.kind === ErreurKind.VALIDATION) {
+      messageAuth("Adresse email invalide.", "err");
+    } else if (e instanceof ConseilError && e.kind === ErreurKind.AUTH_INDISPONIBLE) {
+      messageAuth("La connexion par email n'est pas activée sur ce serveur.", "err");
+    } else if (e instanceof ConseilError && e.kind === ErreurKind.RATE_LIMIT) {
+      messageAuth("Trop de demandes. Réessayez dans une minute.", "err");
+    } else {
+      messageAuth("Service indisponible, réessayez plus tard.", "err");
+    }
+  } finally {
+    refs.authSend.disabled = false;
+  }
+}
+
+function deconnexion() {
+  ecrireCompte(null);
+  majCompte();
+  appliquerIdentite();
+}
+
+refs.compteBtn?.addEventListener("click", () => {
+  if (lireCompte()) {
+    if (window.confirm("Se déconnecter ?")) deconnexion();
+  } else {
+    ouvrirAuth();
+  }
+});
+refs.authSend?.addEventListener("click", envoyerLien);
+refs.authCancel?.addEventListener("click", fermerAuth);
+refs.authModal?.addEventListener("click", (e) => {
+  if (e.target === refs.authModal) fermerAuth();
+});
+refs.authEmail?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    envoyerLien();
+  }
+});
+
+/** Au chargement : si l'URL porte ?auth=<token>, vérifier le lien et connecter. */
+async function traiterLienMagique() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get("auth");
+  if (!token) return;
+  // Nettoie l'URL quoi qu'il arrive : le jeton ne doit pas rester visible/partageable.
+  history.replaceState({}, document.title, window.location.pathname);
+  try {
+    const compte = await auth.verifier(token);
+    if (compte) {
+      ecrireCompte(compte);
+      majCompte();
+      appliquerIdentite();
+    } else {
+      vue.ajouterErreur("Lien de connexion invalide ou expiré. Demandez-en un nouveau.");
+    }
+  } catch {
+    /* auth indisponible / réseau : on reste anonyme */
+  }
+}
+
 majBouton(false);
-initialiserSessions();
+majCompte();
+initialiserSessions().then(traiterLienMagique);

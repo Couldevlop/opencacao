@@ -13,14 +13,16 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app import __version__
+from app.core.auth_store import AuthStore
 from app.core.cache import CacheClient
 from app.core.config import Settings, get_settings
 from app.core.journal import JournalFichier
 from app.core.logging import configure_logging, get_logger
 from app.core.security import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 from app.core.sessions import SessionStore
-from app.routers import chat, feedback, health, sessions
+from app.routers import auth, chat, feedback, health, sessions
 from app.services.inference import InferenceClient
+from app.services.notifier import construire_notifier
 
 logger = get_logger(__name__)
 
@@ -39,6 +41,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.sessions_enabled:
         await app.state.sessions.initialiser()
         app.state.purge_task = _lancer_purge_sessions(app, settings)
+
+    app.state.auth_store = AuthStore.from_settings(settings)
+    app.state.notifier = construire_notifier(settings)
+    if settings.auth_enabled:
+        await app.state.auth_store.initialiser()
     app.state.embeddings, app.state.rag = _construire_rag(settings)
     from app.services.geo import GeoLocalisateur
 
@@ -184,6 +191,7 @@ def create_app() -> FastAPI:
     app.include_router(chat.router)
     app.include_router(feedback.router)
     app.include_router(sessions.router)
+    app.include_router(auth.router)
     _monter_interface(app, settings)
     return app
 

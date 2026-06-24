@@ -17,6 +17,8 @@ export const ErreurKind = Object.freeze({
   HTTP: "http",
   // La conversation référencée n'existe plus côté serveur (supprimée/expirée).
   SESSION_INCONNUE: "session_inconnue",
+  // L'authentification par lien magique n'est pas activée côté serveur.
+  AUTH_INDISPONIBLE: "auth_indisponible",
 });
 
 /** Erreur métier porteuse d'un type, pour un message utilisateur adapté. */

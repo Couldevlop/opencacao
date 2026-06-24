@@ -90,6 +90,9 @@
         />
       </div>
       <ul id="sessionList" class="session-list"></ul>
+      <div class="sidebar-compte">
+        <button id="compteBtn" class="btn-compte" type="button">Se connecter</button>
+      </div>
       <p class="sidebar-note">
         Vos conversations sont enregistrées sur le serveur OpenCacao pour que vous
         puissiez les retrouver et les reprendre.
@@ -181,6 +184,23 @@
         <div class="modal-actions">
           <button class="btn-ghost" id="modalCancel" type="button">Annuler</button>
           <button class="btn-primary" id="modalSave" type="button">Enregistrer</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="authModal" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+        <h3 id="authTitle">Se connecter</h3>
+        <p class="modal-hint">
+          Recevez un lien de connexion par email. Une fois connecté, vos conversations
+          vous suivent sur tous vos appareils. Aucun mot de passe.
+        </p>
+        <label for="authEmail">Adresse email</label>
+        <input id="authEmail" type="email" placeholder="vous@exemple.ci" autocomplete="email" />
+        <p class="auth-message" id="authMessage" hidden></p>
+        <div class="modal-actions">
+          <button class="btn-ghost" id="authCancel" type="button">Annuler</button>
+          <button class="btn-primary" id="authSend" type="button">Envoyer le lien</button>
         </div>
       </div>
     </div>

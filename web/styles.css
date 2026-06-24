@@ -537,6 +537,34 @@ body {
   color: var(--ink-soft);
   font-size: 13px;
 }
+.sidebar-compte {
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+}
+.btn-compte {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--cocoa-dark);
+  border-radius: 10px;
+  padding: 9px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.btn-compte:hover { border-color: var(--cocoa); background: var(--cocoa-tint); }
+
+.auth-message {
+  margin: 4px 0 12px;
+  font-size: 13px;
+}
+.auth-message.ok { color: var(--ci-green); }
+.auth-message.err { color: #c0392b; }
+.auth-message[hidden] { display: none; }
+
 .sidebar-note {
   margin: 0;
   padding: 10px 14px;

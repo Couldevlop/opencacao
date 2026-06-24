@@ -8,10 +8,18 @@ from __future__ import annotations
 
 from fastapi import Depends, Request
 
+from app.application.auth_service import AuthService
 from app.application.conseil_service import ConseilService
 from app.application.dialogue_session import DialogueSessionService
 from app.core.config import Settings, get_settings
-from app.domain.ports import CachePort, InferencePort, JournalPort, SessionStorePort
+from app.domain.ports import (
+    AuthStorePort,
+    CachePort,
+    InferencePort,
+    JournalPort,
+    LienNotifierPort,
+    SessionStorePort,
+)
 
 
 def get_app_settings() -> Settings:
@@ -37,6 +45,25 @@ def get_journal(request: Request) -> JournalPort:
 def get_session_store(request: Request) -> SessionStorePort:
     """Retourne le dépôt de sessions de conversation stocké dans l'état de l'application."""
     return request.app.state.sessions
+
+
+def get_auth_store(request: Request) -> AuthStorePort:
+    """Retourne le dépôt d'authentification stocké dans l'état de l'application."""
+    return request.app.state.auth_store
+
+
+def get_notifier(request: Request) -> LienNotifierPort:
+    """Retourne le notifier de lien magique stocké dans l'état de l'application."""
+    return request.app.state.notifier
+
+
+def get_auth_service(
+    store: AuthStorePort = Depends(get_auth_store),
+    notifier: LienNotifierPort = Depends(get_notifier),
+    settings: Settings = Depends(get_settings),
+) -> AuthService:
+    """Construit le cas d'usage d'authentification par lien magique (D2)."""
+    return AuthService(store, notifier, ttl_minutes=settings.auth_token_ttl_min)
 
 
 def get_conseil_service(request: Request) -> ConseilService:
