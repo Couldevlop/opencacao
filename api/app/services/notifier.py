@@ -129,7 +129,13 @@ class ZeptoMailNotifier:
                     "Authorization": f"Zoho-enczapikey {self._token}",
                 },
             )
-            response.raise_for_status()
+            if response.status_code >= 400:
+                # Le corps ZeptoMail porte la raison exacte (ex. SM_147 « Sender Address
+                # not available ») — indispensable pour diagnostiquer.
+                detail = (response.text or "")[:500]
+                logger.warning(
+                    "zeptomail_echec", email=email, status=response.status_code, detail=detail
+                )
         except httpx.HTTPError as exc:
             logger.warning("zeptomail_echec", email=email, error=str(exc))
 
