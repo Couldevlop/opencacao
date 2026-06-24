@@ -35,7 +35,7 @@ push/merge main ─▶ .github/workflows/release.yml
 export KUBECONFIG=kubeconfig-hetzner.yaml
 
 # 1) Déclencher la 1re release : merger sur main → release.yml construit
-#    ghcr.io/couldevlop/opencacao-{api,web}:0.7.0. Vérifier dans l'onglet Actions.
+#    ghcr.io/couldevlop/opencacao-{api,web}:0.6.3. Vérifier dans l'onglet Actions.
 
 # 2) Rendre les paquets GHCR accessibles au cluster :
 #    - soit les passer en "public" (Packages → Visibility → Public),
@@ -57,11 +57,11 @@ et l'Image Updater n'a aucun effet. Mitigations, dans l'ordre :
 3. **En attendant**, déployer un tag à la main :
 
 ```sh
-KUBECONFIG=kubeconfig-hetzner.yaml deploy/scripts/roll-image.sh 0.7.0
+KUBECONFIG=kubeconfig-hetzner.yaml deploy/scripts/roll-image.sh 0.6.3
 ```
 
 ## Migration depuis l'ancien déploiement
 
 La prod tournait `docker.io/thomcoul/opencacao-*` posées hors-pipeline. La
 `kustomization.yaml` pointe désormais vers **GHCR**. La première bascule se fait soit
-par `roll-image.sh 0.7.0`, soit par l'Application ArgoCD une fois les images publiées.
+par `roll-image.sh 0.6.3`, soit par l'Application ArgoCD une fois les images publiées.

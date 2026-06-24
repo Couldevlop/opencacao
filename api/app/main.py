@@ -72,6 +72,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await app.state.cache.close()
         if app.state.embeddings is not None:
             await app.state.embeddings.close()
+        if hasattr(app.state.notifier, "close"):
+            await app.state.notifier.close()
         logger.info("arret")
 
 
