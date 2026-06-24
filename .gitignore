@@ -62,3 +62,6 @@ docker-compose.local.yml
 
 # Identifiants / secrets locaux — JAMAIS versionnés
 .credentials-local.md
+
+# Notes d'exécution sur pod GPU (peut contenir des jetons) — non versionné
+.run_on_pod.md
