@@ -33,9 +33,11 @@ export function creerCasUsageConseilStream(client) {
   /**
    * @param {string} question
    * @param {(texte: string) => void} onToken
+   * @param {{historique?: Array, sessionId?: string|null}} options - mémoire client
+   *   (historique) OU serveur (sessionId, V2 conversationnelle).
    * @returns {Promise<object>} entité Conseil finale
    */
-  return async function demanderConseilStream(question, onToken, historique = []) {
-    return client.demanderStream(valider(question), onToken, historique);
+  return async function demanderConseilStream(question, onToken, options = {}) {
+    return client.demanderStream(valider(question), onToken, options);
   };
 }

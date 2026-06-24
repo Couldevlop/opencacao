@@ -73,6 +73,21 @@
   <body>
     <div class="flag-strip" aria-hidden="true"></div>
 
+    <aside id="sidebar" class="sidebar" aria-label="Mes conversations">
+      <div class="sidebar-head">
+        <span class="sidebar-titre">Conversations</span>
+        <button id="nouvelleConv" class="btn-nouvelle" type="button">
+          <span aria-hidden="true">＋</span> Nouvelle
+        </button>
+      </div>
+      <ul id="sessionList" class="session-list"></ul>
+      <p class="sidebar-note">
+        Vos conversations sont enregistrées sur le serveur OpenCacao pour que vous
+        puissiez les retrouver et les reprendre.
+      </p>
+    </aside>
+    <div id="sidebarBackdrop" class="sidebar-backdrop" hidden></div>
+
     <header class="app-header">
       <div class="brand-side left">
         <img
@@ -89,6 +104,11 @@
       </div>
 
       <div class="brand-side right">
+        <button id="sidebarToggle" class="icon-btn sidebar-toggle" type="button" title="Mes conversations" aria-label="Afficher les conversations" hidden>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
         <img class="logo logo-openlab" src="assets/openlab.png" alt="OpenLab Consulting" />
         <button id="settingsBtn" class="icon-btn" title="Paramètres de connexion" aria-label="Paramètres">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">

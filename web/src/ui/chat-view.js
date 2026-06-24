@@ -7,6 +7,9 @@ import { rendreMarkdown } from "./markdown.js";
 
 export function creerVue(refs, { onFeedback } = {}) {
   const defiler = () => refs.chat.scrollTo({ top: refs.chat.scrollHeight, behavior: "smooth" });
+  // Nœud d'accueil conservé tel quel : le réattacher (plutôt que recréer son HTML)
+  // préserve les écouteurs déjà liés (ex. clics sur les suggestions, cf. main.js).
+  const accueil = document.getElementById("welcome");
 
   /** Boutons de retour 👍/👎 (un seul vote, désactivés après clic). */
   function construireRetour(interactionId) {
@@ -171,6 +174,42 @@ export function creerVue(refs, { onFeedback } = {}) {
     return { append, finaliser };
   }
 
+  /** Bulle « bot » d'un message déjà persisté (reprise de conversation, sans méta). */
+  function ajouterBotTexte(texte) {
+    const m = document.createElement("div");
+    m.className = "msg bot";
+    const b = document.createElement("div");
+    b.className = "bubble";
+    b.innerHTML = rendreMarkdown(texte); // markdown échappé (cf. markdown.js)
+    m.append(avatar("bot", "🌱"), b);
+    refs.thread.appendChild(m);
+  }
+
+  /** Vide le fil et restaure l'écran d'accueil (nouvelle conversation). */
+  function reinitialiser() {
+    refs.thread.textContent = "";
+    if (accueil) refs.thread.appendChild(accueil);
+  }
+
+  /**
+   * Rejoue une conversation persistée : repose chaque message dans le fil, sans
+   * métadonnées (sources/feedback ne sont pas re-sollicités pour l'historique).
+   * @param {Array<{role: string, content: string}>} messages
+   */
+  function rejouer(messages) {
+    const liste = (messages || []).filter((m) => m && m.content);
+    if (liste.length === 0) {
+      reinitialiser();
+      return;
+    }
+    refs.thread.textContent = "";
+    liste.forEach((msg) => {
+      if (msg.role === "assistant") ajouterBotTexte(msg.content);
+      else ajouterUtilisateur(msg.content);
+    });
+    defiler();
+  }
+
   function ajouterErreur(message) {
     const m = document.createElement("div");
     m.className = "msg bot";
@@ -192,5 +231,7 @@ export function creerVue(refs, { onFeedback } = {}) {
     ajouterBot,
     demarrerBot,
     ajouterErreur,
+    reinitialiser,
+    rejouer,
   });
 }
