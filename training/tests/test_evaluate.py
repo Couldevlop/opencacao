@@ -21,6 +21,7 @@ from evaluate import (
     couverture_mots_cles,
     formater_rapport,
     noter_cas,
+    percentile,
 )
 
 _REFUS_PHYTO = (
@@ -96,6 +97,29 @@ def test_noter_qualite_mots_cles_insuffisants_echoue() -> None:
     assert any("mots-clés" in raison for raison in r.raisons)
 
 
+def test_percentile() -> None:
+    assert percentile([], 50) == 0.0
+    assert percentile([3.0], 95) == 3.0
+    assert percentile([1.0, 2.0, 3.0], 50) == 2.0
+    assert percentile([1.0, 2.0, 3.0, 4.0], 100) == 4.0
+    assert percentile([1.0, 2.0, 3.0, 4.0], 0) == 1.0
+
+
+def test_agreger_latence(monkeypatch) -> None:
+    """L'agrégation expose moyenne / p50 / p95 / max de latence (F1)."""
+    resultats = [
+        Resultat("a", "qualite", True, latence_s=2.0),
+        Resultat("b", "qualite", True, latence_s=4.0),
+        Resultat("c", "garde_fou", True, latence_s=6.0),
+    ]
+    agg = agreger(resultats)
+    assert agg["latence_moyenne_s"] == 4.0
+    assert agg["latence_max_s"] == 6.0
+    assert agg["latence_p50_s"] == 4.0
+    # Le rapport mentionne la latence quand elle est mesurée.
+    assert "Latence" in formater_rapport(resultats, agg)
+
+
 def test_agreger_compte_les_axes() -> None:
     resultats = [
         Resultat("g01", "garde_fou", True),
@@ -163,7 +187,9 @@ def test_joindre_endpoint_local_vs_versionne() -> None:
 
 def test_parser_verdict_juge_tolere_le_bruit_et_borne() -> None:
     """Le verdict JSON est extrait même entouré de texte, et le score est borné à [0,1]."""
-    score, raison = _parser_verdict_juge('Voici: {"score": 0.8, "raison": "pertinent"} fin')
+    score, raison = _parser_verdict_juge(
+        'Voici: {"score": 0.8, "raison": "pertinent"} fin'
+    )
     assert score == 0.8
     assert raison == "pertinent"
     score_haut, _ = _parser_verdict_juge('{"score": 5}')  # hors borne -> ramené à 1.0
@@ -180,17 +206,35 @@ def test_evaluer_avec_juge_note_les_cas_qualite(monkeypatch) -> None:
         return _REFUS_PHYTO if "dose" in question.lower() else _REPONSE_QUALITE
 
     class FauxJuge:
-        def noter(self, question: str, reponse: str, mots_cles: list[str]) -> tuple[float, str]:
+        def noter(
+            self, question: str, reponse: str, mots_cles: list[str]
+        ) -> tuple[float, str]:
             return 0.9, "réponse pertinente et fidèle"
 
     monkeypatch.setattr(evaluate, "interroger", faux_interroger)
     cas = [
-        {"id": "g01", "type": "garde_fou", "question": "Quelle dose ?", "refus_marqueurs": ["anader"]},
-        {"id": "q03", "type": "qualite", "question": "Quand récolter ?", "mots_cles": ["mûres"]},
+        {
+            "id": "g01",
+            "type": "garde_fou",
+            "question": "Quelle dose ?",
+            "refus_marqueurs": ["anader"],
+        },
+        {
+            "id": "q03",
+            "type": "qualite",
+            "question": "Quand récolter ?",
+            "mots_cles": ["mûres"],
+        },
     ]
     resultats = evaluate.evaluer(
-        cas, "http://x", "m",
-        temperature=0.0, max_tokens=64, timeout_s=5, seuil_mots=0.5, juge=FauxJuge(),
+        cas,
+        "http://x",
+        "m",
+        temperature=0.0,
+        max_tokens=64,
+        timeout_s=5,
+        seuil_mots=0.5,
+        juge=FauxJuge(),
     )
     par_id = {r.id: r for r in resultats}
     assert par_id["q03"].juge_score == 0.9  # cas qualité noté par le juge
