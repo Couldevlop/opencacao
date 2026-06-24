@@ -33,6 +33,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -123,6 +124,20 @@ class Resultat:
     dosage_detecte: bool = False
     juge_score: float | None = None
     juge_raison: str = ""
+    latence_s: float = 0.0  # temps de génération mesuré (F1 — efficacité du modèle)
+
+
+def percentile(valeurs: list[float], p: float) -> float:
+    """Centile (interpolation linéaire) d'une liste de mesures. 0.0 si vide."""
+    if not valeurs:
+        return 0.0
+    ordonnees = sorted(valeurs)
+    if len(ordonnees) == 1:
+        return ordonnees[0]
+    rang = (p / 100.0) * (len(ordonnees) - 1)
+    bas = int(rang)
+    haut = min(bas + 1, len(ordonnees) - 1)
+    return ordonnees[bas] + (ordonnees[haut] - ordonnees[bas]) * (rang - bas)
 
 
 def contient_dosage(texte: str) -> bool:
@@ -312,7 +327,9 @@ class JugeLLM:
         self._api_key = api_key
         self._timeout_s = timeout_s
 
-    def noter(self, question: str, reponse: str, mots_cles: list[str]) -> tuple[float, str]:
+    def noter(
+        self, question: str, reponse: str, mots_cles: list[str]
+    ) -> tuple[float, str]:
         """Note la qualité d'une réponse via le juge LLM.
 
         Args:
@@ -352,10 +369,18 @@ class JugeLLM:
             self._endpoint, data=charge, headers=entetes, method="POST"
         )
         try:
-            with urllib.request.urlopen(requete, timeout=self._timeout_s) as reponse_http:  # noqa: S310
+            with urllib.request.urlopen(
+                requete, timeout=self._timeout_s
+            ) as reponse_http:  # noqa: S310
                 donnees = json.loads(reponse_http.read().decode("utf-8"))
             brut = str(donnees["choices"][0]["message"]["content"])
-        except (urllib.error.URLError, KeyError, IndexError, ValueError, TimeoutError) as exc:
+        except (
+            urllib.error.URLError,
+            KeyError,
+            IndexError,
+            ValueError,
+            TimeoutError,
+        ) as exc:
             return -1.0, f"juge indisponible : {exc}"
         return _parser_verdict_juge(brut)
 
@@ -386,7 +411,10 @@ def agreger(resultats: list[Resultat]) -> dict:
     gardes = [r for r in resultats if r.type == "garde_fou"]
     qualites = [r for r in resultats if r.type == "qualite"]
     taux = lambda lot: (sum(1 for r in lot if r.reussi) / len(lot)) if lot else 1.0  # noqa: E731
-    notes_juge = [r.juge_score for r in qualites if r.juge_score is not None and r.juge_score >= 0]
+    notes_juge = [
+        r.juge_score for r in qualites if r.juge_score is not None and r.juge_score >= 0
+    ]
+    latences = [r.latence_s for r in resultats if r.latence_s > 0]
     return {
         "total": len(resultats),
         "garde_fou_total": len(gardes),
@@ -398,6 +426,12 @@ def agreger(resultats: list[Resultat]) -> dict:
         "fuites_dosage": sum(1 for r in resultats if r.dosage_detecte),
         "juge_moyen": (sum(notes_juge) / len(notes_juge)) if notes_juge else None,
         "juge_notes": len(notes_juge),
+        # Latence (F1) : mesurée par requête, pour piloter les optimisations de
+        # service/quantization (F6/F7) et comparer les versions de modèle.
+        "latence_moyenne_s": (sum(latences) / len(latences)) if latences else 0.0,
+        "latence_p50_s": percentile(latences, 50),
+        "latence_p95_s": percentile(latences, 95),
+        "latence_max_s": max(latences) if latences else 0.0,
     }
 
 
@@ -422,6 +456,11 @@ def formater_rapport(resultats: list[Resultat], agg: dict) -> str:
         lignes.append(
             f"Juge LLM   : {agg['juge_moyen']:.2f} de moyenne sur "
             f"{agg['juge_notes']} réponse(s) de qualité"
+        )
+    if agg.get("latence_moyenne_s"):
+        lignes.append(
+            f"Latence    : moy {agg['latence_moyenne_s']:.1f}s · p50 {agg['latence_p50_s']:.1f}s "
+            f"· p95 {agg['latence_p95_s']:.1f}s · max {agg['latence_max_s']:.1f}s"
         )
     lignes += [
         f"Fuites de dosage : {agg['fuites_dosage']} (doit être 0)",
@@ -459,6 +498,7 @@ def evaluer(
     """
     resultats: list[Resultat] = []
     for c in cas:
+        debut = time.monotonic()
         reponse = interroger(
             endpoint,
             model,
@@ -467,7 +507,9 @@ def evaluer(
             max_tokens=max_tokens,
             timeout_s=timeout_s,
         )
+        latence = time.monotonic() - debut
         resultat = noter_cas(c, reponse, seuil_mots)
+        resultat.latence_s = latence
         if juge is not None and resultat.type == "qualite":
             score, raison = juge.noter(
                 str(c["question"]), reponse, [str(m) for m in c.get("mots_cles", [])]
@@ -560,7 +602,9 @@ def main() -> int:
             )
             return 1
         juge = JugeLLM(args.juge_endpoint, args.juge_model, cle, timeout_s=args.timeout)
-        print(f"Juge LLM actif : {args.juge_model} via {args.juge_endpoint} (hors prod).")
+        print(
+            f"Juge LLM actif : {args.juge_model} via {args.juge_endpoint} (hors prod)."
+        )
 
     cas = charger_cas(args.eval_set)
     try:
