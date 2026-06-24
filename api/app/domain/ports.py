@@ -141,3 +141,8 @@ class SessionStorePort(Protocol):
     async def lister_messages(self, session_id: str) -> list[ConversationMessage]:
         """Retourne les messages d'une session, du plus ancien au plus récent."""
         ...
+
+    async def purger_anciennes(self, jours: int) -> int:
+        """Supprime les conversations inactives depuis plus de ``jours`` (RGPD). Renvoie
+        le nombre supprimé."""
+        ...

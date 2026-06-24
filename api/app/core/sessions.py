@@ -21,7 +21,7 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 from contextlib import closing
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -206,6 +206,21 @@ class SessionStore:
         """Compte les messages d'une session."""
         return await asyncio.to_thread(self._compter_messages, session_id)
 
+    async def purger_anciennes(self, jours: int) -> int:
+        """Supprime les conversations inactives depuis plus de ``jours`` (RGPD, E2).
+
+        L'ancienneté est mesurée sur ``maj_le`` (date du dernier message). Les messages
+        partent en cascade. ``jours <= 0`` désactive la purge (aucune suppression).
+
+        Returns:
+            Le nombre de sessions supprimées.
+        """
+        if jours <= 0:
+            return 0
+        seuil = (datetime.now(UTC) - timedelta(days=jours)).isoformat()
+        async with self._verrou:
+            return await asyncio.to_thread(self._purger_anciennes, seuil)
+
     # ----------------------------------------------------- implémentation SQL
 
     def _connexion(self) -> sqlite3.Connection:
@@ -299,6 +314,12 @@ class SessionStore:
             cur = conn.execute(f"DELETE FROM sessions WHERE {clause}", params)
             conn.commit()
             return cur.rowcount > 0
+
+    def _purger_anciennes(self, seuil_iso: str) -> int:
+        with closing(self._connexion()) as conn:
+            cur = conn.execute("DELETE FROM sessions WHERE maj_le < ?", (seuil_iso,))
+            conn.commit()
+            return int(cur.rowcount)
 
     def _inserer_message(self, session_id: str, message: ConversationMessage) -> bool:
         with closing(self._connexion()) as conn:

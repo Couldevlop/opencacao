@@ -31,6 +31,12 @@ data:
   # Analytique des visites + géolocalisation pays (base GeoLite2 locale, IP non stockée).
   LOG_VISITES: "true"
   GEOIP_DB_PATH: "/models/GeoLite2-Country.mmdb"
+  # Conversations persistantes (V2) : base SQLite sur le volume /data (PVC dataset),
+  # conservée entre redéploiements. Migrations idempotentes au démarrage. RGPD :
+  # purge automatique des conversations inactives au-delà de la rétention (en jours).
+  SESSIONS_ENABLED: "true"
+  SESSIONS_DB_PATH: "/data/opencacao_sessions.db"
+  SESSIONS_RETENTION_JOURS: "365"
 ---
 apiVersion: apps/v1
 kind: Deployment

@@ -1,5 +1,8 @@
-# Volume persistant du jeu de données d'amélioration (journal JSONL).
-# Conserve interactions.jsonl / feedback.jsonl entre redéploiements de l'API.
+# Volume persistant de l'API, conservé entre redéploiements :
+#  - jeu de données d'amélioration (interactions.jsonl / feedback.jsonl) ;
+#  - index RAG (rag_index.jsonl) ;
+#  - conversations V2 (opencacao_sessions.db, SQLite + WAL).
+# ReadWriteOnce convient : l'API tourne en réplica unique (SQLite mono-écrivain).
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

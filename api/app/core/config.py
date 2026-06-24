@@ -93,6 +93,10 @@ class Settings(BaseSettings):
     # maîtrisée sur le nœud CX53 (risque R1).
     sessions_fenetre_messages: int = 8
     sessions_resume_seuil: int = 16
+    # RGPD (E2) : durée de rétention des conversations inactives, en jours. Au-delà,
+    # elles sont purgées automatiquement (au démarrage puis une fois par jour). 0
+    # désactive la purge (conservation indéfinie).
+    sessions_retention_jours: int = 365
 
     # NoDecode : ne PAS json-décoder la valeur d'env (sinon une liste CSV comme
     # "a,b" ou "*" lève une erreur). Le validateur _split_csv ci-dessous gère le CSV.
