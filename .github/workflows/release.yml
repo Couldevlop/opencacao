@@ -1,0 +1,224 @@
+# Release workflow — CD continu déclenché par un PUSH sur `main`.
+#
+# Flux (calqué sur openlabconsulting/release.yml) :
+#   push/merge sur `main` → portes vertes (gate) → création auto d'un tag
+#   `vX.Y.Z` → build + push des images GHCR `opencacao-api` et `opencacao-web`
+#   (tag `X.Y.Z`) → ArgoCD Image Updater (stratégie semver) déploie le cluster.
+#
+# « une fois ok » : le job `gate` (ruff + pytest + corpus) DOIT passer AVANT que
+# le tag soit créé et les images construites. Si une porte échoue : pas de tag,
+# pas d'image, pas de déploiement.
+#
+# Tout reste sur le GITHUB_TOKEN : le tag ET les images sont produits ici (pas de
+# chaînage tag→workflow, aucun PAT). GitHub ne fait que builder/pousser les images
+# sur GHCR ; le déploiement est tiré par ArgoCD (cf. deploy/argocd/).
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version explicite sans v (ex: 0.7.0). Vide = bump patch auto.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+env:
+  # `github.repository_owner` = `Couldevlop` (compte user). Minuscule imposé par
+  # OCI (ghcr.io rejette les majuscules dans le path).
+  IMAGE_PREFIX: ${{ github.repository_owner }}/opencacao
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────
+  # 1. Portes vertes — « une fois ok ». Bloque tout le reste si rouge.
+  #    (mêmes contrôles que ci.yml : lint, format, tests API + training, corpus)
+  # ──────────────────────────────────────────────────────────────────────
+  gate:
+    name: Portes vertes (ruff + pytest + corpus)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Installer les dépendances API (+ dev)
+        run: python -m pip install -e "./api[dev]"
+      - name: Installer numpy pour les tests training
+        run: python -m pip install numpy==1.26.4
+      - name: Lint (ruff)
+        run: |
+          ruff check api
+          ruff check training
+      - name: Vérifier le format (ruff format)
+        run: ruff format --check api
+      - name: Tests API (couverture >= 90 %)
+        working-directory: api
+        run: pytest
+      - name: Tests des scripts d'entraînement
+        run: pytest training/tests -o addopts=""
+      - name: Validation du corpus
+        run: python training/scripts/enrich_corpus.py --check corpus/corpus_cacao_demarrage.jsonl
+
+  # ──────────────────────────────────────────────────────────────────────
+  # 2. Tag de version — créé seulement si les portes sont vertes.
+  #    Bump patch auto depuis le dernier tag vX.Y.Z (ou version manuelle).
+  # ──────────────────────────────────────────────────────────────────────
+  tag:
+    name: Créer le tag de version
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: bump
+        name: Calculer et pousser le tag
+        run: |
+          set -euo pipefail
+          MANUAL="${{ github.event.inputs.version }}"
+          if [ -n "$MANUAL" ]; then
+            VER="$MANUAL"
+          else
+            LATEST=$(git tag -l 'v*' --sort=-v:refname | head -n1)
+            LATEST=${LATEST:-v0.6.0}
+            BASE=${LATEST#v}
+            MAJ=${BASE%%.*}; REST=${BASE#*.}; MIN=${REST%%.*}; PAT=${REST##*.}
+            PAT=$((PAT + 1))
+            VER="${MAJ}.${MIN}.${PAT}"
+          fi
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "→ Nouveau tag : v$VER"
+          if git rev-parse "v$VER" >/dev/null 2>&1; then
+            echo "::error::Le tag v$VER existe déjà." && exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$VER" -m "release v$VER (auto — portes vertes sur main)"
+          git push origin "v$VER"
+
+  # ──────────────────────────────────────────────────────────────────────
+  # 3. Build + push des 2 images GHCR + scan Trivy (report-only) + Cosign.
+  #    Images taguées `X.Y.Z` (suivies par Image Updater semver) + `sha-<court>`.
+  # ──────────────────────────────────────────────────────────────────────
+  publish:
+    name: Build + push GHCR + sign Cosign
+    needs: tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # OIDC pour Cosign keyless
+      security-events: write
+    strategy:
+      matrix:
+        include:
+          - name: api
+            context: ./api
+            file: ./api/Dockerfile
+            target: runner
+          - name: web
+            context: .
+            file: ./web/Dockerfile
+            target: ""
+    env:
+      VERSION: ${{ needs.tag.outputs.version }}
+    steps:
+      - name: Checkout (sur le tag créé)
+        uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.tag.outputs.version }}
+
+      - name: Lowercase image name
+        id: img
+        run: echo "name=$(echo '${{ env.IMAGE_PREFIX }}-${{ matrix.name }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tags : X.Y.Z (cible Image Updater semver) + sha-<court> (traçabilité).
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ steps.img.outputs.name }}
+          tags: |
+            type=raw,value=${{ needs.tag.outputs.version }}
+            type=sha,prefix=sha-,format=short
+          labels: |
+            org.opencontainers.image.title=OpenCacao ${{ matrix.name }}
+            org.opencontainers.image.description=Assistant agronomique cacao (Côte d'Ivoire) — ${{ matrix.name }}
+            org.opencontainers.image.vendor=OpenLab Consulting
+            org.opencontainers.image.version=${{ needs.tag.outputs.version }}
+
+      - name: Build & push image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          push: true
+          pull: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          provenance: mode=max
+          sbom: true
+
+      # Scan en REPORT-ONLY (exit 0) : on remonte les findings dans Code Scanning
+      # sans bloquer la release (l'inférence/le RAG ne doivent jamais être bloqués
+      # par un CVE de base non corrigeable). Durcir en bloquant quand la base est saine.
+      - name: Trivy image scan (SARIF, report-only)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ghcr.io/${{ steps.img.outputs.name }}@${{ steps.build.outputs.digest }}
+          format: sarif
+          output: trivy-${{ matrix.name }}.sarif
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          exit-code: '0'
+
+      - name: Upload Trivy SARIF
+        if: always() && hashFiles(format('trivy-{0}.sarif', matrix.name)) != ''
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.name }}.sarif
+          category: trivy-${{ matrix.name }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image (keyless)
+        run: cosign sign --yes ghcr.io/${{ steps.img.outputs.name }}@${{ steps.build.outputs.digest }}
+
+      - name: Output release summary
+        run: |
+          {
+            echo "## Image publiée — opencacao-${{ matrix.name }} v${VERSION}"
+            echo ""
+            echo "- **Repository** : \`ghcr.io/${{ steps.img.outputs.name }}\`"
+            echo "- **Digest** : \`${{ steps.build.outputs.digest }}\`"
+            echo "- **Déploiement** : ArgoCD Image Updater (semver) détecte le tag \`${VERSION}\` (cf. deploy/argocd/)."
+          } >> "$GITHUB_STEP_SUMMARY"
