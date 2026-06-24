@@ -11,11 +11,14 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
+from app.application import memoire
 from app.application.conseil_service import ConseilService
 from app.core.logging import get_logger
 from app.domain.entities import Conseil
 from app.domain.ports import SessionStorePort
 from app.models.domain import Langue
+from app.models.session import TITRE_PAR_DEFAUT, Session
+from app.services import titres
 
 logger = get_logger(__name__)
 
@@ -27,24 +30,41 @@ class DialogueSessionService:
         self,
         conseil: ConseilService,
         sessions: SessionStorePort,
-        max_messages: int = 200,
+        fenetre: int = memoire.FENETRE_MESSAGES,
+        seuil_resume: int = memoire.SEUIL_RESUME,
     ) -> None:
         """Initialise l'orchestrateur.
 
         Args:
             conseil: Cas d'usage central du conseil agronomique.
             sessions: Dépôt durable des sessions de conversation.
-            max_messages: Nombre de messages récents réinjectés au modèle (fenêtre).
+            fenetre: Messages récents réinjectés mot pour mot au modèle (B2).
+            seuil_resume: Taille d'historique au-delà de laquelle les tours anciens
+                sont condensés en un résumé plutôt que réinjectés (B2).
         """
         self._conseil = conseil
         self._sessions = sessions
-        self._max_messages = max_messages
+        self._fenetre = fenetre
+        self._seuil_resume = seuil_resume
 
     async def _historique_serveur(self, session_id: str) -> list[dict[str, str]]:
-        """Reconstitue l'historique d'une session (fenêtre des messages récents)."""
+        """Reconstitue le contexte d'une session : résumé + fenêtre récente (B2)."""
         messages = await self._sessions.lister_messages(session_id)
-        recents = messages[-self._max_messages :] if self._max_messages else messages
-        return [{"role": m.role, "content": m.content} for m in recents]
+        historique = [{"role": m.role, "content": m.content} for m in messages]
+        return memoire.fenetre_dialogue(historique, self._fenetre, self._seuil_resume)
+
+    async def _auto_titrer(self, session: Session, question: str) -> None:
+        """Donne un titre à la session depuis sa première question (B3).
+
+        Ne titre que tant que le titre est resté celui par défaut : la première
+        question rencontrée fixe le titre, et un renommage manuel ultérieur n'est
+        jamais écrasé.
+        """
+        if session.titre != TITRE_PAR_DEFAUT:
+            return
+        titre = titres.depuis_question(question)
+        if titre != TITRE_PAR_DEFAUT:
+            await self._sessions.renommer_session(session.id, titre)
 
     async def _persister_tour(self, session_id: str, question: str, reponse: str) -> None:
         """Enregistre le tour (question utilisateur puis réponse de l'assistant)."""
@@ -72,11 +92,13 @@ class DialogueSessionService:
         if session_id is None:
             return await self._conseil.conseiller(question, langue, client_ip, historique)
 
-        if await self._sessions.obtenir_session(session_id) is None:
+        session = await self._sessions.obtenir_session(session_id)
+        if session is None:
             return None
         historique_serveur = await self._historique_serveur(session_id)
         conseil = await self._conseil.conseiller(question, langue, client_ip, historique_serveur)
         await self._persister_tour(session_id, question, conseil.reponse)
+        await self._auto_titrer(session, question)
         return conseil
 
     async def conseiller_stream(
@@ -101,7 +123,8 @@ class DialogueSessionService:
                 yield evenement
             return
 
-        if await self._sessions.obtenir_session(session_id) is None:
+        session = await self._sessions.obtenir_session(session_id)
+        if session is None:
             yield {"type": "error", "kind": "session_inconnue"}
             return
 
@@ -117,3 +140,4 @@ class DialogueSessionService:
             yield evenement
 
         await self._persister_tour(session_id, question, "".join(morceaux))
+        await self._auto_titrer(session, question)

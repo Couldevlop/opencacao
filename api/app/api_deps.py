@@ -52,13 +52,19 @@ def get_conseil_service(request: Request) -> ConseilService:
 def get_dialogue_service(
     conseil: ConseilService = Depends(get_conseil_service),
     sessions: SessionStorePort = Depends(get_session_store),
+    settings: Settings = Depends(get_settings),
 ) -> DialogueSessionService:
     """Construit le cas d'usage de dialogue avec mémoire serveur (sessions V2).
 
     Dépend de :func:`get_conseil_service` afin que les surcharges de test du
     service de conseil s'appliquent aussi au dialogue avec session.
     """
-    return DialogueSessionService(conseil, sessions)
+    return DialogueSessionService(
+        conseil,
+        sessions,
+        fenetre=settings.sessions_fenetre_messages,
+        seuil_resume=settings.sessions_resume_seuil,
+    )
 
 
 def get_client_ip(request: Request) -> str:

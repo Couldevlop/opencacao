@@ -125,7 +125,9 @@ class ConseilService:
         texte_conv = _texte_conversation(question, historique)
 
         # Garde-fous métier : refus sans appeler le modèle (réponse instantanée).
-        refus = guardrails.evaluer(question)
+        # Évalués sur la question ANCRÉE au fil (B4) : une intention de dosage étalée
+        # sur deux tours est ainsi interceptée comme si elle était posée d'un bloc.
+        refus = guardrails.evaluer(_fil_ancre(question, historique))
         if refus is not None:
             logger.info("garde_fou_declenche", categorie=refus.categorie.value)
             conseil = Conseil(refus.message, Confiance.ELEVEE, [], redirection_anader=True)
@@ -165,7 +167,7 @@ class ConseilService:
         # Inférence (peut lever InferenceUnavailable), augmentée par RAG si activé.
         # La requête RAG est ré-ancrée sur le thème en cours (multi-tours) pour ne pas
         # récupérer des passages hors sujet sur une question de suivi.
-        contexte = await self._contexte(_requete_rag(question, historique))
+        contexte = await self._contexte(_fil_ancre(question, historique))
         texte = await self._inference.generer(question, contexte=contexte, historique=historique)
 
         # Garde-fou de SORTIE (défense en profondeur) : ne jamais livrer un dosage.
@@ -260,7 +262,7 @@ class ConseilService:
         historique = historique or []
         texte_conv = _texte_conversation(question, historique)
 
-        refus = guardrails.evaluer(question)
+        refus = guardrails.evaluer(_fil_ancre(question, historique))
         if refus is not None:
             logger.info("garde_fou_declenche", categorie=refus.categorie.value)
             conseil = self._enrichir_contact(
@@ -321,7 +323,7 @@ class ConseilService:
         tampon = ""
         compromis = False
 
-        contexte = await self._contexte(_requete_rag(question, historique))
+        contexte = await self._contexte(_fil_ancre(question, historique))
         async for delta in self._inference.generer_stream(
             question, contexte=contexte, historique=historique
         ):
@@ -415,21 +417,26 @@ class ConseilService:
         }
 
 
-def _requete_rag(question: str, historique: list[dict[str, str]]) -> str:
-    """Construit la requête de récupération RAG, ré-ancrée sur le thème en cours.
+def _fil_ancre(question: str, historique: list[dict[str, str]]) -> str:
+    """Ancre la question sur le dernier tour utilisateur (anti-dérive multi-tours).
 
-    Une question de suivi (« Et à quelle fréquence ? ») est, seule, dépourvue d'ancrage
-    agronomique : interrogée telle quelle, l'index remonte des passages hors sujet et la
-    réponse décroche. On préfixe donc le dernier tour utilisateur de l'historique pour
-    rattacher la recherche au sujet déjà engagé. Déterministe (aucun appel au modèle) ;
+    Une question de suivi (« Et à quelle fréquence ? », « quelle dose ? ») est, seule,
+    dépourvue d'ancrage : elle perd le sujet engagé au tour précédent. On préfixe donc
+    le dernier tour utilisateur de l'historique. Déterministe (aucun appel au modèle) ;
     en tour unique, retourne la question inchangée.
+
+    Sert à deux usages (B4) :
+      - la **requête RAG**, pour ne pas récupérer de passages hors sujet ;
+      - le **garde-fou d'entrée**, pour qu'un refus (ex. demande de dosage) ne soit pas
+        contourné en étalant l'intention sur deux tours (« je traite au fongicide » puis
+        « quelle dose ? »).
 
     Args:
         question: Dernière question du producteur.
         historique: Tours précédents de la conversation.
 
     Returns:
-        La requête de récupération, contextualisée si un tour utilisateur précède.
+        La question, contextualisée si un tour utilisateur précède.
     """
     dernier_user = next(
         (t.get("content", "") for t in reversed(historique) if t.get("role") == "user"),

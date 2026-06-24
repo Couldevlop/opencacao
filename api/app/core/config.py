@@ -87,6 +87,12 @@ class Settings(BaseSettings):
     sessions_db_path: str = "/data/opencacao_sessions.db"
     # Plafond de messages par session (garde-fou anti-abus, appliqué côté service).
     sessions_max_messages: int = 200
+    # Mémoire conversationnelle (B2) : au-delà de sessions_resume_seuil messages, les
+    # tours anciens sont condensés en un résumé et seuls sessions_fenetre_messages
+    # messages récents sont réinjectés mot pour mot. Borne le contexte -> latence CPU
+    # maîtrisée sur le nœud CX53 (risque R1).
+    sessions_fenetre_messages: int = 8
+    sessions_resume_seuil: int = 16
 
     # NoDecode : ne PAS json-décoder la valeur d'env (sinon une liste CSV comme
     # "a,b" ou "*" lève une erreur). Le validateur _split_csv ci-dessous gère le CSV.

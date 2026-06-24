@@ -165,3 +165,42 @@ def test_chat_stream_session_inconnue_emet_une_erreur(client) -> None:
     )
     erreurs = [e for e in _evenements(resp) if e["type"] == "error"]
     assert erreurs and erreurs[0]["kind"] == "session_inconnue"
+
+
+# --- Mémoire conversationnelle : titre auto (B3) et ré-ancrage garde-fous (B4) ---
+
+
+def test_chat_titre_auto_depuis_la_premiere_question(client) -> None:
+    """Le premier tour renomme la session par défaut depuis la question (B3)."""
+    sid = client.post("/v1/sessions").json()["id"]
+    client.post(
+        "/v1/chat",
+        json={"question": "Comment bien sécher mes fèves de cacao ?", "session_id": sid},
+    )
+    titre = client.get(f"/v1/sessions/{sid}").json()["session"]["titre"]
+    assert titre == "Comment bien sécher mes fèves de cacao"
+
+
+def test_chat_garde_fou_dose_ancre_sur_le_fil(client, fake_inference) -> None:
+    """Une demande de dosage étalée sur deux tours est refusée (B4).
+
+    Tour 1 : le producteur évoque un fongicide (aucune dose -> traité normalement).
+    Tour 2 : « et quelle dose ? », isolée, ne porte aucun terme phytosanitaire ; mais
+    ancrée au tour précédent, elle redevient une demande de dosage -> refus ANADER,
+    sans jamais atteindre le modèle.
+    """
+    sid = client.post("/v1/sessions").json()["id"]
+    client.post(
+        "/v1/chat",
+        json={
+            "question": "Comment lutter contre la pourriture brune avec un fongicide ?",
+            "session_id": sid,
+        },
+    )
+    resp = client.post("/v1/chat", json={"question": "Et quelle dose faut-il ?", "session_id": sid})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["redirection_anader"] is True
+    assert "ANADER" in data["reponse"]
+    # Le garde-fou a court-circuité l'inférence : aucun appel au modèle.
+    assert fake_inference.appels == []
