@@ -10,7 +10,7 @@ from fastapi import Request
 
 from app.application.conseil_service import ConseilService
 from app.core.config import Settings, get_settings
-from app.domain.ports import CachePort, InferencePort, JournalPort
+from app.domain.ports import CachePort, InferencePort, JournalPort, SessionStorePort
 
 
 def get_app_settings() -> Settings:
@@ -31,6 +31,11 @@ def get_cache_client(request: Request) -> CachePort:
 def get_journal(request: Request) -> JournalPort:
     """Retourne le port de journalisation stocké dans l'état de l'application."""
     return request.app.state.journal
+
+
+def get_session_store(request: Request) -> SessionStorePort:
+    """Retourne le dépôt de sessions de conversation stocké dans l'état de l'application."""
+    return request.app.state.sessions
 
 
 def get_conseil_service(request: Request) -> ConseilService:

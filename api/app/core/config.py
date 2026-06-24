@@ -22,6 +22,9 @@ class Settings(BaseSettings):
         model_version: Version du modèle, exposée par /v1/version.
         redis_url: URL de connexion Redis (cache + rate-limit).
         rate_limit_per_min: Nombre de requêtes autorisées par minute et par IP.
+        sessions_enabled: Active la persistance des sessions de conversation (V2).
+        sessions_db_path: Chemin du fichier SQLite des sessions (volume /data).
+        sessions_max_messages: Plafond de messages par session (anti-abus).
         log_level: Niveau de log.
         log_questions: Journaliser (anonymisé) les questions pour le corpus.
         cors_origins: Origines CORS autorisées en production.
@@ -76,6 +79,14 @@ class Settings(BaseSettings):
     log_visites: bool = True
     # Base GeoLite2 (IP -> pays, en local). Déposée sur le nœud comme les modèles.
     geoip_db_path: str = "/models/GeoLite2-Country.mmdb"
+
+    # --- Sessions conversationnelles persistantes (V2) ---
+    # Stockage durable des conversations (SQLite, bibliothèque standard : aucune
+    # dépendance hors spec §2.1). Fichier sur le volume persistant /data.
+    sessions_enabled: bool = True
+    sessions_db_path: str = "/data/opencacao_sessions.db"
+    # Plafond de messages par session (garde-fou anti-abus, appliqué côté service).
+    sessions_max_messages: int = 200
 
     # NoDecode : ne PAS json-décoder la valeur d'env (sinon une liste CSV comme
     # "a,b" ou "*" lève une erreur). Le validateur _split_csv ci-dessous gère le CSV.

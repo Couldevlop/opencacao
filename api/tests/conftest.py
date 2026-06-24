@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -131,10 +132,13 @@ def client(
     fake_inference: FakeInference,
     fake_journal: FakeJournal,
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> Iterator[TestClient]:
     """Client de test avec inférence, cache et journal surchargés."""
     # Pas de pré-chauffage en test (éviterait de vrais appels d'inférence au démarrage).
     monkeypatch.setenv("PREWARM_ENABLED", "false")
+    # Sessions persistées dans un fichier temporaire (jamais dans /data en test).
+    monkeypatch.setenv("SESSIONS_DB_PATH", str(tmp_path / "sessions.db"))
     get_settings.cache_clear()
     app = create_app()
     service = ConseilService(inference=fake_inference, cache=fake_cache, journal=fake_journal)
