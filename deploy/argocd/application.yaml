@@ -1,0 +1,69 @@
+# ArgoCD Application — OpenCacao (production, K3s Hetzner).
+#
+# GitOps pull-based : ArgoCD, depuis l'intérieur du cluster, surveille ce repo et
+# applique le kustomize `deploy/k8s`. GitHub ne fait que builder/pousser les images
+# sur GHCR (workflow release.yml, job `publish`).
+#
+# Le tag d'image est tenu à jour automatiquement par ArgoCD Image Updater : un push
+# sur `main` (portes vertes) crée un tag `vX.Y.Z` et publie les images
+# `ghcr.io/couldevlop/opencacao-api:X.Y.Z` et `…-web:X.Y.Z` (release.yml) ; Image
+# Updater détecte la plus haute version et écrit le tag → sync automatique.
+#
+# Prérequis appliqués HORS de cet objet (cf. deploy/argocd/README.md) :
+#   - Namespace `opencacao` + GGUF chargé sur la PVC `modele-gguf` (kubectl).
+#   - ArgoCD + ArgoCD Image Updater installés dans le namespace `argocd`.
+#   - Les images `0.7.0` doivent EXISTER sur GHCR (1er run de release.yml) AVANT
+#     d'appliquer cette Application — sinon ImagePullBackOff.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: opencacao
+  namespace: argocd
+  annotations:
+    # ── ArgoCD Image Updater ───────────────────────────────────────
+    # Deux images suivies ; seul le TAG est mis à jour (repository fixe).
+    argocd-image-updater.argoproj.io/image-list: "api=ghcr.io/couldevlop/opencacao-api,web=ghcr.io/couldevlop/opencacao-web"
+    # Stratégie semver : déploie toujours la plus haute version stable X.Y.Z.
+    argocd-image-updater.argoproj.io/api.update-strategy: semver
+    argocd-image-updater.argoproj.io/web.update-strategy: semver
+    # N'accepte que les tags de release `X.Y.Z` (ignore `latest`, `sha-…`, pré-releases).
+    argocd-image-updater.argoproj.io/api.allow-tags: 'regexp:^[0-9]+\.[0-9]+\.[0-9]+$'
+    argocd-image-updater.argoproj.io/web.allow-tags: 'regexp:^[0-9]+\.[0-9]+\.[0-9]+$'
+    # write-back = argocd : le nouveau tag est écrit dans les paramètres kustomize de
+    # CETTE Application (override d'image), pas de push Git → aucun token GitHub à
+    # stocker dans le cluster.
+    argocd-image-updater.argoproj.io/write-back-method: argocd
+    # ── Diff côté serveur ──────────────────────────────────────────
+    # ⚠️ ArgoCD v2.13.x plante au diff client sur K8s ≥ 1.33/1.35
+    # (`.status.terminatingReplicas: field not declared in schema`) → les syncs
+    # échouent et l'Image Updater n'a aucun effet. ServerSideDiff délègue le diff
+    # au cluster. Si ça ne suffit pas (v2.13.2), le FIX DURABLE est un UPGRADE
+    # d'ArgoCD ; en attendant, déployer via `deploy/scripts/roll-image.sh <tag>`.
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/Couldevlop/opencacao.git
+    targetRevision: main
+    path: deploy/k8s
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: opencacao
+
+  syncPolicy:
+    automated:
+      prune: true # supprime les ressources retirées du kustomize
+      selfHeal: true # ré-applique si dérive manuelle dans le cluster
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
