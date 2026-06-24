@@ -37,6 +37,15 @@ data:
   SESSIONS_ENABLED: "true"
   SESSIONS_DB_PATH: "/data/opencacao_sessions.db"
   SESSIONS_RETENTION_JOURS: "365"
+  # Authentification par lien magique (D2) — connexion email via l'API ZeptoMail
+  # (port 443 ; le SMTP serait bloqué côté cluster). Le jeton ZEPTOMAIL_TOKEN vient du
+  # Secret `opencacao-auth` (non versionné). Expéditeur = domaine vérifié ZeptoMail.
+  AUTH_ENABLED: "true"
+  AUTH_CANAL: "zeptomail"
+  AUTH_BASE_URL: "https://opencacao.openlabconsulting.com"
+  AUTH_EMAIL_FROM: "noreply@openlabconsulting.com"
+  AUTH_EMAIL_FROM_NAME: "OpenCacao"
+  ZEPTOMAIL_API_URL: "https://api.zeptomail.com/v1.1/email"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -61,6 +70,13 @@ spec:
           envFrom:
             - configMapRef:
                 name: api-config
+            # Jeton ZeptoMail (auth D2). optional : l'API démarre même sans le Secret
+            # (l'auth retombe alors sur le canal console). Créé hors Git :
+            #   kubectl -n opencacao create secret generic opencacao-auth \
+            #     --from-literal=ZEPTOMAIL_TOKEN=<jeton>
+            - secretRef:
+                name: opencacao-auth
+                optional: true
           volumeMounts:
             - name: dataset
               mountPath: /data

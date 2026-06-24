@@ -108,9 +108,18 @@ class Settings(BaseSettings):
     auth_token_ttl_min: int = 20
     # Base d'URL publique pour fabriquer le lien (vide = déduite de la requête).
     auth_base_url: str = ""
-    # Acheminement du lien : "console" (journalisé, souverain par défaut) ou "smtp".
-    auth_canal: Literal["console", "smtp"] = "console"
-    auth_email_from: str = "OpenCacao <no-reply@opencacao.ci>"
+    # Acheminement du lien magique :
+    #  - "console"   : journalisé (souverain par défaut, DEV uniquement) ;
+    #  - "zeptomail" : API HTTPS ZeptoMail (port 443) — recommandé en prod, car le
+    #    SMTP (587/465) est bloqué par la NetworkPolicy d'égress du cluster ;
+    #  - "smtp"      : smtplib (utile hors cluster ; bloqué en prod).
+    auth_canal: Literal["console", "zeptomail", "smtp"] = "console"
+    # Expéditeur (adresse vérifiée chez le fournisseur) + nom affiché.
+    auth_email_from: str = "no-reply@opencacao.ci"
+    auth_email_from_name: str = "OpenCacao"
+    # ZeptoMail (API HTTP) — token lié à la région du compte (.com global ici).
+    zeptomail_token: str = ""
+    zeptomail_api_url: str = "https://api.zeptomail.com/v1.1/email"
     # SMTP (utilisé seulement si auth_canal = "smtp" ; smtplib de la stdlib).
     smtp_host: str = ""
     smtp_port: int = 587

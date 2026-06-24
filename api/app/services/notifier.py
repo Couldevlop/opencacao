@@ -1,13 +1,16 @@
 """Acheminement du lien magique vers l'utilisateur (D2).
 
-Deux implémentations du même contrat :
+Trois implémentations du même contrat :
 
-* :class:`ConsoleNotifier` — **par défaut, souverain** : journalise le lien (structlog).
-  Suffit en démo/dev et n'introduit aucune dépendance ni service externe.
-* :class:`SmtpNotifier` — envoie le lien par email via ``smtplib`` (bibliothèque
-  standard). Activé seulement si ``auth_canal = "smtp"`` et un serveur SMTP configuré.
+* :class:`ConsoleNotifier` — **DEV** : journalise le lien (structlog). Souverain, sans
+  dépendance réseau, mais expose le jeton dans les logs (OWASP A09).
+* :class:`ZeptoMailNotifier` — **PROD** : envoie le lien via l'API HTTP ZeptoMail
+  (port 443, httpx). Choisi car le SMTP (587/465) est bloqué par la NetworkPolicy
+  d'égress du cluster (cf. openlabconsulting/lib/email-core.ts).
+* :class:`SmtpNotifier` — ``smtplib`` (stdlib). Utile hors cluster ; bloqué en prod.
 
-Aucune dépendance hors spec §2.1 : ``smtplib`` et ``email`` sont dans la stdlib.
+``httpx`` est déjà une dépendance (client d'inférence) ; ``smtplib``/``email`` sont
+dans la stdlib — aucune dépendance hors spec §2.1.
 """
 
 from __future__ import annotations
@@ -15,6 +18,8 @@ from __future__ import annotations
 import asyncio
 from email.message import EmailMessage
 from smtplib import SMTP
+
+import httpx
 
 from app.core.config import Settings
 from app.core.logging import get_logger
@@ -35,6 +40,18 @@ def _corps(lien: str) -> str:
     )
 
 
+def _corps_html(lien: str) -> str:
+    """Version HTML minimale du message (ZeptoMail exige un htmlbody)."""
+    return (
+        "<p>Bonjour,</p>"
+        "<p>Cliquez sur ce lien pour vous connecter à OpenCacao "
+        "(valable quelques minutes, à usage unique) :</p>"
+        f'<p><a href="{lien}">{lien}</a></p>'
+        "<p>Si vous n'êtes pas à l'origine de cette demande, ignorez ce message.</p>"
+        "<p>— OpenCacao</p>"
+    )
+
+
 class ConsoleNotifier:
     """Journalise le lien au lieu de l'envoyer (souverain, sans dépendance réseau).
 
@@ -50,6 +67,75 @@ class ConsoleNotifier:
             lien=lien,
             avertissement="canal DEV : jeton exposé en logs, utiliser SMTP en prod",
         )
+
+
+class ZeptoMailNotifier:
+    """Envoie le lien magique via l'API HTTP ZeptoMail (port 443, httpx).
+
+    Choisi en production car le SMTP (587/465) est bloqué par la NetworkPolicy
+    d'égress du cluster. Fail-soft : journalise et ne propage jamais (l'échec d'envoi
+    ne doit pas casser la requête ; l'utilisateur peut redemander un lien).
+    """
+
+    def __init__(
+        self,
+        token: str,
+        api_url: str,
+        from_address: str,
+        from_name: str,
+        client: httpx.AsyncClient | None = None,
+    ) -> None:
+        """Initialise le client API.
+
+        Args:
+            token: Jeton ZeptoMail (préfixe ``Zoho-enczapikey`` ajouté à l'envoi).
+            api_url: URL de l'API (région .com par défaut ; le jeton est lié à la région).
+            from_address: Adresse d'expédition (vérifiée chez ZeptoMail).
+            from_name: Nom affiché de l'expéditeur.
+            client: Client httpx injectable (tests).
+        """
+        self._token = token
+        self._api_url = api_url
+        self._from = {"address": from_address, "name": from_name}
+        self._client = client or httpx.AsyncClient(timeout=10)
+
+    @classmethod
+    def from_settings(cls, settings: Settings) -> ZeptoMailNotifier:
+        """Construit un notifier ZeptoMail à partir des paramètres applicatifs."""
+        return cls(
+            token=settings.zeptomail_token,
+            api_url=settings.zeptomail_api_url,
+            from_address=settings.auth_email_from,
+            from_name=settings.auth_email_from_name,
+        )
+
+    async def envoyer_lien(self, email: str, lien: str) -> None:
+        """POST du lien à l'API ZeptoMail (fail-soft)."""
+        corps = {
+            "from": self._from,
+            "to": [{"email_address": {"address": email}}],
+            "subject": _SUJET,
+            "htmlbody": _corps_html(lien),
+            "textbody": _corps(lien),
+        }
+        try:
+            response = await self._client.post(
+                self._api_url,
+                json=corps,
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    # ZeptoMail attend le préfixe littéral `Zoho-enczapikey`.
+                    "Authorization": f"Zoho-enczapikey {self._token}",
+                },
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            logger.warning("zeptomail_echec", email=email, error=str(exc))
+
+    async def close(self) -> None:
+        """Ferme le client HTTP sous-jacent."""
+        await self._client.aclose()
 
 
 class SmtpNotifier:
@@ -111,8 +197,15 @@ class SmtpNotifier:
             smtp.send_message(message)
 
 
-def construire_notifier(settings: Settings) -> ConsoleNotifier | SmtpNotifier:
-    """Choisit le notifier selon ``auth_canal`` (console par défaut, souverain)."""
+def construire_notifier(
+    settings: Settings,
+) -> ConsoleNotifier | ZeptoMailNotifier | SmtpNotifier:
+    """Choisit le notifier selon ``auth_canal`` (console par défaut, souverain).
+
+    Retombe sur la console si le canal demandé n'est pas configuré (jamais bloquant).
+    """
+    if settings.auth_canal == "zeptomail" and settings.zeptomail_token:
+        return ZeptoMailNotifier.from_settings(settings)
     if settings.auth_canal == "smtp" and settings.smtp_host:
         return SmtpNotifier.from_settings(settings)
     return ConsoleNotifier()
