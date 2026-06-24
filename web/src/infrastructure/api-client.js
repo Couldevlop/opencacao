@@ -2,7 +2,13 @@
 // Seul endroit qui connaît fetch et les codes HTTP. Traduit la réponse/les
 // erreurs réseau en entités et erreurs de DOMAINE (dépendance vers l'intérieur).
 
-import { ConseilError, ErreurKind, versConseil } from "../domain/models.js";
+import {
+  ConseilError,
+  ErreurKind,
+  versConseil,
+  versSession,
+  versSessionAvecMessages,
+} from "../domain/models.js";
 
 const ERREURS_HTTP = {
   429: ErreurKind.RATE_LIMIT,
@@ -14,6 +20,8 @@ const ERREURS_HTTP = {
 function erreurDepuisKind(kind) {
   if (kind === "rate_limit") return new ConseilError(ErreurKind.RATE_LIMIT, "Trop de requêtes");
   if (kind === "indisponible") return new ConseilError(ErreurKind.INDISPONIBLE, "Service indisponible");
+  if (kind === "session_inconnue")
+    return new ConseilError(ErreurKind.SESSION_INCONNUE, "Session inconnue");
   return new ConseilError(ErreurKind.HTTP, "Erreur du service");
 }
 
@@ -24,18 +32,30 @@ function erreurDepuisKind(kind) {
 export function creerClientApi(lireBaseUrl) {
   const baseCourante = () => String(lireBaseUrl() || "").replace(/\/+$/, "");
 
-  async function demander(question, historique = []) {
+  /**
+   * Construit le corps d'une requête de chat. Avec un sessionId, l'historique fait
+   * autorité côté serveur (V2) : on ne renvoie pas de tours, juste le session_id.
+   */
+  function corpsChat(question, { historique = [], sessionId = null } = {}) {
+    const corps = { question, langue: "fr", canal: "web" };
+    if (sessionId) corps.session_id = sessionId;
+    else corps.historique = historique;
+    return corps;
+  }
+
+  async function demander(question, options = {}) {
     let resp;
     try {
       resp = await fetch(baseCourante() + "/v1/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ question, langue: "fr", canal: "web", historique }),
+        body: JSON.stringify(corpsChat(question, options)),
       });
     } catch {
       throw new ConseilError(ErreurKind.RESEAU, "API injoignable");
     }
 
+    if (resp.status === 404) throw new ConseilError(ErreurKind.SESSION_INCONNUE, "Session inconnue");
     if (ERREURS_HTTP[resp.status]) throw new ConseilError(ERREURS_HTTP[resp.status], "Erreur");
     if (!resp.ok) throw new ConseilError(ErreurKind.HTTP, "Erreur HTTP " + resp.status);
 
@@ -51,15 +71,15 @@ export function creerClientApi(lireBaseUrl) {
    * renvoie l'entité Conseil finale (réponse complète + métadonnées).
    * @param {string} question
    * @param {(texte: string) => void} onToken
-   * @param {Array<{role: string, content: string}>} historique - tours précédents
+   * @param {{historique?: Array<{role: string, content: string}>, sessionId?: string|null}} options
    */
-  async function demanderStream(question, onToken, historique = []) {
+  async function demanderStream(question, onToken, options = {}) {
     let resp;
     try {
       resp = await fetch(baseCourante() + "/v1/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-        body: JSON.stringify({ question, langue: "fr", canal: "web", historique }),
+        body: JSON.stringify(corpsChat(question, options)),
       });
     } catch {
       throw new ConseilError(ErreurKind.RESEAU, "API injoignable");
@@ -124,5 +144,80 @@ export function creerClientApi(lireBaseUrl) {
     }
   }
 
-  return Object.freeze({ demander, demanderStream, envoyerFeedback });
+  /* ---------- Sessions de conversation (V2) ---------- */
+
+  /** Crée une conversation côté serveur et renvoie ses métadonnées (Session). */
+  async function creerSession({ titre, langue = "fr", canal = "web" } = {}) {
+    const corps = { langue, canal };
+    if (titre) corps.titre = titre;
+    let resp;
+    try {
+      resp = await fetch(baseCourante() + "/v1/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(corps),
+      });
+    } catch {
+      throw new ConseilError(ErreurKind.RESEAU, "API injoignable");
+    }
+    if (ERREURS_HTTP[resp.status]) throw new ConseilError(ERREURS_HTTP[resp.status], "Erreur");
+    if (!resp.ok) throw new ConseilError(ErreurKind.HTTP, "Erreur HTTP " + resp.status);
+    return versSession(await resp.json());
+  }
+
+  /** Liste les conversations, de la plus récemment active à la plus ancienne. */
+  async function listerSessions() {
+    let resp;
+    try {
+      resp = await fetch(baseCourante() + "/v1/sessions", {
+        headers: { Accept: "application/json" },
+      });
+    } catch {
+      throw new ConseilError(ErreurKind.RESEAU, "API injoignable");
+    }
+    if (!resp.ok) throw new ConseilError(ErreurKind.HTTP, "Erreur HTTP " + resp.status);
+    const data = await resp.json();
+    return Array.isArray(data) ? data.map(versSession) : [];
+  }
+
+  /** Récupère une conversation et ses messages, ou null si elle n'existe plus. */
+  async function obtenirSession(id) {
+    if (!id) return null;
+    let resp;
+    try {
+      resp = await fetch(baseCourante() + "/v1/sessions/" + encodeURIComponent(id), {
+        headers: { Accept: "application/json" },
+      });
+    } catch {
+      throw new ConseilError(ErreurKind.RESEAU, "API injoignable");
+    }
+    if (resp.status === 404) return null;
+    if (!resp.ok) throw new ConseilError(ErreurKind.HTTP, "Erreur HTTP " + resp.status);
+    return versSessionAvecMessages(await resp.json());
+  }
+
+  /** Supprime une conversation. Renvoie true si la suppression a abouti. */
+  async function supprimerSession(id) {
+    if (!id) return false;
+    let resp;
+    try {
+      resp = await fetch(baseCourante() + "/v1/sessions/" + encodeURIComponent(id), {
+        method: "DELETE",
+      });
+    } catch {
+      throw new ConseilError(ErreurKind.RESEAU, "API injoignable");
+    }
+    // 204 = supprimée ; 404 = déjà absente (idempotent du point de vue de l'UI).
+    return resp.status === 204 || resp.status === 404;
+  }
+
+  return Object.freeze({
+    demander,
+    demanderStream,
+    envoyerFeedback,
+    creerSession,
+    listerSessions,
+    obtenirSession,
+    supprimerSession,
+  });
 }

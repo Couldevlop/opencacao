@@ -16,6 +16,7 @@
   --shadow: 0 1px 2px rgba(43, 38, 32, 0.05), 0 8px 24px rgba(43, 38, 32, 0.06);
   --radius: 16px;
   --maxw: 820px;
+  --sidebar-w: 280px;
   --serif: "Iowan Old Style", "Palatino Linotype", Georgia, "Times New Roman", serif;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
@@ -413,4 +414,125 @@ body {
   .wordmark { font-size: 20px; }
   .tagline { display: none; }
   .bubble { max-width: 88%; }
+}
+
+/* ---------- Sidebar des conversations (V2) ---------- */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar-w, 280px);
+  max-width: 85vw;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  z-index: 30;
+  transform: translateX(-100%);
+  transition: transform 0.22s ease;
+}
+.sidebar.ouvert { transform: translateX(0); }
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-titre {
+  font-family: var(--serif);
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--cocoa-dark);
+}
+.btn-nouvelle {
+  border: 1px solid var(--cocoa);
+  background: var(--cocoa);
+  color: #fff;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-nouvelle:hover { background: var(--cocoa-dark); }
+
+.session-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  flex: 1;
+  overflow-y: auto;
+}
+.session-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 10px;
+  margin-bottom: 2px;
+}
+.session-item.actif { background: var(--cocoa-tint); }
+.session-ouvrir {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  border: 0;
+  background: none;
+  padding: 9px 10px;
+  font-size: 14px;
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.session-ouvrir:hover { color: var(--cocoa-dark); }
+.session-item.actif .session-ouvrir { font-weight: 600; color: var(--cocoa-dark); }
+.session-suppr {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 13px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.session-item:hover .session-suppr,
+.session-item.actif .session-suppr { opacity: 1; }
+.session-suppr:hover { color: #c0392b; background: var(--cocoa-tint); }
+.session-vide {
+  padding: 12px 10px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+.sidebar-note {
+  margin: 0;
+  padding: 10px 14px;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  border-top: 1px solid var(--border);
+}
+
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(43, 38, 32, 0.35);
+  z-index: 20;
+}
+.sidebar-backdrop[hidden] { display: none; }
+.sidebar-toggle[hidden] { display: none; }
+
+/* Grand écran : la sidebar est épinglée et le contenu se décale pour lui faire place. */
+@media (min-width: 1024px) {
+  body.avec-sidebar { padding-left: var(--sidebar-w, 280px); }
+  body.avec-sidebar .sidebar { transform: translateX(0); box-shadow: none; }
+  body.avec-sidebar .sidebar-backdrop { display: none; }
+  body.avec-sidebar .sidebar-toggle { display: none; }
 }

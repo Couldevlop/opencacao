@@ -15,6 +15,8 @@ export const ErreurKind = Object.freeze({
   INDISPONIBLE: "indisponible",
   RESEAU: "reseau",
   HTTP: "http",
+  // La conversation référencée n'existe plus côté serveur (supprimée/expirée).
+  SESSION_INCONNUE: "session_inconnue",
 });
 
 /** Erreur métier porteuse d'un type, pour un message utilisateur adapté. */
@@ -44,4 +46,37 @@ export function versConseil(brut) {
     disclaimer: typeof brut?.disclaimer === "string" ? brut.disclaimer : "",
     interactionId: typeof brut?.interaction_id === "string" ? brut.interaction_id : null,
   });
+}
+
+/** Titre par défaut d'une conversation, aligné sur l'API (models/session.py). */
+export const TITRE_PAR_DEFAUT = "Nouvelle conversation";
+
+/**
+ * Normalise les métadonnées d'une session (V2 conversationnelle) : types garantis,
+ * titre jamais vide. `cree_le`/`maj_le` restent des chaînes ISO (tri côté serveur).
+ */
+export function versSession(brut) {
+  return Object.freeze({
+    id: typeof brut?.id === "string" ? brut.id : "",
+    titre: typeof brut?.titre === "string" && brut.titre.trim() ? brut.titre : TITRE_PAR_DEFAUT,
+    langue: typeof brut?.langue === "string" ? brut.langue : "fr",
+    canal: typeof brut?.canal === "string" ? brut.canal : "web",
+    creeLe: typeof brut?.cree_le === "string" ? brut.cree_le : "",
+    majLe: typeof brut?.maj_le === "string" ? brut.maj_le : "",
+  });
+}
+
+/** Normalise un message persisté d'une session (rôle restreint, contenu sûr). */
+export function versMessage(brut) {
+  return Object.freeze({
+    role: brut?.role === "assistant" ? "assistant" : "user",
+    content: typeof brut?.content === "string" ? brut.content : "",
+    creeLe: typeof brut?.cree_le === "string" ? brut.cree_le : "",
+  });
+}
+
+/** Normalise une session et ses messages (réponse de GET /v1/sessions/{id}). */
+export function versSessionAvecMessages(brut) {
+  const messages = Array.isArray(brut?.messages) ? brut.messages.map(versMessage) : [];
+  return Object.freeze({ session: versSession(brut?.session), messages });
 }
