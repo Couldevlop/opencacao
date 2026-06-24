@@ -18,6 +18,7 @@ from app.core.cache import CacheClient
 from app.core.config import Settings, get_settings
 from app.core.journal import JournalFichier
 from app.core.logging import configure_logging, get_logger
+from app.core.parametres import ParametresStore
 from app.core.security import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 from app.core.sessions import SessionStore
 from app.routers import auth, chat, feedback, health, sessions
@@ -43,9 +44,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.purge_task = _lancer_purge_sessions(app, settings)
 
     app.state.auth_store = AuthStore.from_settings(settings)
-    app.state.notifier = construire_notifier(settings)
+    app.state.parametres = ParametresStore.from_settings(settings)
+    app.state.notifier = construire_notifier(settings, app.state.parametres)
     if settings.auth_enabled:
         await app.state.auth_store.initialiser()
+        await app.state.parametres.initialiser()
         if settings.auth_canal == "console":
             # OWASP A09 : le canal console expose les jetons dans les logs.
             logger.warning(

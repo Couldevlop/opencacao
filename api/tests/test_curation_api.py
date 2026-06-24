@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.curation.main as cur
+from app.core.parametres import ParametresStore
 from app.curation.documents import DocumentStore
 from app.curation.jobs import JobsRegistry
 from app.curation.ratelimit import LimiteurConnexion
@@ -78,6 +79,34 @@ def test_valider_dosage_rejete_422(console) -> None:
         },
     )
     assert resp.status_code == 422
+
+
+def test_parametres_expediteur_brouille(console, monkeypatch, tmp_path: Path) -> None:
+    """La console règle l'expéditeur ; il n'est jamais renvoyé en clair, seulement masqué."""
+    monkeypatch.setattr(cur, "_parametres", ParametresStore(tmp_path / "p.db"))
+    client, _ = console
+
+    assert client.get("/api/parametres/expediteur").json()["defini"] is False
+
+    resp = client.post(
+        "/api/parametres/expediteur", json={"email": "Waopron@OpenLab.CI", "nom": "OpenCacao"}
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["email_masque"] == "w•••••n@openlab.ci"  # masqué (normalisé en minuscules)
+    assert "waopron@openlab.ci" not in json.dumps(data)  # jamais l'adresse en clair
+
+    apres = client.get("/api/parametres/expediteur").json()
+    assert apres["defini"] is True
+    assert "•" in apres["email_masque"]
+
+
+def test_parametres_email_invalide_422(console, monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(cur, "_parametres", ParametresStore(tmp_path / "p.db"))
+    client, _ = console
+    assert (
+        client.post("/api/parametres/expediteur", json={"email": "pas-un-email"}).status_code == 422
+    )
 
 
 def test_rejeter(console) -> None:

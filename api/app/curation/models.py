@@ -2,7 +2,31 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel, Field, field_validator
+
+_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+class ParametreExpediteurRequest(BaseModel):
+    """Réglage de l'adresse d'expédition des emails (auth), depuis la console.
+
+    Attributes:
+        email: Adresse expéditrice (doit être vérifiée chez le fournisseur).
+        nom: Nom affiché de l'expéditeur.
+    """
+
+    email: str = Field(min_length=3, max_length=254)
+    nom: str = Field(default="OpenCacao", min_length=1, max_length=80)
+
+    @field_validator("email")
+    @classmethod
+    def _email_plausible(cls, valeur: str) -> str:
+        valeur = valeur.strip().lower()
+        if not _EMAIL.match(valeur):
+            raise ValueError("Adresse email invalide.")
+        return valeur
 
 
 class ValidationRequest(BaseModel):

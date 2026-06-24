@@ -23,6 +23,7 @@ import httpx
 
 from app.core.config import Settings
 from app.core.logging import get_logger
+from app.core.parametres import CLE_EMAIL_EXPEDITEUR, CLE_NOM_EXPEDITEUR, ParametresStore
 
 logger = get_logger(__name__)
 
@@ -83,6 +84,7 @@ class ZeptoMailNotifier:
         api_url: str,
         from_address: str,
         from_name: str,
+        parametres: ParametresStore | None = None,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         """Initialise le client API.
@@ -90,29 +92,44 @@ class ZeptoMailNotifier:
         Args:
             token: Jeton ZeptoMail (préfixe ``Zoho-enczapikey`` ajouté à l'envoi).
             api_url: URL de l'API (région .com par défaut ; le jeton est lié à la région).
-            from_address: Adresse d'expédition (vérifiée chez ZeptoMail).
-            from_name: Nom affiché de l'expéditeur.
+            from_address: Adresse d'expédition par défaut (vérifiée chez ZeptoMail).
+            from_name: Nom affiché par défaut.
+            parametres: Dépôt des réglages modifiables à chaud (console) ; s'il fournit
+                une adresse/nom d'expéditeur, ils priment sur les défauts.
             client: Client httpx injectable (tests).
         """
         self._token = token
         self._api_url = api_url
-        self._from = {"address": from_address, "name": from_name}
+        self._defaut_from = from_address
+        self._defaut_nom = from_name
+        self._parametres = parametres
         self._client = client or httpx.AsyncClient(timeout=10)
 
     @classmethod
-    def from_settings(cls, settings: Settings) -> ZeptoMailNotifier:
+    def from_settings(
+        cls, settings: Settings, parametres: ParametresStore | None = None
+    ) -> ZeptoMailNotifier:
         """Construit un notifier ZeptoMail à partir des paramètres applicatifs."""
         return cls(
             token=settings.zeptomail_token,
             api_url=settings.zeptomail_api_url,
             from_address=settings.auth_email_from,
             from_name=settings.auth_email_from_name,
+            parametres=parametres,
         )
+
+    async def _expediteur(self) -> dict[str, str]:
+        """Expéditeur courant : réglage console s'il existe, sinon les défauts."""
+        adresse, nom = self._defaut_from, self._defaut_nom
+        if self._parametres is not None:
+            adresse = (await self._parametres.obtenir(CLE_EMAIL_EXPEDITEUR)) or adresse
+            nom = (await self._parametres.obtenir(CLE_NOM_EXPEDITEUR)) or nom
+        return {"address": adresse, "name": nom}
 
     async def envoyer_lien(self, email: str, lien: str) -> None:
         """POST du lien à l'API ZeptoMail (fail-soft)."""
         corps = {
-            "from": self._from,
+            "from": await self._expediteur(),
             "to": [{"email_address": {"address": email}}],
             "subject": _SUJET,
             "htmlbody": _corps_html(lien),
@@ -129,7 +146,13 @@ class ZeptoMailNotifier:
                     "Authorization": f"Zoho-enczapikey {self._token}",
                 },
             )
-            response.raise_for_status()
+            if response.status_code >= 400:
+                # Le corps ZeptoMail porte la raison exacte (ex. SM_147 « Sender Address
+                # not available ») — indispensable pour diagnostiquer.
+                detail = (response.text or "")[:500]
+                logger.warning(
+                    "zeptomail_echec", email=email, status=response.status_code, detail=detail
+                )
         except httpx.HTTPError as exc:
             logger.warning("zeptomail_echec", email=email, error=str(exc))
 
@@ -198,14 +221,14 @@ class SmtpNotifier:
 
 
 def construire_notifier(
-    settings: Settings,
+    settings: Settings, parametres: ParametresStore | None = None
 ) -> ConsoleNotifier | ZeptoMailNotifier | SmtpNotifier:
     """Choisit le notifier selon ``auth_canal`` (console par défaut, souverain).
 
     Retombe sur la console si le canal demandé n'est pas configuré (jamais bloquant).
     """
     if settings.auth_canal == "zeptomail" and settings.zeptomail_token:
-        return ZeptoMailNotifier.from_settings(settings)
+        return ZeptoMailNotifier.from_settings(settings, parametres)
     if settings.auth_canal == "smtp" and settings.smtp_host:
         return SmtpNotifier.from_settings(settings)
     return ConsoleNotifier()

@@ -39,22 +39,20 @@ def test_construire_notifier_zeptomail_sans_token_reste_console() -> None:
 
 
 class _FakeResp:
-    def __init__(self, status: int) -> None:
+    def __init__(self, status: int, text: str = "") -> None:
         self.status_code = status
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise httpx.HTTPStatusError("err", request=None, response=None)
+        self.text = text
 
 
 class _FakeHttpx:
-    def __init__(self, status: int = 202) -> None:
+    def __init__(self, status: int = 202, text: str = "") -> None:
         self.status = status
+        self.text = text
         self.calls: list[dict] = []
 
     async def post(self, url: str, json: dict, headers: dict) -> _FakeResp:
         self.calls.append({"url": url, "json": json, "headers": headers})
-        return _FakeResp(self.status)
+        return _FakeResp(self.status, self.text)
 
     async def aclose(self) -> None:
         return None
@@ -78,6 +76,43 @@ async def test_zeptomail_notifier_poste_le_lien() -> None:
     assert call["json"]["to"][0]["email_address"]["address"] == "paysan@cacao.ci"
     assert "jeton" in call["json"]["textbody"]
     assert "jeton" in call["json"]["htmlbody"]
+
+
+async def test_zeptomail_notifier_erreur_ne_propage_pas() -> None:
+    """Un refus ZeptoMail (ex. 403 SM_147) est journalisé, jamais propagé (fail-soft)."""
+    fake = _FakeHttpx(status=403, text='{"error":{"details":[{"code":"SM_147"}]}}')
+    notifier = ZeptoMailNotifier("T", "u", "f", "n", client=fake)
+    await notifier.envoyer_lien("p@cacao.ci", "lien")  # ne doit pas lever
+    assert len(fake.calls) == 1
+
+
+class _FakeParams:
+    def __init__(self, valeurs: dict) -> None:
+        self.valeurs = valeurs
+
+    async def obtenir(self, cle: str):
+        return self.valeurs.get(cle)
+
+
+async def test_zeptomail_expediteur_override_console() -> None:
+    """Si la console a réglé l'expéditeur, il prime sur le défaut."""
+    from app.core.parametres import CLE_EMAIL_EXPEDITEUR, CLE_NOM_EXPEDITEUR
+
+    fake = _FakeHttpx()
+    params = _FakeParams({CLE_EMAIL_EXPEDITEUR: "console@x.ci", CLE_NOM_EXPEDITEUR: "ConsoleNom"})
+    notifier = ZeptoMailNotifier("T", "u", "defaut@x.ci", "Defaut", parametres=params, client=fake)
+    await notifier.envoyer_lien("p@cacao.ci", "lien")
+    assert fake.calls[0]["json"]["from"] == {"address": "console@x.ci", "name": "ConsoleNom"}
+
+
+async def test_zeptomail_expediteur_defaut_sans_override() -> None:
+    """Sans réglage console, on utilise l'expéditeur par défaut."""
+    fake = _FakeHttpx()
+    notifier = ZeptoMailNotifier(
+        "T", "u", "defaut@x.ci", "Defaut", parametres=_FakeParams({}), client=fake
+    )
+    await notifier.envoyer_lien("p@cacao.ci", "lien")
+    assert fake.calls[0]["json"]["from"]["address"] == "defaut@x.ci"
 
 
 async def test_zeptomail_notifier_fail_soft() -> None:

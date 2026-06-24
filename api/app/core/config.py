@@ -104,6 +104,10 @@ class Settings(BaseSettings):
     # les conversations à la personne (et non plus au seul navigateur).
     auth_enabled: bool = False
     auth_db_path: str = "/data/opencacao_auth.db"
+    # Paramètres modifiables à chaud depuis la console (volume /data partagé) :
+    # l'API les lit à chaque envoi, la console les écrit. Sert notamment à régler
+    # l'adresse d'expédition sans redéploiement.
+    parametres_db_path: str = "/data/opencacao_parametres.db"
     # Durée de validité d'un lien magique (minutes).
     auth_token_ttl_min: int = 20
     # Base d'URL publique pour fabriquer le lien (vide = déduite de la requête).

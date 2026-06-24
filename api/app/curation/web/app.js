@@ -566,7 +566,42 @@ document.querySelectorAll(".onglet").forEach((onglet) => {
       v.hidden = v.id !== onglet.dataset.vue;
     });
     if (onglet.dataset.vue === "vue-stats") chargerStats();
+    if (onglet.dataset.vue === "vue-parametres") chargerExpediteur();
   });
+});
+
+/* ---------- Paramètres : expéditeur des emails (brouillé) ---------- */
+async function chargerExpediteur() {
+  try {
+    const p = await api("/api/parametres/expediteur");
+    $("exp-actuel").textContent = p.defini ? p.email_masque : "(non défini — défaut serveur)";
+    $("exp-nom").textContent = p.nom ? "· " + p.nom : "";
+  } catch {
+    $("exp-actuel").textContent = "—";
+  }
+}
+
+$("form-expediteur").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = $("exp-email").value.trim();
+  const nom = $("exp-nom-input").value.trim() || "OpenCacao";
+  const etat = $("exp-etat");
+  $("btn-expediteur").disabled = true;
+  etat.textContent = "Enregistrement…";
+  try {
+    const p = await api("/api/parametres/expediteur", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, nom }),
+    });
+    etat.textContent = "✓ Expéditeur mis à jour : " + p.email_masque;
+    $("exp-email").value = "";
+    chargerExpediteur();
+  } catch {
+    etat.textContent = "Échec — vérifiez l'adresse (doit être vérifiée chez le fournisseur).";
+  } finally {
+    $("btn-expediteur").disabled = false;
+  }
 });
 
 /* ---------- Authentification ---------- */
