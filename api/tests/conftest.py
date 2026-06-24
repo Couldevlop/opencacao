@@ -13,6 +13,7 @@ from app.api_deps import (
     get_conseil_service,
     get_inference_client,
     get_journal,
+    get_notifier,
 )
 from app.application.conseil_service import ConseilService
 from app.core.config import get_settings
@@ -111,6 +112,21 @@ class FakeJournal:
         self.visites.append({"pays": pays, "continent": continent, "canal": canal})
 
 
+class FakeNotifier:
+    """Notifier de lien magique en mémoire : capture (email, lien) sans rien envoyer."""
+
+    def __init__(self) -> None:
+        self.envois: list[tuple[str, str]] = []
+
+    async def envoyer_lien(self, email: str, lien: str) -> None:
+        self.envois.append((email, lien))
+
+
+@pytest.fixture
+def fake_notifier() -> FakeNotifier:
+    return FakeNotifier()
+
+
 @pytest.fixture
 def fake_cache() -> FakeCache:
     return FakeCache()
@@ -146,6 +162,37 @@ def client(
     app.dependency_overrides[get_inference_client] = lambda: fake_inference
     app.dependency_overrides[get_journal] = lambda: fake_journal
     app.dependency_overrides[get_conseil_service] = lambda: service
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+    get_settings.cache_clear()
+
+
+@pytest.fixture
+def auth_client(
+    fake_cache: FakeCache,
+    fake_inference: FakeInference,
+    fake_journal: FakeJournal,
+    fake_notifier: FakeNotifier,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> Iterator[TestClient]:
+    """Client de test avec l'authentification par lien magique ACTIVÉE.
+
+    Le notifier est surchargé pour capturer le lien généré (cf. ``fake_notifier``).
+    """
+    monkeypatch.setenv("PREWARM_ENABLED", "false")
+    monkeypatch.setenv("SESSIONS_DB_PATH", str(tmp_path / "sessions.db"))
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    monkeypatch.setenv("AUTH_DB_PATH", str(tmp_path / "auth.db"))
+    get_settings.cache_clear()
+    app = create_app()
+    service = ConseilService(inference=fake_inference, cache=fake_cache, journal=fake_journal)
+    app.dependency_overrides[get_cache_client] = lambda: fake_cache
+    app.dependency_overrides[get_inference_client] = lambda: fake_inference
+    app.dependency_overrides[get_journal] = lambda: fake_journal
+    app.dependency_overrides[get_conseil_service] = lambda: service
+    app.dependency_overrides[get_notifier] = lambda: fake_notifier
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()

@@ -91,6 +91,36 @@ class JournalPort(Protocol):
 
 
 @runtime_checkable
+class AuthStorePort(Protocol):
+    """Contrat du stockage de l'authentification par lien magique (D2)."""
+
+    async def creer_lien(self, email: str, token_hash: str, expire_le: object) -> None:
+        """Enregistre un lien magique (jeton haché) pour un email."""
+        ...
+
+    async def consommer_lien(self, token_hash: str) -> str | None:
+        """Valide et consomme un lien (usage unique). Renvoie l'email, ou None."""
+        ...
+
+    async def compte_pour(self, email: str) -> str:
+        """Retourne l'identifiant de compte de l'email (créé s'il n'existe pas)."""
+        ...
+
+    async def purger_liens_expires(self) -> int:
+        """Supprime les liens expirés/utilisés. Renvoie le nombre supprimé."""
+        ...
+
+
+@runtime_checkable
+class LienNotifierPort(Protocol):
+    """Contrat d'acheminement d'un lien magique vers l'utilisateur (D2)."""
+
+    async def envoyer_lien(self, email: str, lien: str) -> None:
+        """Achemine le lien (console, SMTP…) vers l'adresse donnée."""
+        ...
+
+
+@runtime_checkable
 class SessionStorePort(Protocol):
     """Contrat du stockage durable des sessions de conversation (V2)."""
 

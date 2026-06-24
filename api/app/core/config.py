@@ -98,6 +98,26 @@ class Settings(BaseSettings):
     # désactive la purge (conservation indéfinie).
     sessions_retention_jours: int = 365
 
+    # --- Authentification légère par lien magique (D2, optionnelle) ---
+    # Désactivée par défaut : l'usage anonyme par appareil (D1) reste la norme.
+    # Activée, un email vérifié donne un identifiant de compte stable qui rattache
+    # les conversations à la personne (et non plus au seul navigateur).
+    auth_enabled: bool = False
+    auth_db_path: str = "/data/opencacao_auth.db"
+    # Durée de validité d'un lien magique (minutes).
+    auth_token_ttl_min: int = 20
+    # Base d'URL publique pour fabriquer le lien (vide = déduite de la requête).
+    auth_base_url: str = ""
+    # Acheminement du lien : "console" (journalisé, souverain par défaut) ou "smtp".
+    auth_canal: Literal["console", "smtp"] = "console"
+    auth_email_from: str = "OpenCacao <no-reply@opencacao.ci>"
+    # SMTP (utilisé seulement si auth_canal = "smtp" ; smtplib de la stdlib).
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_starttls: bool = True
+
     # NoDecode : ne PAS json-décoder la valeur d'env (sinon une liste CSV comme
     # "a,b" ou "*" lève une erreur). Le validateur _split_csv ci-dessous gère le CSV.
     cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
