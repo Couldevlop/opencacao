@@ -77,3 +77,13 @@ class CreerSessionRequest(BaseModel):
     titre: str = Field(default=TITRE_PAR_DEFAUT, min_length=1, max_length=200)
     langue: Langue = Langue.FR
     canal: Canal = Canal.WEB
+
+
+class RenommerSessionRequest(BaseModel):
+    """Corps de renommage d'une conversation (C3).
+
+    Attributes:
+        titre: Nouveau titre, normalisé par le dépôt (vide -> titre par défaut).
+    """
+
+    titre: str = Field(min_length=1, max_length=200)

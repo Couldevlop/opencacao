@@ -9,6 +9,7 @@ import {
   versSession,
   versSessionAvecMessages,
 } from "../domain/models.js";
+import { lireDeviceId } from "./device-id.js";
 
 const ERREURS_HTTP = {
   429: ErreurKind.RATE_LIMIT,
@@ -32,6 +33,10 @@ function erreurDepuisKind(kind) {
 export function creerClientApi(lireBaseUrl) {
   const baseCourante = () => String(lireBaseUrl() || "").replace(/\/+$/, "");
 
+  // Toutes les requêtes portent l'identité anonyme de l'appareil (D1) : le serveur
+  // cloisonne ainsi les conversations par navigateur.
+  const enTetes = (extra = {}) => ({ "X-Device-Id": lireDeviceId(), ...extra });
+
   /**
    * Construit le corps d'une requête de chat. Avec un sessionId, l'historique fait
    * autorité côté serveur (V2) : on ne renvoie pas de tours, juste le session_id.
@@ -48,7 +53,7 @@ export function creerClientApi(lireBaseUrl) {
     try {
       resp = await fetch(baseCourante() + "/v1/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        headers: enTetes({ "Content-Type": "application/json", Accept: "application/json" }),
         body: JSON.stringify(corpsChat(question, options)),
       });
     } catch {
@@ -78,7 +83,7 @@ export function creerClientApi(lireBaseUrl) {
     try {
       resp = await fetch(baseCourante() + "/v1/chat/stream", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+        headers: enTetes({ "Content-Type": "application/json", Accept: "text/event-stream" }),
         body: JSON.stringify(corpsChat(question, options)),
       });
     } catch {
@@ -136,7 +141,7 @@ export function creerClientApi(lireBaseUrl) {
     try {
       await fetch(baseCourante() + "/v1/feedback", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: enTetes({ "Content-Type": "application/json" }),
         body: JSON.stringify({ interaction_id: interactionId, vote }),
       });
     } catch {
@@ -154,7 +159,7 @@ export function creerClientApi(lireBaseUrl) {
     try {
       resp = await fetch(baseCourante() + "/v1/sessions", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        headers: enTetes({ "Content-Type": "application/json", Accept: "application/json" }),
         body: JSON.stringify(corps),
       });
     } catch {
@@ -170,7 +175,7 @@ export function creerClientApi(lireBaseUrl) {
     let resp;
     try {
       resp = await fetch(baseCourante() + "/v1/sessions", {
-        headers: { Accept: "application/json" },
+        headers: enTetes({ Accept: "application/json" }),
       });
     } catch {
       throw new ConseilError(ErreurKind.RESEAU, "API injoignable");
@@ -186,7 +191,7 @@ export function creerClientApi(lireBaseUrl) {
     let resp;
     try {
       resp = await fetch(baseCourante() + "/v1/sessions/" + encodeURIComponent(id), {
-        headers: { Accept: "application/json" },
+        headers: enTetes({ Accept: "application/json" }),
       });
     } catch {
       throw new ConseilError(ErreurKind.RESEAU, "API injoignable");
@@ -203,12 +208,50 @@ export function creerClientApi(lireBaseUrl) {
     try {
       resp = await fetch(baseCourante() + "/v1/sessions/" + encodeURIComponent(id), {
         method: "DELETE",
+        headers: enTetes(),
       });
     } catch {
       throw new ConseilError(ErreurKind.RESEAU, "API injoignable");
     }
     // 204 = supprimée ; 404 = déjà absente (idempotent du point de vue de l'UI).
     return resp.status === 204 || resp.status === 404;
+  }
+
+  /** Renomme une conversation (C3). Renvoie la session à jour, ou null si absente. */
+  async function renommerSession(id, titre) {
+    if (!id) return null;
+    let resp;
+    try {
+      resp = await fetch(baseCourante() + "/v1/sessions/" + encodeURIComponent(id), {
+        method: "PATCH",
+        headers: enTetes({ "Content-Type": "application/json", Accept: "application/json" }),
+        body: JSON.stringify({ titre }),
+      });
+    } catch {
+      throw new ConseilError(ErreurKind.RESEAU, "API injoignable");
+    }
+    if (resp.status === 404) return null;
+    if (ERREURS_HTTP[resp.status]) throw new ConseilError(ERREURS_HTTP[resp.status], "Erreur");
+    if (!resp.ok) throw new ConseilError(ErreurKind.HTTP, "Erreur HTTP " + resp.status);
+    return versSession(await resp.json());
+  }
+
+  /** Recherche plein-texte dans les conversations de l'appareil (C5). */
+  async function rechercherSessions(requete) {
+    const q = (requete || "").trim();
+    if (!q) return [];
+    let resp;
+    try {
+      resp = await fetch(
+        baseCourante() + "/v1/sessions/recherche?q=" + encodeURIComponent(q),
+        { headers: enTetes({ Accept: "application/json" }) }
+      );
+    } catch {
+      throw new ConseilError(ErreurKind.RESEAU, "API injoignable");
+    }
+    if (!resp.ok) throw new ConseilError(ErreurKind.HTTP, "Erreur HTTP " + resp.status);
+    const data = await resp.json();
+    return Array.isArray(data) ? data.map(versSession) : [];
   }
 
   return Object.freeze({
@@ -219,5 +262,7 @@ export function creerClientApi(lireBaseUrl) {
     listerSessions,
     obtenirSession,
     supprimerSession,
+    renommerSession,
+    rechercherSessions,
   });
 }

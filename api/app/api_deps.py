@@ -67,6 +67,16 @@ def get_dialogue_service(
     )
 
 
+def get_device_id(request: Request) -> str:
+    """Identifiant anonyme de l'appareil (D1), lu dans l'en-tête ``X-Device-Id``.
+
+    Opaque (UUID généré côté navigateur, jamais une IP), il cloisonne les
+    conversations par navigateur. Absent (anciens clients, appels directs) → ``""``,
+    l'espace « hérité » partagé. Borné en longueur (anti-abus).
+    """
+    return (request.headers.get("x-device-id") or "").strip()[:64]
+
+
 def get_client_ip(request: Request) -> str:
     """Détermine l'IP cliente pour le rate-limit.
 
