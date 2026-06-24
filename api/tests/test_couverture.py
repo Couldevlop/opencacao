@@ -52,6 +52,34 @@ def test_body_size_limit_et_entetes() -> None:
     assert petit.headers["content-security-policy"]
 
 
+def test_csp_permissive_pour_html_stricte_pour_json() -> None:
+    """La CSP autorise l'UI (HTML) à charger ses ressources, mais reste stricte en API.
+
+    Sans cette distinction, « default-src 'none' » bloquerait CSS/JS/images quand
+    l'API sert elle-même l'interface (mode même origine).
+    """
+    from fastapi.responses import HTMLResponse
+
+    app = FastAPI()
+    app.add_middleware(SecurityHeadersMiddleware)
+
+    @app.get("/page", response_class=HTMLResponse)
+    async def _page() -> str:
+        return "<!doctype html><title>UI</title>"
+
+    @app.get("/api")
+    async def _api() -> dict[str, bool]:
+        return {"ok": True}
+
+    client = TestClient(app)
+    csp_html = client.get("/page").headers["content-security-policy"]
+    assert "script-src 'self'" in csp_html
+    assert "style-src 'self'" in csp_html
+    assert client.get("/api").headers["content-security-policy"] == (
+        "default-src 'none'; frame-ancestors 'none'"
+    )
+
+
 # --- Géolocalisation : lecteur injecté + chargement de base ---
 
 
