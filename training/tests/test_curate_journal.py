@@ -101,15 +101,13 @@ def test_dedup_cas_negatif_prime(tmp_path: Path) -> None:
 
 
 def test_construire_paire_valide() -> None:
-    """Une réécriture conforme (source citée, pas de dosage) produit une paire."""
-    verdict = {
-        "action": "corriger",
-        "instruction": "Quelles sont les zones pour le cacao ?",
-        "output": _REPONSE_OK,
-    }
-    paire, motif = construire_paire(verdict)
+    """Une réécriture conforme produit une paire ; l'instruction = la question réelle."""
+    verdict = {"action": "corriger", "output": _REPONSE_OK}
+    paire, motif = construire_paire(verdict, "Quelles sont les zones pour le cacao ?")
     assert paire is not None and motif == ""
-    assert paire["instruction"] and paire["output"] and paire["input"] == ""
+    # L'instruction vient de la QUESTION, pas du maître (qui ne renvoie que l'output).
+    assert paire["instruction"] == "Quelles sont les zones pour le cacao ?"
+    assert paire["output"] == _REPONSE_OK and paire["input"] == ""
 
 
 def test_construire_paire_rejet_du_maitre() -> None:
@@ -124,10 +122,9 @@ def test_construire_paire_sans_source_ecartee() -> None:
     """Une réponse sans source reconnue est écartée (règle de validation)."""
     verdict = {
         "action": "corriger",
-        "instruction": "Question valable sur le cacao ?",
         "output": "Une réponse correcte mais qui ne cite aucune source officielle reconnue du tout.",
     }
-    paire, motif = construire_paire(verdict)
+    paire, motif = construire_paire(verdict, "Question valable sur le cacao ?")
     assert paire is None and "source" in motif.lower()
 
 
@@ -177,12 +174,15 @@ def test_curer_journal_respecte_les_cles_existantes() -> None:
     """Une instruction déjà présente dans le corpus curé n'est pas réajoutée."""
     from assemble_corpus import _cle
 
-    cas = [{"id": "1", "vote": "down", "question": "Zones ?", "reponse": "x"}]
-    verdict = {
-        "action": "corriger",
-        "instruction": "Quelles zones pour le cacao ?",
-        "output": _REPONSE_OK,
-    }
+    cas = [
+        {
+            "id": "1",
+            "vote": "down",
+            "question": "Quelles zones pour le cacao ?",
+            "reponse": "x",
+        }
+    ]
+    verdict = {"action": "corriger", "output": _REPONSE_OK}
     deja = {_cle("Quelles zones pour le cacao ?")}
     paires, stats = curer_journal(cas, _FauxCurateur({"1": verdict}), deja)
     assert paires == [] and stats.doublons == 1
