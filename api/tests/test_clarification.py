@@ -53,3 +53,27 @@ def test_traitement_et_rendement_clarifies() -> None:
     assert (
         clarification.analyser("Ma plantation produit peu, pourquoi ?", historique=None) is not None
     )
+
+
+def test_question_informationnelle_repond_directement() -> None:
+    """Prévenir/reconnaître une maladie nommée = question précise -> réponse directe."""
+    assert (
+        clarification.analyser(
+            "Comment prévenir la pourriture brune des cabosses ?", historique=None
+        )
+        is None
+    )
+    assert (
+        clarification.analyser("Comment reconnaître la pourriture brune ?", historique=None)
+        is None
+    )
+
+
+def test_signature_swollen_shoot_repond_directement() -> None:
+    """Feuilles jaunies + rameaux gonflés = swollen shoot reconnaissable -> réponse directe."""
+    assert (
+        clarification.analyser(
+            "Mes feuilles jaunissent et les rameaux gonflent, que faire ?", historique=None
+        )
+        is None
+    )
