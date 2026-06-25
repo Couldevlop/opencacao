@@ -134,7 +134,11 @@ class Settings(BaseSettings):
     # NoDecode : ne PAS json-décoder la valeur d'env (sinon une liste CSV comme
     # "a,b" ou "*" lève une erreur). Le validateur _split_csv ci-dessous gère le CSV.
     cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
-    request_timeout_s: float = 60.0
+    # Timeout des appels à l'inférence. Le nœud de prod (CX53, CPU/GGUF) génère en
+    # ~1 min ; une question récupérant beaucoup de contexte RAG allonge encore le
+    # traitement du prompt. 60 s était trop juste (503 « service indisponible »
+    # sporadiques sur les requêtes lentes) -> 120 s couvre le pire cas CPU.
+    request_timeout_s: float = 120.0
 
     # Dossier de l'interface web à servir à la racine (même origine que l'API ->
     # plus de CORS). Vide = détection auto du dossier web/ du dépôt s'il existe.
