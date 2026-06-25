@@ -153,7 +153,13 @@ def _construire_rag(settings: Settings) -> tuple[object | None, object | None]:
     embeddings = EmbeddingsClient.from_settings(settings)
     logger.info("rag_actif", entrees=index.taille)
     return embeddings, RagRecuperateur(
-        embeddings, index, settings.rag_top_k, settings.rag_min_similarite
+        embeddings,
+        index,
+        settings.rag_top_k,
+        settings.rag_min_similarite,
+        candidats=settings.rag_candidats,
+        poids_lexical=settings.rag_poids_lexical,
+        seuil_lexical=settings.rag_seuil_lexical,
     )
 
 

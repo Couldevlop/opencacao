@@ -10,6 +10,9 @@ data:
   REDIS_URL: "redis://redis:6379/0"
   MODEL_NAME: "opencacao-8b"
   MODEL_VERSION: "1.0.0"
+  # Version de l'image API (clé de cache). Tenue à jour par roll-image.sh à chaque
+  # déploiement -> invalide les réponses post-traitées par une image antérieure.
+  APP_VERSION: "0.6.18"
   RATE_LIMIT_PER_MIN: "20"
   # Plafond de génération (F7 — efficacité). Réponses « SMS » : 384 suffit et coupe
   # ~25 % de la latence pire-cas vs 512 sur CPU. Prend effet sans recharger le modèle.

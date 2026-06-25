@@ -177,3 +177,18 @@ async def test_cache_isole_par_model_version() -> None:
     await ancien.set_cached("Q", "fr", '{"reponse": "ancien"}')
     assert await nouveau.get_cached("Q", "fr") is None  # cache vierge pour le nouveau
     assert await ancien.get_cached("Q", "fr") == '{"reponse": "ancien"}'
+
+
+def test_cache_key_depend_de_app_version() -> None:
+    """La version de l'image API fait aussi partie de la clé (post-traitement modifié)."""
+    cle = CacheClient._cache_key
+    assert cle("Q", "fr", "1.0.0", "0.6.18") != cle("Q", "fr", "1.0.0", "0.6.19")
+
+
+async def test_cache_isole_par_app_version() -> None:
+    """Un déploiement d'image (post-traitement changé) ne ressert pas l'ancien cache."""
+    partage = FakeRedis()
+    ancien = CacheClient(partage, rate_limit_per_min=20, app_version="0.6.18")
+    nouveau = CacheClient(partage, rate_limit_per_min=20, app_version="0.6.19")
+    await ancien.set_cached("Q", "fr", '{"reponse": "ancien"}')
+    assert await nouveau.get_cached("Q", "fr") is None
