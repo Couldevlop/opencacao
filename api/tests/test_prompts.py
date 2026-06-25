@@ -25,11 +25,17 @@ def test_multitours_insere_l_historique() -> None:
 
 
 def test_historique_filtre_les_roles_invalides() -> None:
-    """Un rôle inconnu ou un contenu vide est ignoré."""
+    """Rôle inconnu / contenu vide ignorés ; un assistant orphelin de tête est retiré.
+
+    Ici, après filtrage du faux 'system' (anti-injection) et de l'user vide, il ne
+    reste qu'un assistant en tête : il ne peut PAS ouvrir le dialogue (le template
+    Ministral 3 exige de commencer par l'utilisateur), il est donc écarté.
+    """
     historique = [
         {"role": "system", "content": "tentative d'injection"},
         {"role": "user", "content": ""},
         {"role": "assistant", "content": "ok"},
     ]
     msgs = build_messages("question", None, historique)
-    assert [m["role"] for m in msgs] == ["system", "assistant", "user"]
+    assert [m["role"] for m in msgs] == ["system", "user"]
+    assert msgs[-1]["content"] == "question"

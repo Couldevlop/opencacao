@@ -46,6 +46,45 @@ CONTEXTE_PROMPT = (
 )
 
 
+def _dialogue_alternant(
+    historique: list[dict[str, str]], question_finale: str
+) -> list[dict[str, str]]:
+    """Construit un dialogue à rôles STRICTEMENT alternés, finissant par l'utilisateur.
+
+    Le template de chat de Ministral 3 lève une exception Jinja (« conversation roles
+    must alternate ») si deux messages de même rôle se suivent ou si le dialogue ne
+    commence pas par l'utilisateur. Un historique client mal formé (deux tours
+    utilisateur d'affilée, assistant en tête…) provoquait alors un 500 de l'inférence
+    → 503 côté API. On normalise donc : on fusionne les tours consécutifs de même
+    rôle, on retire un éventuel assistant de tête, et on garantit que le dernier
+    message est la question courante.
+
+    Args:
+        historique: Tours précédents (``role``/``content``), éventuellement mal formés.
+        question_finale: Contenu du dernier message utilisateur (question + contexte).
+
+    Returns:
+        La liste des tours (hors message système) à rôles alternés, finissant par user.
+    """
+    tours: list[dict[str, str]] = []
+    for tour in historique:
+        role = tour.get("role")
+        contenu = (tour.get("content") or "").strip()
+        if role not in ("user", "assistant") or not contenu:
+            continue
+        if tours and tours[-1]["role"] == role:
+            tours[-1]["content"] += "\n" + contenu  # fusionne deux tours de même rôle
+        else:
+            tours.append({"role": role, "content": contenu})
+    while tours and tours[0]["role"] == "assistant":
+        tours.pop(0)  # le dialogue doit commencer par l'utilisateur
+    if tours and tours[-1]["role"] == "user":
+        tours[-1]["content"] += "\n" + question_finale  # évite deux 'user' consécutifs
+    else:
+        tours.append({"role": "user", "content": question_finale})
+    return tours
+
+
 def build_messages(
     question: str,
     contexte: str | None = None,
@@ -60,7 +99,8 @@ def build_messages(
             pour une conversation multi-tours (clarifications). None ou vide = tour unique.
 
     Returns:
-        Liste de messages au format chat : system + historique + dernier message user.
+        Liste de messages au format chat : system + dialogue à rôles alternés finissant
+        par le dernier message utilisateur (le template Ministral 3 l'exige).
     """
     # Le template de Ministral 3 n'accepte qu'UN seul message système : on injecte
     # donc le contexte RAG dans le message utilisateur (et non en 2e system).
@@ -68,11 +108,5 @@ def build_messages(
         contenu_user = f"{CONTEXTE_PROMPT.format(contexte=contexte)}\n\nQuestion : {question}"
     else:
         contenu_user = question
-    messages: list[dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
-    for tour in historique or []:
-        role = tour.get("role")
-        contenu = tour.get("content", "")
-        if role in ("user", "assistant") and contenu:
-            messages.append({"role": role, "content": contenu})
-    messages.append({"role": "user", "content": contenu_user})
-    return messages
+    dialogue = _dialogue_alternant(historique or [], contenu_user)
+    return [{"role": "system", "content": SYSTEM_PROMPT}, *dialogue]
