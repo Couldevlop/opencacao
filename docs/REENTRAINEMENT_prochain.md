@@ -20,11 +20,25 @@ lui-même** — c'est l'objet de ce ré-entraînement. Pour le flux générique,
 > être présent sur le pod : transfère-le via `runpodctl send`/`receive`, ne compte pas
 > sur `git clone`. Idem pour `corpus_cacao_rag.jsonl`.
 
-## 2. Pré-requis sur le pod (RunPod GPU 24 Go)
+## 2. Pré-requis sur le pod (RunPod)
+
+**Capacité du pod :**
+
+| Élément | Choix recommandé |
+|---|---|
+| **Template** | **RunPod « PyTorch 2.8 »** (Python 3.10+, **CUDA ≥ 12.1**) |
+| **PyTorch** | Celui du template (**2.8**) — `pod_train.sh` le **conserve** (ne pas le downgrader ; les `requirements` retirent la ligne `torch`) |
+| **GPU (entraînement seul)** | **24 Go** suffisent (RTX 4090 / L4) — QLoRA 4-bit sur Ministral-3-8B BF16 |
+| **GPU (avec curation F11 souveraine)** | **≥ 48 Go** (A6000 48G / A100) pour servir le maître `Qwen2.5-72B-AWQ` ; **ou 24 Go** avec le maître plus léger `Qwen2.5-32B-AWQ` |
+| **Volume disque** | **≥ 80 Go** (base BF16 ~16 Go + maître AWQ + adaptateurs + GGUF ~5 Go) |
+
+> Règle simple : **24 Go** si tu cures avec le maître 32B (ou si tu ne fais que ré-entraîner) ; **48 Go** si tu veux le maître 72B pour une curation de meilleure qualité. Curation et entraînement se font **séquentiellement** sur un seul GPU (sers le maître → cure → arrête le maître → entraîne).
 
 ```sh
 git clone https://github.com/Couldevlop/opencacao.git && cd opencacao
 export HF_TOKEN=hf_xxx                 # modèle de base Ministral (gated)
+nvidia-smi                             # vérifier le GPU (mémoire) et la version CUDA
+python -c "import torch; print(torch.__version__, torch.cuda.is_available())"  # 2.8.x, True
 # Transférer les corpus PRIVÉS (depuis ton PC) :
 #   runpodctl send corpus/corpus_cure.jsonl ; corpus/corpus_cacao_rag.jsonl
 ```
