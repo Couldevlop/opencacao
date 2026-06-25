@@ -64,8 +64,7 @@ def test_question_informationnelle_repond_directement() -> None:
         is None
     )
     assert (
-        clarification.analyser("Comment reconnaître la pourriture brune ?", historique=None)
-        is None
+        clarification.analyser("Comment reconnaître la pourriture brune ?", historique=None) is None
     )
 
 
