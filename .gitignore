@@ -65,3 +65,13 @@ docker-compose.local.yml
 
 # Notes d'exécution sur pod GPU (peut contenir des jetons) — non versionné
 .run_on_pod.md
+
+# Documents stratégiques & business — CONFIDENTIELS, JAMAIS versionnés (dépôt
+# public). Conservés en local uniquement ; régénérables via leurs scripts.
+docs/OpenLab_Opportunites_IA_Cote_Ivoire.docx
+docs/OpenCacao_V3_Backlog_Agile.xlsx
+docs/OpenLab_Consulting_Business_Plan.docx
+docs/img_bp/
+scripts/build_roadmap_v3.py
+scripts/gen_bp_assets.py
+scripts/build_businessplan.py
