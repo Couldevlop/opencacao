@@ -47,9 +47,16 @@ LORA_TARGET_MODULES = (
     r".*language_model.*\.(q_proj|k_proj|v_proj|o_proj|gate_proj|up_proj|down_proj)"
 )
 
+# Hyperparamètres par défaut de la recette de référence (cf. F4 : la recette
+# pilotée par l'éval balaie ces valeurs ; ces constantes restent la valeur
+# nominale d'un entraînement unique).
+DEFAUT_EPOCHS = 1
+DEFAUT_LORA_R = 16
+DEFAUT_LORA_ALPHA = 32
+DEFAUT_LEARNING_RATE = 2e-4
+DEFAUT_MAX_SEQ_LEN = 1024
+
 LORA_CONFIG = {
-    "r": 16,
-    "lora_alpha": 32,
     "lora_dropout": 0.05,
     "target_modules": LORA_TARGET_MODULES,
     "bias": "none",
@@ -57,10 +64,8 @@ LORA_CONFIG = {
 }
 
 TRAINING_ARGS = {
-    "num_train_epochs": 1,
     "per_device_train_batch_size": 4,
     "gradient_accumulation_steps": 4,
-    "learning_rate": 2e-4,
     "warmup_ratio": 0.03,
     "lr_scheduler_type": "cosine",
     "logging_steps": 10,
@@ -78,7 +83,9 @@ TRAINING_ARGS = {
 }
 
 
-def _format_exemple(exemple: dict[str, str], tokenizer: AutoTokenizer) -> dict[str, str]:
+def _format_exemple(
+    exemple: dict[str, str], tokenizer: AutoTokenizer
+) -> dict[str, str]:
     """Met une paire au format de chat du modèle via son propre template.
 
     Utilise ``tokenizer.apply_chat_template`` plutôt qu'un format codé en dur,
@@ -102,7 +109,17 @@ def _format_exemple(exemple: dict[str, str], tokenizer: AutoTokenizer) -> dict[s
     return {"text": texte}
 
 
-def entrainer(corpus: list[Path], output: Path, max_steps: int = -1) -> None:
+def entrainer(
+    corpus: list[Path],
+    output: Path,
+    max_steps: int = -1,
+    *,
+    epochs: int = DEFAUT_EPOCHS,
+    lora_r: int = DEFAUT_LORA_R,
+    lora_alpha: int = DEFAUT_LORA_ALPHA,
+    learning_rate: float = DEFAUT_LEARNING_RATE,
+    max_seq_len: int = DEFAUT_MAX_SEQ_LEN,
+) -> None:
     """Lance le fine-tuning LoRA et écrit l'adaptateur dans ``output``.
 
     Args:
@@ -110,6 +127,11 @@ def entrainer(corpus: list[Path], output: Path, max_steps: int = -1) -> None:
         output: Dossier de sortie de l'adaptateur LoRA.
         max_steps: Si > 0, plafonne le nombre de pas (smoke-test rapide) ;
             -1 (défaut) entraîne sur le nombre d'epochs configuré.
+        epochs: Nombre d'epochs (recette F4 : 1/2/3).
+        lora_r: Rang de la décomposition LoRA (recette F4 : 16/32/64).
+        lora_alpha: Facteur d'échelle LoRA (convention : 2·rang).
+        learning_rate: Taux d'apprentissage (recette F4).
+        max_seq_len: Longueur de séquence max au SFT (recette F4 : 1024→1536).
     """
     quantization = BitsAndBytesConfig(
         load_in_4bit=True,
@@ -131,7 +153,9 @@ def entrainer(corpus: list[Path], output: Path, max_steps: int = -1) -> None:
         dtype=torch.bfloat16,
     )
     model = prepare_model_for_kbit_training(model)
-    model = get_peft_model(model, LoraConfig(**LORA_CONFIG))
+    model = get_peft_model(
+        model, LoraConfig(r=lora_r, lora_alpha=lora_alpha, **LORA_CONFIG)
+    )
     model.print_trainable_parameters()
 
     dataset = load_dataset("json", data_files=[str(c) for c in corpus], split="train")
@@ -143,7 +167,9 @@ def entrainer(corpus: list[Path], output: Path, max_steps: int = -1) -> None:
     sft_config = SFTConfig(
         output_dir=str(output),
         dataset_text_field="text",
-        max_length=1024,
+        max_length=max_seq_len,
+        num_train_epochs=epochs,
+        learning_rate=learning_rate,
         # packing désactivé : sans Flash-Attention (indisponible sur ce stack
         # CUDA 13 / torch 2.11), le packing provoque une cross-contamination de
         # l'attention entre paires -> dégrade la qualité. Le collateur padde
@@ -178,10 +204,50 @@ def main() -> None:
         default=-1,
         help="Plafond de pas (>0 = smoke-test) ; -1 utilise les epochs.",
     )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=DEFAUT_EPOCHS,
+        help="Nombre d'epochs (F4 : 1/2/3).",
+    )
+    parser.add_argument(
+        "--lora-r", type=int, default=DEFAUT_LORA_R, help="Rang LoRA (F4 : 16/32/64)."
+    )
+    parser.add_argument(
+        "--lora-alpha",
+        type=int,
+        default=None,
+        help="Échelle LoRA (défaut : 2·rang).",
+    )
+    parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=DEFAUT_LEARNING_RATE,
+        help="Taux d'apprentissage.",
+    )
+    parser.add_argument(
+        "--max-seq-len",
+        type=int,
+        default=DEFAUT_MAX_SEQ_LEN,
+        help="Longueur de séquence max au SFT (F4 : 1024→1536).",
+    )
     args = parser.parse_args()
 
+    # Convention : alpha = 2·rang quand il n'est pas fixé explicitement (préserve
+    # l'échelle effective lorsqu'on balaie le rang dans la recette F4).
+    lora_alpha = args.lora_alpha if args.lora_alpha is not None else 2 * args.lora_r
+
     args.output.mkdir(parents=True, exist_ok=True)
-    entrainer(args.corpus, args.output, max_steps=args.max_steps)
+    entrainer(
+        args.corpus,
+        args.output,
+        max_steps=args.max_steps,
+        epochs=args.epochs,
+        lora_r=args.lora_r,
+        lora_alpha=lora_alpha,
+        learning_rate=args.learning_rate,
+        max_seq_len=args.max_seq_len,
+    )
 
 
 if __name__ == "__main__":
