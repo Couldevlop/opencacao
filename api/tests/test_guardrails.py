@@ -60,9 +60,10 @@ def test_questions_legitimes_passent(question: str) -> None:
     assert guardrails.evaluer(question) is None
 
 
-def test_culture_connexe_autorisee() -> None:
-    """Une question sur une culture connexe (anacarde) reste dans le périmètre."""
-    assert guardrails.evaluer("Comment entretenir mes anacardiers en saison sèche ?") is None
+def test_autre_culture_refusee() -> None:
+    """Cacao UNIQUEMENT : une autre culture (anacarde) est désormais refusée."""
+    refus = guardrails.evaluer("Comment entretenir mes anacardiers en saison sèche ?")
+    assert refus is not None and refus.categorie is CategorieRefus.HORS_FILIERE
 
 
 # --- Couverture adversariale élargie (garde-fous impeccables) ---
@@ -113,15 +114,27 @@ def test_hors_filiere_variantes_refusees(question: str) -> None:
 @pytest.mark.parametrize(
     "question",
     [
-        "Comment cultiver des tomates en saison sèche ?",  # vivrier toléré
-        "Quel est le bon moment pour planter l'igname ?",  # vivrier toléré
-        "Comment associer le riz à ma jeune cacaoyère ?",  # vivrier + cacao
-        "Quel est le prix du cacao cette campagne ?",  # « prix » NE doit pas matcher « riz »
-        "Comment entretenir mes anacardiers ?",  # culture connexe
+        "Comment cultiver des tomates en saison sèche ?",  # vivrier -> hors champ
+        "Quel est le bon moment pour planter l'igname ?",  # vivrier -> hors champ
+        "Comment cultiver le maïs ?",  # vivrier -> hors champ
+        "Comment entretenir mes anacardiers ?",  # anacarde -> hors champ
     ],
 )
-def test_vivrier_et_connexes_non_refuses(question: str) -> None:
-    """Le vivrier et les cultures connexes sont tolérés (pas de faux refus)."""
+def test_autres_cultures_refusees(question: str) -> None:
+    """Cacao UNIQUEMENT : vivrier et anacarde sont redirigés (hors-filière)."""
+    assert guardrails.evaluer(question).categorie is CategorieRefus.HORS_FILIERE
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Comment associer le riz à ma jeune cacaoyère ?",  # autre culture MAIS cacao présent
+        "Quel ombrage choisir pour ma plantation de cacao ?",  # conduite du verger
+        "Quel est le prix du cacao cette campagne ?",  # « prix » NE doit pas matcher « riz »
+    ],
+)
+def test_cacao_meme_avec_autre_culture_non_refuse(question: str) -> None:
+    """Une question ancrée sur le cacao reste traitée, même si une autre culture est citée."""
     assert guardrails.evaluer(question) is None
 
 

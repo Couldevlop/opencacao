@@ -27,7 +27,7 @@ Flux requête : client → api (garde-fous, cache) → inference interne → ré
 
 ## Garde-fous métier — non négociables
 
-`api/app/services/guardrails.py` doit **refuser systématiquement** et rediriger vers ANADER : dosages phytosanitaires précis, demandes médicales/vétérinaires, identification de maladie sur image sans agent, hors-filière cacao (anacarde/vivrier tolérés). Un test par règle de refus est obligatoire. **Ne jamais générer de dosages phytosanitaires, même en exemple de test.** Chaque réponse modèle inclut le disclaimer ANADER.
+`api/app/services/guardrails.py` doit **refuser systématiquement** et rediriger vers ANADER : dosages phytosanitaires précis, demandes médicales/vétérinaires, identification de maladie sur image sans agent, **toute culture autre que le cacao** (décision Waopron juin 2026 : le vivrier — maïs, manioc, igname, riz… — et l'anacarde ne sont **plus** tolérés et sont redirigés vers l'ANADER ; seuls l'ombrage / les cultures associées **au service d'une plantation de cacao** restent acceptables). Un test par règle de refus est obligatoire. **Ne jamais générer de dosages phytosanitaires, même en exemple de test.** Chaque réponse modèle inclut le disclaimer ANADER.
 
 ## Commandes (cibles Makefile à créer — voir spec §9.5)
 

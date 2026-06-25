@@ -33,9 +33,9 @@ REFUS_DIAGNOSTIC_IMAGE = (
 )
 
 REFUS_HORS_FILIERE = (
-    "Je suis spécialisé dans la filière cacao (et les cultures connexes comme "
-    "l'anacarde et le vivrier). Votre question semble en dehors de ce domaine, "
-    "je préfère ne pas y répondre pour éviter de vous induire en erreur."
+    "Je suis spécialisé UNIQUEMENT dans la filière cacao. Votre question porte sur "
+    "une autre culture ou un autre domaine ; pour cela, votre agent ANADER local "
+    "couvre l'ensemble des cultures de votre région et pourra vous orienter."
 )
 
 _REFUS_MESSAGES: dict[CategorieRefus, str] = {
@@ -158,18 +158,27 @@ _TERMES_IMAGE = (
     "identifie sur",
 )
 
-# La filière cacao et les cultures explicitement connexes (anacarde, vivrier)
-# restent dans le périmètre toléré (CLAUDE §4.3).
+# Périmètre STRICTEMENT cacao (décision Waopron, juin 2026) : toute autre culture,
+# y compris le vivrier et l'anacarde, est désormais hors champ et redirigée vers
+# l'ANADER. On garde des termes propres au cacao et à la conduite du verger (les
+# mentions du cacaoyer doivent toujours être reconnues, même au pluriel/féminin).
 _TERMES_FILIERE = (
     "cacao",
     "cacaoyer",
+    "cacaoyere",
+    "cacaoyeres",
+    "cacaoyers",
     "cabosse",
+    "cabosses",
     "feve",
+    "feves",
     "fermentation",
     "swollen shoot",
     "cssv",
     "miride",
+    "mirides",
     "capside",
+    "capsides",
     "phytophthora",
     "pourriture brune",
     "verger",
@@ -178,22 +187,13 @@ _TERMES_FILIERE = (
     "sechage",
     "recolte",
     "plantation",
-    "anacarde",
-    "vivrier",
-    "igname",
-    "banane",
-    "plantain",
-    "taro",
-    "manioc",
-    "tomate",
-    "gombo",
-    "piment",
-    "riz",
     "anader",
 )
 
-# Indices forts qu'une question vise une autre filière ou un tout autre domaine
-# (ni cacao, ni vivrier, ni anacarde).
+# Indices forts qu'une question vise une AUTRE culture (vivrier, anacarde, autres
+# filières) ou un tout autre domaine. Le refus hors-filière ne se déclenche que si
+# aucun ancrage cacao n'est présent (cf. evaluer) : une question d'ombrage ou
+# d'association mentionnant le cacao reste donc traitée.
 _TERMES_HORS_FILIERE = (
     "bitcoin",
     "crypto",
@@ -216,6 +216,40 @@ _TERMES_HORS_FILIERE = (
     "elevage",
     "poisson",
     "aquaculture",
+    # Autres cultures (vivrier, anacarde, fruitiers) — hors champ cacao.
+    "mais",
+    "manioc",
+    "igname",
+    "ignames",
+    "banane",
+    "bananes",
+    "plantain",
+    "plantains",
+    "taro",
+    "tomate",
+    "tomates",
+    "gombo",
+    "gombos",
+    "piment",
+    "piments",
+    "riz",
+    "arachide",
+    "arachides",
+    "mil",
+    "sorgho",
+    "ananas",
+    "mangue",
+    "mangues",
+    "manguier",
+    "manguiers",
+    "anacarde",
+    "anacardes",
+    "anacardier",
+    "anacardiers",
+    "vivrier",
+    "vivriere",
+    "vivrieres",
+    "vivriers",
 )
 
 
