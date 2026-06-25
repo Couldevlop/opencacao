@@ -155,9 +155,7 @@ def _repondre_directement(texte: str) -> bool:
     if any(m in texte for m in _INFORMATIONNEL):
         return True
     # Swollen shoot : rameaux/tiges gonflés (souvent avec jaunissement).
-    return "gonfl" in texte and any(
-        p in texte for p in ("rameau", "tige", "jauniss", "pousse")
-    )
+    return "gonfl" in texte and any(p in texte for p in ("rameau", "tige", "jauniss", "pousse"))
 
 
 def _detecter(texte: str) -> str | None:
