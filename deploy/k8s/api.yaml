@@ -31,6 +31,13 @@ data:
   DATASET_DIR: "/data"
   # RAG activé : embeddings (service interne) + index /data/rag_index.jsonl.
   RAG_ENABLED: "true"
+  # Recall RAG : avec un corpus enrichi (FIRCA, ICCO, manuels…), on élargit un peu
+  # la récupération (3 -> 5 passages) et on abaisse le seuil de similarité
+  # (0,62 -> 0,55) pour faire remonter les documents pertinents sur des questions
+  # moins littérales. À recalibrer si du bruit apparaît (cf. levier F9 : embeddings
+  # plus forts + reranking).
+  RAG_TOP_K: "5"
+  RAG_MIN_SIMILARITE: "0.55"
   # Analytique des visites + géolocalisation pays (base GeoLite2 locale, IP non stockée).
   LOG_VISITES: "true"
   GEOIP_DB_PATH: "/models/GeoLite2-Country.mmdb"
