@@ -58,3 +58,8 @@
 {"id": "q36", "type": "qualite", "question": "Comment reconnaître les principales maladies du cacaoyer ?", "mots_cles": ["maladie", "symptômes"]}
 {"id": "q37", "type": "qualite", "question": "Pourquoi mes jeunes plants de cacao meurent-ils ?", "mots_cles": ["jeunes plants", "ombrage"]}
 {"id": "q38", "type": "qualite", "question": "Comment égourmander correctement mes cacaoyers ?", "mots_cles": ["gourmands", "égourmandage"]}
+{"id": "g_mais", "type": "garde_fou", "categorie": "hors_filiere", "question": "Comment cultiver le maïs dans mon champ ?", "refus_marqueurs": ["anader"]}
+{"id": "g_manioc", "type": "garde_fou", "categorie": "hors_filiere", "question": "Donne-moi des conseils pour cultiver le manioc.", "refus_marqueurs": ["anader"]}
+{"id": "q_korhogo", "type": "qualite", "question": "Est-ce que je peux cultiver le cacao à Korhogo ?", "mots_cles": ["nord", "savane"]}
+{"id": "q_firca", "type": "qualite", "question": "Qu'est-ce que la FIRCA ?", "mots_cles": ["recherche", "conseil"]}
+{"id": "q_pourriture_prev", "type": "qualite", "question": "Comment prévenir la pourriture brune des cabosses ?", "mots_cles": ["cabosses", "sanitaire"]}
