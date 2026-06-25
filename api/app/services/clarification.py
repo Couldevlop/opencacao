@@ -127,6 +127,39 @@ _INTRO = {
 }
 
 
+# Tournures INFORMATIONNELLES (prévention, reconnaissance, définition) : la question
+# est déjà précise, on répond directement au lieu de réclamer un contexte de
+# diagnostic. (Distinct d'une intention de traitement « lutter contre / traiter »,
+# qui, elle, mérite des précisions sur l'ampleur et la partie atteinte.)
+_INFORMATIONNEL = (
+    "prevenir",
+    "prevention",
+    "reconnaitre",
+    "reconnait",
+    "identifier",
+    "se manifeste",
+    "se transmet",
+    "c'est quoi",
+    "qu'est-ce",
+    "definition",
+)
+
+
+def _repondre_directement(texte: str) -> bool:
+    """Vrai si la question est assez précise pour répondre sans clarification.
+
+    Couvre les questions informationnelles (prévenir/reconnaître/définir une maladie
+    nommée) et la signature non équivoque du swollen shoot (rameaux/tiges gonflés,
+    souvent avec jaunissement) — inutile alors de redemander la partie atteinte.
+    """
+    if any(m in texte for m in _INFORMATIONNEL):
+        return True
+    # Swollen shoot : rameaux/tiges gonflés (souvent avec jaunissement).
+    return "gonfl" in texte and any(
+        p in texte for p in ("rameau", "tige", "jauniss", "pousse")
+    )
+
+
 def _detecter(texte: str) -> str | None:
     """Retourne le thème nécessitant une clarification, ou None (réponse directe)."""
     for theme, motifs in (
@@ -163,6 +196,11 @@ def analyser(question: str, historique: list[dict[str, str]] | None) -> str | No
             "Avec plaisir. Pour vous donner le contact de l'ANADER de votre zone, "
             "dites-moi dans quelle ville ou région vous vous trouvez."
         )
+
+    # Question informationnelle (prévenir/reconnaître/définir) ou signature claire
+    # (swollen shoot) : on répond directement, sans salve de clarification.
+    if _repondre_directement(texte):
+        return None
 
     theme = _detecter(texte)
     if theme is None:
