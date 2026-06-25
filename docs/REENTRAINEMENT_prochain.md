@@ -39,8 +39,11 @@ git clone https://github.com/Couldevlop/opencacao.git && cd opencacao
 export HF_TOKEN=hf_xxx                 # modèle de base Ministral (gated)
 nvidia-smi                             # vérifier le GPU (mémoire) et la version CUDA
 python -c "import torch; print(torch.__version__, torch.cuda.is_available())"  # 2.8.x, True
-# Transférer les corpus PRIVÉS (depuis ton PC) :
-#   runpodctl send corpus/corpus_cure.jsonl ; corpus/corpus_cacao_rag.jsonl
+# Transférer les corpus PRIVÉS du PC vers le pod (binaire runpodctl git-ignoré ; sur
+# le PC en git bash, le préfixer par ./ s'il n'est pas dans le PATH) :
+#   PC  :  ./runpodctl send corpus/corpus_cure.jsonl   ->  copie le code affiché
+#   pod :  runpodctl receive <code>
+#   (idem pour corpus/corpus_cacao_rag.jsonl)
 ```
 
 > 🛡️ **Souveraineté — AUCUNE API tierce.** La curation (F11) et le juge d'éval optionnel
@@ -55,8 +58,11 @@ python -c "import torch; print(torch.__version__, torch.cuda.is_available())"  #
 # Refus à jour (idempotent) :
 python scripts/build_refusals.py                       # -> corpus_refus.jsonl (415+)
 # Curation SOUVERAINE du journal prod rapatrié (F11) :
-kubectl -n opencacao cp <pod-api>:/data/interactions.jsonl ./journal/interactions.jsonl
-kubectl -n opencacao cp <pod-api>:/data/feedback.jsonl     ./journal/feedback.jsonl
+mkdir -p journal
+# Le nom du pod api change à chaque déploiement -> on le résout dynamiquement :
+POD=$(kubectl -n opencacao get pod -l app=api -o jsonpath='{.items[0].metadata.name}')
+kubectl -n opencacao cp "$POD:/data/interactions.jsonl" ./journal/interactions.jsonl
+kubectl -n opencacao cp "$POD:/data/feedback.jsonl"     ./journal/feedback.jsonl
 # 1) sers un MAÎTRE OUVERT auto-hébergé (aucune API tierce), comme pour F2 :
 CLE=$(python -c 'import secrets; print(secrets.token_urlsafe(24))')
 python -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-72B-Instruct-AWQ \
@@ -123,7 +129,7 @@ Le modèle se déploie **différemment** de l'image API (qui passe par GHCR/roll
 
 ```sh
 runpodctl send models/opencacao-7b-Q4_K_M.gguf     # sur le pod -> note le code
-runpodctl receive <code>                           # sur ton PC
+./runpodctl receive <code>                         # sur ton PC (git bash : préfixe ./)
 export KUBECONFIG=kubeconfig-hetzner.yaml
 bash deploy/redeploy_model.sh models/opencacao-8b-Q4_K_M.gguf 1.1.0
 ```
