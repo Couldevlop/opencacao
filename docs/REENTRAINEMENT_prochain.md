@@ -14,7 +14,7 @@ lui-même** — c'est l'objet de ce ré-entraînement. Pour le flux générique,
 | **Cacao uniquement** | refus + corpus | Rediriger vivrier/anacarde vers l'ANADER (plus « tolérés ») |
 | **Zones non cacaoyères** | `build_refusals.py` (zone_non_cacao) | Korhogo, Katiola, Ferké… = savane du Nord → **pas une zone cacao** ; demander la ville + proposer le contact ANADER |
 | **Définition FIRCA correcte** | `corpus/corpus_cure.jsonl` (F11) | FIRCA = **Fonds Interprofessionnel pour la Recherche et le Conseil Agricoles**, **ivoirien** (≠ « organisation internationale ») |
-| **Curation du journal prod** | `corpus_cure.jsonl` via `training/scripts/curate_journal.py` (F11) | Corrections issues des 👎 réels |
+| **Curation du journal prod** | `corpus_cure.jsonl` via `training/scripts/curate_journal.py` (F11), **maître ouvert auto-hébergé** | Corrections issues des 👎 réels |
 
 > ⚠️ **`corpus/corpus_cure.jsonl` est PRIVÉ et non versionné** (dépôt public). Il doit
 > être présent sur le pod : transfère-le via `runpodctl send`/`receive`, ne compte pas
@@ -25,32 +25,47 @@ lui-même** — c'est l'objet de ce ré-entraînement. Pour le flux générique,
 ```sh
 git clone https://github.com/Couldevlop/opencacao.git && cd opencacao
 export HF_TOKEN=hf_xxx                 # modèle de base Ministral (gated)
-export ZAI_API_KEY=...                 # juge GLM-5.2 (éval F1 + curation F11)
 # Transférer les corpus PRIVÉS (depuis ton PC) :
 #   runpodctl send corpus/corpus_cure.jsonl ; corpus/corpus_cacao_rag.jsonl
 ```
+
+> 🛡️ **Souveraineté — AUCUNE API tierce.** La curation (F11) et le juge d'éval optionnel
+> utilisent un **maître OUVERT auto-hébergé** servi via vLLM sur le pod
+> (`Qwen/Qwen2.5-72B-Instruct-AWQ` sur GPU ≥ 48 Go, ou `Qwen2.5-32B-Instruct-AWQ` sur
+> 24 Go) — exactement comme la distillation F2. **Pas de GLM-5.2/Z.ai ni aucun service
+> externe.** L'éval de base (§4/§6) est de toute façon **100 % déterministe** (sans LLM).
 
 ## 3. (Optionnel mais recommandé) Régénérer / compléter le corpus
 
 ```sh
 # Refus à jour (idempotent) :
 python scripts/build_refusals.py                       # -> corpus_refus.jsonl (415+)
-# Curation du journal prod rapatrié (F11, ajoute au corpus_cure) :
+# Curation SOUVERAINE du journal prod rapatrié (F11) :
 kubectl -n opencacao cp <pod-api>:/data/interactions.jsonl ./journal/interactions.jsonl
 kubectl -n opencacao cp <pod-api>:/data/feedback.jsonl     ./journal/feedback.jsonl
-ZAI_API_KEY=... python training/scripts/curate_journal.py --journal ./journal \
+# 1) sers un MAÎTRE OUVERT auto-hébergé (aucune API tierce), comme pour F2 :
+CLE=$(python -c 'import secrets; print(secrets.token_urlsafe(24))')
+python -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-72B-Instruct-AWQ \
+    --served-model-name maitre --quantization awq --api-key "$CLE" --port 8001 \
+    --gpu-memory-utilization 0.92 > /tmp/maitre.log 2>&1 &
+# 2) cure en pointant le curateur sur CE maître local :
+CORPUS_LLM_API_KEY="$CLE" python training/scripts/curate_journal.py --journal ./journal \
+    --juge-endpoint http://localhost:8001 --juge-model maitre \
     --sortie corpus/corpus_cure.jsonl
+# 3) arrête le maître pour libérer le GPU avant l'entraînement.
 ```
 
 ## 4. Mesurer la BASELINE (avant)
 
 Sers le GGUF **actuel** sur :8000, puis lance l'éval **étendue** (65 cas, dont les 5
-nouveaux : maïs, manioc, Korhogo, FIRCA, prévention pourriture brune) :
+nouveaux : maïs, manioc, Korhogo, FIRCA, prévention pourriture brune) — **100 %
+souveraine** (heuristiques déterministes : garde-fous, qualité, latence ; aucun LLM) :
 
 ```sh
-ZAI_API_KEY=... python training/scripts/evaluate.py \
-    --endpoint http://localhost:8000 --model opencacao-8b --juge \
-    --rapport eval_avant.json
+python training/scripts/evaluate.py \
+    --endpoint http://localhost:8000 --model opencacao-8b --rapport eval_avant.json
+# (Optionnel — juge LLM SOUVERAIN : seulement si un maître OUVERT est servi à côté,
+#  ajoute « --juge --juge-endpoint http://localhost:8001 --juge-model maitre ». Jamais Z.ai.)
 ```
 Les nouveaux cas **échoueront probablement** (le modèle n'a pas encore appris) — c'est
 la mesure du gap à combler.
@@ -58,9 +73,10 @@ la mesure du gap à combler.
 ## 5. Entraîner (recette pilotée par l'éval, F4)
 
 ```sh
-export HF_TOKEN=hf_xxx ; export ZAI_API_KEY=...
+export HF_TOKEN=hf_xxx
 bash training/scripts/pod_f4_sweep.sh          # assemble + sweep + sélection + GGUF
 # (ou pod_train.sh pour un entraînement simple)
+# Sweep souverain : sans maître servi, la sélection s'appuie sur l'éval déterministe.
 ```
 `assemble_corpus.py` combine automatiquement RAG + démarrage + **refus** + **cure**,
 valide (aucun dosage, source citée) et déduplique.
@@ -68,8 +84,8 @@ valide (aucun dosage, source citée) et déduplique.
 ## 6. Porte d'acceptation (F1) — NE DÉPLOYER QUE SI
 
 ```sh
-ZAI_API_KEY=... python training/scripts/evaluate.py \
-    --endpoint http://localhost:8000 --model opencacao-8b --juge \
+python training/scripts/evaluate.py \
+    --endpoint http://localhost:8000 --model opencacao-8b \
     --min-garde-fou 1.0 --rapport eval_apres.json
 ```
 - ✅ **garde-fous = 100 %** ET **0 fuite de dosage** (non négociable) ;
@@ -113,5 +129,6 @@ python training/scripts/evaluate.py --endpoint http://localhost:8000 --model ope
 - Les correctifs **code** (cacao-only garde-fous, clarification, sources FIRCA/ICCO,
   reranking RAG, alternance des rôles, cache durci) sont **déjà en prod** (`v0.6.21`) —
   ce ré-entraînement ancre les apports **modèle/corpus** par-dessus.
-- Souveraineté : maître (GLM-5.2/Qwen) et juge **offline uniquement**, jamais en prod.
+- Souveraineté : maître/juge = modèle **OUVERT auto-hébergé** (Qwen-AWQ via vLLM),
+  **offline uniquement**, jamais en prod et **sans aucune API tierce** (pas de GLM-5.2/Z.ai).
 - Le corpus reste **privé** ; ne jamais le committer sur le dépôt public.
