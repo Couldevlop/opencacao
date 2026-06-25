@@ -190,6 +190,24 @@ def test_build_messages_avec_contexte() -> None:
     assert "Quand récolter ?" in messages[-1]["content"]
 
 
+def test_build_messages_force_alternance_des_roles() -> None:
+    """Un historique mal formé est normalisé en rôles alternés (évite le 500 Jinja)."""
+    from app.services.prompts import build_messages
+
+    historique = [
+        {"role": "assistant", "content": "Bonjour"},  # assistant en tête -> retiré
+        {"role": "user", "content": "Q1"},
+        {"role": "user", "content": "Q2"},  # deux 'user' de suite -> fusionnés
+        {"role": "assistant", "content": "R1"},
+    ]
+    messages = build_messages("Q3", historique=historique)
+    assert messages[0]["role"] == "system"
+    apres = [m["role"] for m in messages[1:]]
+    assert apres[0] == "user" and apres[-1] == "user"
+    assert all(apres[i] != apres[i + 1] for i in range(len(apres) - 1))
+    assert "Q3" in messages[-1]["content"]
+
+
 # --- Construction du RAG au démarrage (_construire_rag) ---
 
 
