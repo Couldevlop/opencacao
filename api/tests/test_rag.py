@@ -5,7 +5,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from app.services.rag import Passage, RagIndex, RagRecuperateur, formater_contexte
+from app.services.rag import (
+    Passage,
+    RagIndex,
+    RagRecuperateur,
+    _mots_cles,
+    formater_contexte,
+    recouvrement_lexical,
+    reranker,
+)
 
 
 def _ecrire_index(chemin: Path) -> None:
@@ -59,6 +67,69 @@ def test_rechercher_respecte_le_seuil(tmp_path: Path) -> None:
     # Vecteur orthogonal à tout -> aucune similarité >= seuil élevé.
     assert index.rechercher([0.0, 0.0, 0.0], k=3, seuil=0.5) == []
     assert index.rechercher([1.0, 0.0, 0.0], k=3, seuil=0.99)[0].source == "CNRA"
+
+
+# --- Reranking (F9) ---
+
+
+def test_recouvrement_lexical() -> None:
+    """Le recouvrement = fraction des mots de la question présents dans le texte."""
+    mots = _mots_cles("rapport annuel de la FIRCA")  # {rapport, annuel, firca}
+    assert recouvrement_lexical(mots, "le rapport annuel de la FIRCA 2024") == 1.0
+    assert recouvrement_lexical(mots, "séchage des fèves") == 0.0
+    assert recouvrement_lexical(set(), "n'importe") == 0.0
+
+
+def test_reranker_voie_lexicale_fait_remonter_le_bon_document() -> None:
+    """Un doc au score dense sous le seuil mais au fort recouvrement lexical remonte.
+
+    Cas réel : le nom de source contient « firca » et la question parle de la FIRCA
+    -> le rapport remonte devant un passage générique mieux noté en dense.
+    """
+    candidats = [
+        Passage("Conseils généraux sur le séchage.", "ANADER", 0.60),
+        Passage(
+            "Le rapport annuel présente les projets de recherche cacao.",
+            "firca-rapport-annuel-firca-2024.pdf",
+            0.50,
+        ),
+    ]
+    retenus = reranker(
+        "Que dit le rapport annuel de la FIRCA ?",
+        candidats,
+        top_k=1,
+        poids_lexical=0.35,
+        seuil_dense=0.55,
+        seuil_lexical=0.5,
+    )
+    assert retenus and "firca" in retenus[0].source
+
+
+def test_reranker_filtre_les_non_eligibles() -> None:
+    """Un passage faible en dense ET en lexical est écarté."""
+    candidats = [Passage("Sujet sans rapport.", "X", 0.40)]
+    assert (
+        reranker(
+            "Que dit le rapport de la FIRCA ?",
+            candidats,
+            top_k=3,
+            poids_lexical=0.35,
+            seuil_dense=0.55,
+            seuil_lexical=0.5,
+        )
+        == []
+    )
+
+
+def test_reranker_respecte_top_k() -> None:
+    """Le reranking ne renvoie jamais plus de top_k passages."""
+    candidats = [Passage(f"texte {i}", "ANADER", 0.9) for i in range(5)]
+    assert (
+        len(
+            reranker("q", candidats, top_k=2, poids_lexical=0.3, seuil_dense=0.5, seuil_lexical=0.5)
+        )
+        == 2
+    )
 
 
 def test_formater_contexte() -> None:

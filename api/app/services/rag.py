@@ -9,6 +9,8 @@ démarrage de l'API.
 from __future__ import annotations
 
 import json
+import re
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,6 +20,34 @@ from app.core.logging import get_logger
 from app.services.embeddings import EmbeddingsClient
 
 logger = get_logger(__name__)
+
+# Mots vides français (ignorés au recouvrement lexical du reranking).
+_MOTS_VIDES = frozenset(
+    "le la les un une des du de da au aux et ou ni car mais donc or que qui quoi dont "
+    "ce cet cette ces mon ma mes ton ta tes son sa ses notre nos votre vos leur leurs "
+    "a as ai est sont etre ete avec sans sous sur dans pour par en vers chez entre "
+    "comment quel quelle quels quelles pourquoi quand combien plus moins tres pas ne "
+    "je tu il elle nous vous ils elles on se sa".split()
+)
+_RE_MOT = re.compile(r"[a-z0-9]{3,}")
+
+
+def _sans_accents(texte: str) -> str:
+    """Minuscule sans accents (pour un appariement lexical robuste)."""
+    decompose = unicodedata.normalize("NFD", texte.lower())
+    return "".join(c for c in decompose if unicodedata.category(c) != "Mn")
+
+
+def _mots_cles(texte: str) -> set[str]:
+    """Ensemble des mots significatifs d'un texte (sans accents, sans mots vides)."""
+    return {m for m in _RE_MOT.findall(_sans_accents(texte)) if m not in _MOTS_VIDES}
+
+
+def recouvrement_lexical(mots_question: set[str], texte: str) -> float:
+    """Fraction des mots de la question présents dans le texte (0 à 1)."""
+    if not mots_question:
+        return 0.0
+    return len(mots_question & _mots_cles(texte)) / len(mots_question)
 
 
 @dataclass(frozen=True)
@@ -78,21 +108,62 @@ class RagIndex:
 
     def rechercher(self, vecteur: list[float], k: int, seuil: float) -> list[Passage]:
         """Retourne les k passages les plus proches dont la similarité dépasse le seuil."""
+        return [p for p in self.candidats(vecteur, k) if p.score >= seuil]
+
+    def candidats(self, vecteur: list[float], n: int) -> list[Passage]:
+        """Retourne les n passages les plus proches par cosinus, SANS filtre de seuil.
+
+        Sert de vivier au reranking (F9) : on récupère large par similarité dense,
+        puis on réordonne en tenant compte du recouvrement lexical.
+        """
         requete = np.asarray(vecteur, dtype=np.float32)
         norme = np.linalg.norm(requete)
         if norme == 0 or self._matrice.size == 0:
             return []
         requete = requete / norme
         scores = self._matrice @ requete
-        k = min(k, len(scores))
-        indices = np.argpartition(-scores, k - 1)[:k]
+        n = min(n, len(scores))
+        indices = np.argpartition(-scores, n - 1)[:n]
         indices = indices[np.argsort(-scores[indices])]
-        passages: list[Passage] = []
-        for i in indices:
-            score = float(scores[i])
-            if score >= seuil:
-                passages.append(Passage(self._textes[i], self._sources[i], score))
-        return passages
+        return [Passage(self._textes[i], self._sources[i], float(scores[i])) for i in indices]
+
+
+def reranker(
+    question: str,
+    candidats: list[Passage],
+    *,
+    top_k: int,
+    poids_lexical: float,
+    seuil_dense: float,
+    seuil_lexical: float,
+) -> list[Passage]:
+    """Réordonne des candidats par score fusionné (dense + recouvrement lexical).
+
+    Un passage est éligible si sa similarité dense atteint ``seuil_dense`` OU si son
+    recouvrement lexical atteint ``seuil_lexical`` — ce dernier fait remonter un
+    document littéralement pertinent (p. ex. dont le nom de source contient « firca »)
+    même quand l'embedding seul le classait trop bas. On garde les ``top_k`` meilleurs.
+
+    Args:
+        question: Question du producteur.
+        candidats: Passages récupérés par similarité dense (vivier).
+        top_k: Nombre de passages à conserver in fine.
+        poids_lexical: Poids du recouvrement lexical dans le score fusionné (0–1).
+        seuil_dense: Similarité dense minimale pour être éligible.
+        seuil_lexical: Recouvrement lexical minimal pour être éligible (voie de secours).
+
+    Returns:
+        Les passages retenus, du plus pertinent au moins pertinent.
+    """
+    mots_question = _mots_cles(question)
+    notes: list[tuple[float, Passage]] = []
+    for passage in candidats:
+        lexical = recouvrement_lexical(mots_question, f"{passage.texte} {passage.source}")
+        if passage.score >= seuil_dense or lexical >= seuil_lexical:
+            fusion = (1.0 - poids_lexical) * passage.score + poids_lexical * lexical
+            notes.append((fusion, passage))
+    notes.sort(key=lambda couple: -couple[0])
+    return [passage for _, passage in notes[:top_k]]
 
 
 def formater_contexte(passages: list[Passage]) -> str:
@@ -105,23 +176,58 @@ def formater_contexte(passages: list[Passage]) -> str:
 
 
 class RagRecuperateur:
-    """Vectorise la question, cherche dans l'index, et formate le contexte."""
+    """Vectorise la question, récupère un vivier, rerank, et formate le contexte."""
 
     def __init__(
-        self, embeddings: EmbeddingsClient, index: RagIndex, top_k: int, seuil: float
+        self,
+        embeddings: EmbeddingsClient,
+        index: RagIndex,
+        top_k: int,
+        seuil: float,
+        *,
+        candidats: int = 12,
+        poids_lexical: float = 0.35,
+        seuil_lexical: float = 0.5,
     ) -> None:
+        """Initialise le récupérateur RAG.
+
+        Args:
+            embeddings: Client d'embeddings.
+            index: Index vectoriel en mémoire.
+            top_k: Nombre de passages injectés in fine.
+            seuil: Similarité dense minimale (voie principale).
+            candidats: Taille du vivier récupéré par similarité dense avant reranking.
+            poids_lexical: Poids du recouvrement lexical dans le score fusionné.
+            seuil_lexical: Recouvrement lexical minimal (voie de secours du reranking).
+        """
         self._embeddings = embeddings
         self._index = index
         self._top_k = top_k
         self._seuil = seuil
+        self._candidats = max(candidats, top_k)
+        self._poids_lexical = poids_lexical
+        self._seuil_lexical = seuil_lexical
 
     async def contexte_pour(self, question: str) -> str | None:
         """Retourne le bloc de contexte pour la question, ou None si rien de pertinent."""
         vecteurs = await self._embeddings.embed([question])
         if not vecteurs:
             return None
-        passages = self._index.rechercher(vecteurs[0], self._top_k, self._seuil)
+        viviers = self._index.candidats(vecteurs[0], self._candidats)
+        passages = reranker(
+            question,
+            viviers,
+            top_k=self._top_k,
+            poids_lexical=self._poids_lexical,
+            seuil_dense=self._seuil,
+            seuil_lexical=self._seuil_lexical,
+        )
         if not passages:
             return None
-        logger.info("rag_contexte", passages=len(passages), meilleur=round(passages[0].score, 3))
+        logger.info(
+            "rag_contexte",
+            passages=len(passages),
+            meilleur=round(passages[0].score, 3),
+            viviers=len(viviers),
+        )
         return formater_contexte(passages)

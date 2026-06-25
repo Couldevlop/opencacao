@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     model_path: str = "/models/opencacao-8b"
     model_name: str = "opencacao-8b"
     model_version: str = "0.1.0"
+    # Version applicative (tag de l'image API). Incluse dans la clé de cache pour
+    # qu'un déploiement changeant le post-traitement (extraction de sources, RAG…)
+    # n'aille PAS resservir d'anciennes réponses. Fixée par le déploiement
+    # (roll-image.sh patche APP_VERSION dans la ConfigMap).
+    app_version: str = "dev"
 
     redis_url: str = "redis://redis:6379/0"
     rate_limit_per_min: int = 20
@@ -64,6 +69,14 @@ class Settings(BaseSettings):
     rag_top_k: int = 3
     # Similarité cosinus minimale pour qu'un passage soit injecté (sinon ignoré).
     rag_min_similarite: float = 0.62
+    # Reranking (F9) : on récupère un vivier large par similarité dense, puis on
+    # réordonne en fusionnant la similarité dense et le recouvrement lexical
+    # (mots de la question présents dans le passage ou son nom de source). Un fort
+    # recouvrement lexical (>= rag_seuil_lexical) fait remonter un document
+    # littéralement pertinent même si l'embedding seul le classait sous le seuil.
+    rag_candidats: int = 12
+    rag_poids_lexical: float = 0.35
+    rag_seuil_lexical: float = 0.5
 
     # Pré-chauffage du cache au démarrage : génère une fois les questions FAQ
     # (app.application.faq) en tâche de fond -> réponses instantanées ensuite.
