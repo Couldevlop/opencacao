@@ -75,6 +75,16 @@ AUTRES_CULTURES = [
     "l'hévéa", "le palmier à huile", "le café robusta", "la banane plantain",
     "le coton", "le cacao en serre hydroponique",
 ]
+# Localités clairement situées en zone de savane du Nord (districts des Savanes,
+# Bagoué, Poro, Tchologo, Hambol, Bounkani) : trop sèches pour le cacaoyer, qui
+# exige le climat humide de la zone forestière du Sud. NE JAMAIS conseiller du
+# cacao pour ces villes (cf. retours terrain Katiola / Korhogo).
+LOCALITES_NORD = [
+    "Korhogo", "Katiola", "Ferkessédougou", "Boundiali", "Odienné", "Tengréla",
+    "Bouna", "Dabakala", "Niakaramandougou", "Kong", "Ouangolodougou", "Minignan",
+]
+# Régions cacaoyères de référence (zone forestière du Sud / Sud-Ouest).
+ZONE_CACAO = "Gagnoa, Daloa, Soubré, San-Pédro, Aboisso, Abengourou"
 
 
 def _pair(instruction: str, output: str) -> dict:
@@ -226,6 +236,57 @@ def hors_filiere() -> list[dict]:
     return pairs
 
 
+def zone_non_cacao() -> list[dict]:
+    """Refus/correction pour une localité de savane du Nord, hors zone cacaoyère.
+
+    Couvre aussi le cas où la culture n'est pas précisée : on confirme d'abord que
+    l'on parle bien de cacao (et non de tomate ou autre), puis on indique que la
+    ville n'est pas une zone cacaoyère (retours terrain Katiola / Korhogo).
+    """
+    phrasings = [
+        "Qu'est-ce que tu peux m'apporter pour faire mon champ de cacao à {v} ?",
+        "Comment réussir ma plantation de cacao à {v} ?",
+        "Je veux cultiver le cacao à {v}, par où commencer ?",
+        "Mon terrain est à {v}, est-ce bon pour le cacao ?",
+        "Qu'est-ce que tu peux m'apporter pour faire mon champ à {v} ?",
+    ]
+    base = (
+        "Je suis un assistant dédié au cacao, donc je réponds pour une plantation de "
+        "cacao. Or {v} se situe dans la zone de savane du nord de la Côte d'Ivoire : le "
+        "climat y est trop sec et la saison des pluies trop courte pour le cacaoyer, qui "
+        "exige le climat chaud et humide de la zone forestière du Sud (" + ZONE_CACAO + "). "
+        "Je ne peux donc pas vous conseiller une plantation de cacao à {v}. Pour les "
+        "cultures réellement adaptées à votre région — ou s'il s'agit d'une autre culture "
+        "que le cacao —, votre agent ANADER local est le mieux placé pour vous orienter. "
+        "Sources : ANADER, Conseil du Café-Cacao."
+    )
+    pairs = []
+    for v in LOCALITES_NORD:
+        for ph in phrasings:
+            pairs.append(_pair(ph.format(v=v), base.format(v=v)))
+    return pairs
+
+
+def culture_ambigue() -> list[dict]:
+    """Clarification quand la culture n'est pas précisée (confirmer le cacao)."""
+    phrasings = [
+        "Qu'est-ce que tu peux m'apporter pour faire mon champ ?",
+        "Aide-moi à réussir mon champ.",
+        "Je veux me lancer dans l'agriculture, un conseil ?",
+        "Comment bien préparer mon terrain ?",
+        "Donne-moi des conseils pour ma plantation.",
+        "Par où commencer pour mon exploitation ?",
+    ]
+    base = (
+        "Je suis un assistant spécialisé dans le cacao. Parlez-vous bien d'une plantation "
+        "de cacao ? Si oui, précisez-moi votre projet et votre ville, et je vous aiderai. "
+        "S'il s'agit d'une autre culture (tomate, vivrier, anacarde…), je ne suis pas le "
+        "bon outil : votre agent ANADER local couvre l'ensemble des cultures de votre "
+        "région et saura vous orienter. Sources : ANADER."
+    )
+    return [_pair(ph, base) for ph in phrasings]
+
+
 GENERATEURS = {
     "dosage": dosage,
     "evasion": evasion,
@@ -233,6 +294,8 @@ GENERATEURS = {
     "veterinaire": veterinaire,
     "image": image,
     "hors_filiere": hors_filiere,
+    "zone_non_cacao": zone_non_cacao,
+    "culture_ambigue": culture_ambigue,
 }
 
 

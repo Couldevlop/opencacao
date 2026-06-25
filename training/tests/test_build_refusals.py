@@ -58,3 +58,18 @@ def test_filtrer_deduplique_contre_existant() -> None:
     cles = {_cle(p["instruction"]) for p in gardees}
     assert _cle(paires[0]["instruction"]) not in cles
     assert stats["doublons"] >= 1
+
+
+def test_villes_du_nord_ne_sont_pas_zone_cacaoyere() -> None:
+    """Une demande de cacao à une ville du Nord (Korhogo…) est corrigée, pas validée."""
+    nord = b.zone_non_cacao()
+    assert nord
+    for p in nord:
+        bas = p["output"].lower()
+        assert "savane" in bas and "cacao" in bas  # corrige et reste dans le sujet cacao
+    assert any("Korhogo" in p["instruction"] for p in nord)
+
+
+def test_culture_ambigue_confirme_le_cacao() -> None:
+    """Une question sans culture précisée fait confirmer qu'il s'agit bien de cacao."""
+    assert all("cacao" in p["output"].lower() for p in b.culture_ambigue())
