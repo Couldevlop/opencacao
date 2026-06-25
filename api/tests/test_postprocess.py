@@ -13,6 +13,13 @@ def test_extraire_sources_reconnait_les_sources_citees() -> None:
     assert "ANADER" in sources
 
 
+def test_extraire_sources_reconnait_firca_fao_icco() -> None:
+    """FIRCA, FAO et ICCO (présents dans le corpus RAG) sont reconnus comme sources."""
+    assert extraire_sources("Sources : FIRCA.") == ["FIRCA"]
+    assert extraire_sources("Sources : FAO.") == ["FAO"]
+    assert "ICCO" in extraire_sources("D'après l'ICCO et le CNRA...")
+
+
 def test_extraire_sources_sans_doublon() -> None:
     """Une source citée plusieurs fois n'apparaît qu'une fois."""
     sources = extraire_sources("CNRA recommande... le CNRA confirme...")
