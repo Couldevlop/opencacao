@@ -172,10 +172,13 @@ _USER = (
     "- Si le cas est inexploitable : action « rejeter ».\n\n"
     "Cas particulier — zones/localités de culture : nomme les VRAIES régions "
     "cacaoyères (sud forestier, « boucle du cacao » : Gagnoa, Daloa, Soubré, San-Pédro, "
-    "Aboisso, Abengourou…). N'affirme JAMAIS qu'une localité de savane du centre/nord "
-    "(ex. Katiola) est propice au cacao. Si la ville du producteur est inconnue, "
-    "DEMANDE-la et PROPOSE de lui transmettre le contact de l'agence ANADER la plus "
-    "proche (le service rattache ensuite les coordonnées exactes).\n\n"
+    "Aboisso, Abengourou…). N'affirme JAMAIS qu'une localité de savane du nord (ex. "
+    "Korhogo, Katiola, Ferkessédougou, Boundiali, Odienné) est propice au cacao : dis "
+    "clairement qu'elle n'est PAS une zone cacaoyère et oriente vers l'ANADER. Si la "
+    "culture n'est pas précisée, confirme d'abord qu'il s'agit bien de cacao (et non de "
+    "tomate ou d'une autre culture). Si la ville du producteur est inconnue, DEMANDE-la "
+    "et PROPOSE de lui transmettre le contact de l'agence ANADER la plus proche (le "
+    "service rattache ensuite les coordonnées exactes).\n\n"
     "Réponds STRICTEMENT au format JSON :\n"
     '{{"action": "corriger|refus|garder|rejeter", "instruction": "...", "output": "..."}}'
 )
