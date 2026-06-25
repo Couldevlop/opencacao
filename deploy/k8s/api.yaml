@@ -41,6 +41,13 @@ data:
   # plus forts + reranking).
   RAG_TOP_K: "5"
   RAG_MIN_SIMILARITE: "0.55"
+  # Reranking (F9) : vivier dense large (30) puis fusion dense + recouvrement lexical.
+  # Seuil lexical abaissé (0,33) + poids relevé (0,5) pour faire remonter un document
+  # littéralement pertinent (source contenant « firca ») même sur une requête courte
+  # comme « parle-moi de FIRCA ». Validé en prod (juin 2026).
+  RAG_CANDIDATS: "30"
+  RAG_POIDS_LEXICAL: "0.5"
+  RAG_SEUIL_LEXICAL: "0.33"
   # Analytique des visites + géolocalisation pays (base GeoLite2 locale, IP non stockée).
   LOG_VISITES: "true"
   GEOIP_DB_PATH: "/models/GeoLite2-Country.mmdb"
