@@ -71,9 +71,13 @@ HORS_SUJETS = [
     "le cours de l'or", "créer un site web", "organiser mon mariage",
     "jouer à un jeu vidéo", "rédiger un CV",
 ]
+# Cacao UNIQUEMENT : toute autre culture (vivrier, anacarde, autres filières) est
+# redirigée vers l'ANADER (décision Waopron, juin 2026).
 AUTRES_CULTURES = [
-    "l'hévéa", "le palmier à huile", "le café robusta", "la banane plantain",
-    "le coton", "le cacao en serre hydroponique",
+    "le maïs", "le manioc", "l'igname", "le riz", "la banane plantain",
+    "le mil", "le sorgho", "l'arachide", "la tomate", "le gombo",
+    "l'anacarde", "l'hévéa", "le palmier à huile", "le café robusta",
+    "le coton", "l'ananas",
 ]
 # Localités clairement situées en zone de savane du Nord (districts des Savanes,
 # Bagoué, Poro, Tchologo, Hambol, Bounkani) : trop sèches pour le cacaoyer, qui
