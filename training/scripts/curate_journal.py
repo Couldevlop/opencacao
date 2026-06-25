@@ -179,8 +179,11 @@ _USER = (
     "tomate ou d'une autre culture). Si la ville du producteur est inconnue, DEMANDE-la "
     "et PROPOSE de lui transmettre le contact de l'agence ANADER la plus proche (le "
     "service rattache ensuite les coordonnées exactes).\n\n"
-    "Réponds STRICTEMENT au format JSON :\n"
-    '{{"action": "corriger|refus|garder|rejeter", "instruction": "...", "output": "..."}}'
+    "IMPORTANT : « output » = UNIQUEMENT la réponse corrigée À DONNER au producteur "
+    "pour la question ci-dessus. Ne répète PAS la question, n'écris AUCUNE méta-consigne "
+    "(pas de « réponds de manière concise », « conserve la réponse », etc.). Format JSON "
+    "STRICT, sans autre texte :\n"
+    '{{"action": "corriger|refus|garder|rejeter", "output": "<la réponse corrigée>"}}'
 )
 
 
@@ -254,11 +257,18 @@ class CurateurLLM:
         return _extraire_json(brut)
 
 
-def construire_paire(verdict: dict | None) -> tuple[dict | None, str]:
+def construire_paire(
+    verdict: dict | None, question: str = ""
+) -> tuple[dict | None, str]:
     """Construit et valide une paire d'entraînement à partir d'un verdict du maître.
 
+    L'``instruction`` de la paire est la **question réelle du producteur** (issue du
+    journal), JAMAIS un champ renvoyé par le maître : on ne lui demande que la réponse
+    corrigée (``output``), pour éviter qu'il y mette une méta-consigne.
+
     Args:
-        verdict: Objet ``{action, instruction, output}`` renvoyé par le maître.
+        verdict: Objet ``{action, output}`` renvoyé par le maître.
+        question: Question d'origine du producteur (sert d'instruction de la paire).
 
     Returns:
         ``(paire, "")`` si valide, sinon ``(None, motif)`` indiquant pourquoi écartée.
@@ -271,7 +281,7 @@ def construire_paire(verdict: dict | None) -> tuple[dict | None, str]:
     if action not in ACTIONS_PAIRE:
         return None, f"action inconnue : {action or 'vide'}"
 
-    instruction = str(verdict.get("instruction", "")).strip()
+    instruction = question.strip()
     output = str(verdict.get("output", "")).strip()
     paire = {"instruction": instruction, "input": "", "output": output}
 
@@ -308,7 +318,7 @@ def curer_journal(
             stats.maitre_indisponible += 1
             stats.noter_rejet("maître indisponible")
             continue
-        paire, motif = construire_paire(verdict)
+        paire, motif = construire_paire(verdict, c["question"])
         if paire is None:
             if motif == "rejeté par le maître":
                 stats.rejetes += 1
