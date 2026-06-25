@@ -14,14 +14,27 @@ sources:
     nom: "Conseil du Café-Cacao"
     nom_complet: "Le Conseil du Café-Cacao"
     pays: "Côte d'Ivoire"
-  - id: fao_ci
-    nom: "FAO Côte d'Ivoire"
+  - id: fao
+    nom: "FAO"
     nom_complet: "Organisation des Nations Unies pour l'alimentation et l'agriculture"
+    pays: "International"
+  - id: firca
+    nom: "FIRCA"
+    nom_complet: "Fonds Interprofessionnel pour la Recherche et le Conseil Agricoles"
+    pays: "Côte d'Ivoire"
+  - id: icco
+    nom: "ICCO"
+    nom_complet: "Organisation Internationale du Cacao"
     pays: "International"
 
 # Sources reconnues comme fiables pour la pondération de la confiance.
+# (Doit rester cohérent avec la liste SOURCES de training/scripts/evaluate.py et
+# enrich_corpus.py, et inclure les organismes présents dans le corpus RAG : FIRCA,
+# ICCO… — sinon une réponse correctement sourcée est comptée comme non fiable.)
 sources_fiables:
   - "CNRA"
   - "ANADER"
   - "Conseil du Café-Cacao"
-  - "FAO Côte d'Ivoire"
+  - "FAO"
+  - "FIRCA"
+  - "ICCO"
