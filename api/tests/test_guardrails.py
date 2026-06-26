@@ -60,6 +60,41 @@ def test_questions_legitimes_passent(question: str) -> None:
     assert guardrails.evaluer(question) is None
 
 
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Est-ce que je peux cultiver le cacao à Korhogo ?",
+        "Je veux planter du cacao à Katiola, des conseils ?",
+        "Ma plantation de cacao est à Ferkessédougou, comment l'entretenir ?",
+        "Le cacao pousse-t-il bien à Odienné ?",
+    ],
+)
+def test_zone_nord_non_cacaoyere_corrigee(question: str) -> None:
+    """Cultiver du cacao dans une localité de savane du Nord est corrigé (pas une zone cacao)."""
+    refus = guardrails.evaluer(question)
+    assert refus is not None and refus.categorie is CategorieRefus.ZONE_NON_CACAO
+    assert "savane" in refus.message.lower()
+
+
+def test_zone_nord_nomme_la_localite() -> None:
+    """Le message nomme la localité détectée."""
+    assert "Korhogo" in guardrails.evaluer("Puis-je cultiver le cacao à Korhogo ?").message
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Quel est le contact ANADER à Korhogo ?",  # demande de contact, pas de culture
+        "Je suis à Korhogo, où est l'hôpital ?",  # mention de la ville sans cacao
+        "Comment cultiver le cacao à Soubré ?",  # Soubré EST une zone cacaoyère
+    ],
+)
+def test_zone_nord_pas_de_faux_positif(question: str) -> None:
+    """Mention de la ville sans culture de cacao, ou vraie zone cacao : pas de déclenchement."""
+    refus = guardrails.evaluer(question)
+    assert refus is None or refus.categorie is not CategorieRefus.ZONE_NON_CACAO
+
+
 def test_autre_culture_refusee() -> None:
     """Cacao UNIQUEMENT : une autre culture (anacarde) est désormais refusée."""
     refus = guardrails.evaluer("Comment entretenir mes anacardiers en saison sèche ?")
