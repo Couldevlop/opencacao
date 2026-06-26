@@ -41,3 +41,4 @@ class CategorieRefus(str, Enum):
     MEDICAL = "medical"
     DIAGNOSTIC_IMAGE = "diagnostic_image"
     HORS_FILIERE = "hors_filiere"
+    ZONE_NON_CACAO = "zone_non_cacao"

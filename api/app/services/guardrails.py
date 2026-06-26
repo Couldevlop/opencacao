@@ -38,11 +38,21 @@ REFUS_HORS_FILIERE = (
     "couvre l'ensemble des cultures de votre région et pourra vous orienter."
 )
 
+REFUS_ZONE_NON_CACAO = (
+    "Cette localité se situe dans la zone de savane du nord de la Côte d'Ivoire, au "
+    "climat trop sec et à la saison des pluies trop courte pour le cacaoyer, qui a "
+    "besoin du climat chaud et humide de la zone forestière du Sud (la « boucle du "
+    "cacao » : Gagnoa, Daloa, Soubré, San-Pédro, Aboisso…). Le cacao n'y est donc pas "
+    "adapté. Pour les cultures qui conviennent à votre région, votre agent ANADER "
+    "local pourra vous orienter."
+)
+
 _REFUS_MESSAGES: dict[CategorieRefus, str] = {
     CategorieRefus.PHYTOSANITAIRE: REFUS_PHYTO,
     CategorieRefus.MEDICAL: REFUS_MEDICAL,
     CategorieRefus.DIAGNOSTIC_IMAGE: REFUS_DIAGNOSTIC_IMAGE,
     CategorieRefus.HORS_FILIERE: REFUS_HORS_FILIERE,
+    CategorieRefus.ZONE_NON_CACAO: REFUS_ZONE_NON_CACAO,
 }
 
 
@@ -253,6 +263,46 @@ _TERMES_HORS_FILIERE = (
 )
 
 
+# Localités de savane du Nord (districts Savanes, Bagoué, Poro, Tchologo, Hambol,
+# Bounkani…) : climat trop sec pour le cacaoyer. Quand une question porte sur la
+# CULTURE du cacao dans l'une d'elles, on corrige (ce n'est pas une zone cacaoyère)
+# plutôt que de laisser le modèle affirmer le contraire (la géographie est peu fiable
+# à apprendre par fine-tuning). Clé normalisée (sans accents) -> nom d'affichage.
+_LOCALITES_NORD = {
+    "korhogo": "Korhogo",
+    "katiola": "Katiola",
+    "ferkessedougou": "Ferkessédougou",
+    "ferke": "Ferké",
+    "boundiali": "Boundiali",
+    "odienne": "Odienné",
+    "tengrela": "Tengréla",
+    "bouna": "Bouna",
+    "dabakala": "Dabakala",
+    "niakaramandougou": "Niakaramandougou",
+    "kong": "Kong",
+    "minignan": "Minignan",
+    "ouangolodougou": "Ouangolodougou",
+    "sinematiali": "Sinématiali",
+    "kouto": "Kouto",
+}
+# Termes signalant une intention de CULTURE de cacao (vs simple mention de la ville,
+# ex. demande de contact ANADER) : la correction ne se déclenche que si l'un apparaît.
+_TERMES_ZONE_DECLENCHEUR = (
+    "cacao",
+    "cacaoyer",
+    "cacaoyere",
+    "cultiver",
+    "culture",
+    "planter",
+    "plantation",
+    "champ",
+    "pousser",
+    "propice",
+    "adapte",
+    "convient",
+)
+
+
 def _normaliser(texte: str) -> str:
     """Minuscule + suppression des accents pour une détection robuste."""
     sans_accents = "".join(
@@ -276,6 +326,23 @@ _RE_MEDICAL = _compiler(_TERMES_MEDICAL)
 _RE_IMAGE = _compiler(_TERMES_IMAGE)
 _RE_FILIERE = _compiler(_TERMES_FILIERE)
 _RE_HORS_FILIERE = _compiler(_TERMES_HORS_FILIERE)
+_RE_ZONE_DECLENCHEUR = _compiler(_TERMES_ZONE_DECLENCHEUR)
+_RE_LOCALITES_NORD = tuple(
+    (re.compile(rf"\b{re.escape(cle)}\b"), nom) for cle, nom in _LOCALITES_NORD.items()
+)
+
+
+def _localite_nord_detectee(texte: str) -> str | None:
+    """Renvoie le nom d'affichage d'une localité de savane du Nord citée, ou None."""
+    for motif, nom in _RE_LOCALITES_NORD:
+        if motif.search(texte):
+            return nom
+    return None
+
+
+def _message_zone(nom: str) -> str:
+    """Message de correction « zone non cacaoyère » nommant la localité détectée."""
+    return REFUS_ZONE_NON_CACAO.replace("Cette localité", nom, 1)
 
 
 def _contient(texte: str, motifs: tuple[re.Pattern, ...]) -> bool:
@@ -315,6 +382,12 @@ def evaluer(question: str) -> Refus | None:
     # 4. Hors filière : indice hors-sujet explicite ET aucun ancrage filière cacao.
     if _contient(texte, _RE_HORS_FILIERE) and not _contient(texte, _RE_FILIERE):
         return Refus(CategorieRefus.HORS_FILIERE)
+
+    # 5. Localité de savane du Nord + intention de culture du cacao : on corrige
+    #    (ce n'est PAS une zone cacaoyère) plutôt que de laisser le modèle l'affirmer.
+    nord = _localite_nord_detectee(texte)
+    if nord is not None and _contient(texte, _RE_ZONE_DECLENCHEUR):
+        return Refus(CategorieRefus.ZONE_NON_CACAO, message=_message_zone(nord))
 
     return None
 
