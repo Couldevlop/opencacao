@@ -27,7 +27,7 @@ resources:
 images:
   - name: opencacao-api
     newName: ghcr.io/couldevlop/opencacao-api
-    newTag: "0.6.3"
+    newTag: "0.6.28"
   - name: opencacao-web
     newName: ghcr.io/couldevlop/opencacao-web
-    newTag: "0.6.3"
+    newTag: "0.6.28"
