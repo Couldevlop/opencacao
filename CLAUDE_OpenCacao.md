@@ -168,7 +168,13 @@ Dans `services/guardrails.py`, refus systématique avec orientation vers ANADER 
 - Demandes de dosages précis de produits phytosanitaires.
 - Demandes médicales ou vétérinaires.
 - Demandes d'identification de maladie sur image sans confirmation visuelle d'un agent.
-- Toute demande hors filière cacao (sauf cultures connexes : anacarde, vivrier).
+- **Toute culture autre que le cacao.** Décision produit (Waopron, juin 2026) : le
+  vivrier (maïs, manioc, igname, riz…) et l'anacarde **ne sont plus tolérés** et sont
+  redirigés vers l'ANADER. Seuls l'ombrage et les cultures associées **au service d'une
+  plantation de cacao** restent acceptables. Mécanique : les termes vivrier/anacarde sont
+  passés de `_TERMES_FILIERE` à `_TERMES_HORS_FILIERE` ; le refus hors-filière ne se
+  déclenche que si un terme hors-filière est présent **et** qu'aucun ancrage cacao ne
+  l'est (une question d'ombrage/association mentionnant le cacao reste donc traitée).
 
 Format de refus standard, inscrit comme constante :
 ```python
@@ -300,8 +306,23 @@ Si pas de GPU disponible pour la démo, on sert le modèle quantifié GGUF (Q4_K
 `api/app/services/prompts.py` contient les templates système, en français, qui forcent :
 - Le rôle (« assistant agronomique pour les producteurs de cacao ivoiriens »).
 - L'usage d'un français accessible et bienveillant.
-- L'orientation vers ANADER pour les cas hors champ.
+- L'orientation vers ANADER pour les cas hors champ (**cacao uniquement**, cf. §4.3).
 - La citation des sources lorsque possible.
+
+**Alternance des rôles (obligatoire).** Le template de chat de Ministral 3 lève une
+exception Jinja (« conversation roles must alternate ») et l'inférence renvoie un 500
+— remonté en 503 « service indisponible » — si la liste de messages ne respecte pas une
+stricte alternation utilisateur/assistant. `build_messages` (via `_dialogue_alternant`)
+garantit donc : fusion des tours consécutifs de même rôle, retrait d'un assistant en
+tête (le dialogue doit commencer par l'utilisateur), et dernier message = la question
+courante. Un historique client mal formé ne peut plus casser l'inférence.
+
+**Clarification consultative ciblée** (`services/clarification.py`). Au premier tour, le
+système peut poser une question de précision avant de répondre (symptôme vague, intention
+de traitement, demande de contact sans ville). Elle **ne se déclenche pas** pour une
+question informationnelle (prévenir / reconnaître / identifier / définir, « c'est quoi »)
+ni pour une signature non équivoque de swollen shoot (rameaux gonflés + jaunissement) :
+ces cas reçoivent une réponse directe.
 
 ---
 
@@ -482,6 +503,62 @@ Ces canaux ne sont **pas** inclus dans la première livraison Compose. La livrai
 - Pas de promesse d'impact chiffrée non sourcée dans la documentation.
 - Pas de génération de dosages phytosanitaires, même à titre d'exemple dans les tests.
 - Pas de modification de ce `CLAUDE.md` sans validation explicite de Waopron.
+
+---
+
+## 13bis. Évolutions techniques (juin 2026)
+
+Synthèse des évolutions livrées et déployées en production (image `v0.6.21`).
+
+### RAG — récupération augmentée
+
+Le service active une couche RAG souveraine (embeddings via llama.cpp + index NumPy en
+mémoire, aucune base vectorielle externe). Deux mécanismes la rendent robuste :
+
+- **Reranking (levier « efficacité » F9, `services/rag.py`)** : on récupère un *vivier*
+  large par similarité dense (`RAG_CANDIDATS`=30), puis on réordonne par un **score
+  fusionné** = similarité dense + recouvrement lexical (mots de la question présents dans
+  le **texte ET le nom de source** du passage). Un fort recouvrement lexical
+  (`RAG_SEUIL_LEXICAL`=0,33, poids `RAG_POIDS_LEXICAL`=0,5) rend éligible un document
+  littéralement pertinent — p. ex. dont la source contient « firca » — même quand
+  l'embedding seul le classait sous le seuil (`RAG_MIN_SIMILARITE`=0,55, `RAG_TOP_K`=5).
+  Réglé pour les requêtes courtes. Le cran supérieur (embeddings multilingual-e5 / BGE-M3)
+  reste une étape d'exploitation.
+- **Reconnaissance des sources** : le champ `sources` de la réponse est extrait du **texte**
+  généré (`services/postprocess.py` → `extraire_sources`), comparé au référentiel
+  `data/sources_agro.yaml`. Ce référentiel inclut désormais **FIRCA** et **ICCO**, et
+  « FAO Côte d'Ivoire » est ramené à « **FAO** » (forme réellement écrite). Sans cela, une
+  réponse correctement ancrée sur un document FIRCA était comptée comme non fiable.
+
+### Cache de réponses — invalidation au déploiement
+
+La clé de cache (`core/cache.py`) inclut désormais **`APP_VERSION`** (tag de l'image) en
+plus de `MODEL_VERSION`. Un déploiement qui change le post-traitement (extraction de
+sources, RAG) n'ira donc plus resservir d'anciennes réponses devenues fausses.
+`deploy/scripts/roll-image.sh` patche `APP_VERSION` dans la ConfigMap et purge
+`cache:chat:*` après le rollout (le rate-limit `rate:*` est préservé).
+
+### Boucle d'amélioration continue (levier F11)
+
+`training/scripts/curate_journal.py` lit le journal de prod anonymisé (interactions +
+retours 👍/👎), fait **curer** chaque cas par un **maître ouvert auto-hébergé**
+(Qwen-AWQ via vLLM — **souverain, aucune API tierce**) qui ne renvoie que la **réponse
+corrigée**, et alimente `corpus/corpus_cure.jsonl` pour le ré-entraînement. L'instruction
+de chaque paire reste la **vraie question** du journal (jamais un champ produit par le
+maître). Runbook : `docs/REENTRAINEMENT_prochain.md`.
+
+### Corpus de refus (levier F3)
+
+`scripts/build_refusals.py` génère un corpus de refus déterministe et conforme (aucun
+dosage chiffré, source ANADER citée) passé de **41 à 415 paires**, couvrant : dosage,
+médical, vétérinaire, diagnostic sur image, hors-filière, évasion de dose, **zones non
+cacaoyères** (savane du Nord : Korhogo, Katiola…) et **ambiguïté de culture**.
+
+### Qualité
+
+Couverture de tests d'`api/app/` portée à **98 %** ; seuil CI `--cov-fail-under` relevé à
+**97 %**. Statut de l'extension « efficacité du modèle » : **F1, F2, F3, F4, F7.1, F9,
+F11 livrés** ; restent F5, F6, F7, F8, F10, F12 (Should/Could).
 
 ---
 
