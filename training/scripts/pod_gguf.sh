@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Exporte le modèle fusionné OpenCacao en GGUF Q4_K_M (pour servir en CPU via
 # llama.cpp, ex. sur K3s Hetzner). À lancer sur le pod (le modèle fusionné
-# models/opencacao-7b doit être présent).
+# models/opencacao-8b doit être présent).
 #
 # Usage : bash training/scripts/pod_gguf.sh
-# Sortie : models/opencacao-7b-Q4_K_M.gguf  (~5 Go) -> à rapatrier via runpodctl.
+# Sortie : models/opencacao-8b-Q4_K_M.gguf  (~5 Go) -> à rapatrier via runpodctl.
 #
 # NOTE mistral3 : Ministral 3 est une archi multimodale récente. llama.cpp récent
 # la supporte (un GGUF officiel existe), mais on clone llama.cpp à jour pour en
@@ -13,9 +13,9 @@
 
 set -euo pipefail
 
-MERGED="${1:-models/opencacao-7b}"
-F16="models/opencacao-7b-f16.gguf"
-OUT="models/opencacao-7b-Q4_K_M.gguf"
+MERGED="${1:-models/opencacao-8b}"
+F16="models/opencacao-8b-f16.gguf"
+OUT="models/opencacao-8b-Q4_K_M.gguf"
 
 echo "==> 1/4  Récupération de llama.cpp (à jour)"
 [ -d llama.cpp ] || git clone --depth 1 https://github.com/ggml-org/llama.cpp

@@ -1,4 +1,4 @@
-# OpenCacao-7B
+# OpenCacao-8B
 
 Assistant de conseil agronomique pour les producteurs de cacao de Côte d'Ivoire,
 fondé sur **Ministral 3 8B Instruct** affiné par fine-tuning **LoRA 4-bit** sur un
@@ -26,7 +26,7 @@ appliquer les garde-fous métier et la journalisation.
 ## Démarrage rapide (service)
 
 Prérequis : Docker 24+ et Docker Compose v2. Un modèle fusionné doit exister dans
-`models/opencacao-7b/` (voir entraînement ci-dessous).
+`models/opencacao-8b/` (voir entraînement ci-dessous).
 
 ```bash
 cp .env.example .env          # ajuster INFERENCE_BACKEND, etc.
@@ -44,7 +44,7 @@ docker compose -f docker-compose.cpu.yml up -d
 ### Valider le flux avant entraînement (modèle de base)
 
 Pour tester l'API de bout en bout **sans modèle affiné**, on sert le Ministral 3 8B
-de base depuis Hugging Face sous le même nom logique (`opencacao-7b`). Prérequis :
+de base depuis Hugging Face sous le même nom logique (`opencacao-8b`). Prérequis :
 GPU NVIDIA ~16 Go et un token Hugging Face (`HF_TOKEN` dans `.env`, modèle gated).
 
 ```bash
@@ -55,7 +55,7 @@ Le premier démarrage télécharge les poids (plusieurs minutes) : `/v1/chat` re
 503 tant que vLLM n'a pas fini de charger — `GET /v1/ready` reflète l'état.
 
 > Bascule vers le modèle affiné : comme le `served-model-name` est identique
-> (`opencacao-7b`), passer de cette démo à `make up` (LoRA fusionné) ne change que
+> (`opencacao-8b`), passer de cette démo à `make up` (LoRA fusionné) ne change que
 > les poids servis — aucune modification de l'API, des garde-fous ou des tests.
 
 ### Valider le flux en CPU (sans GPU)
@@ -97,7 +97,7 @@ L'inférence est mockée en test (pas d'appel réseau réel).
 ```bash
 make corpus-check             # valide le corpus
 make train                    # docker-compose.training.yml (GPU)
-make merge                    # fusionne LoRA + base → models/opencacao-7b/
+make merge                    # fusionne LoRA + base → models/opencacao-8b/
 ```
 
 Détails : [`docs/training_guide.md`](docs/training_guide.md).

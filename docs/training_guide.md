@@ -1,4 +1,4 @@
-# Guide d'entraînement — OpenCacao-7B
+# Guide d'entraînement — OpenCacao-8B
 
 Ce guide détaille la section 6 de [`CLAUDE_OpenCacao.md`](../CLAUDE_OpenCacao.md).
 L'entraînement est **ponctuel** : on loue un GPU le temps du fine-tuning, puis on
@@ -70,10 +70,10 @@ make merge
 python training/scripts/merge_and_export.py \
     --base mistralai/Ministral-3-8B-Instruct-2512 \
     --adapter models/lora-adapter \
-    --output models/opencacao-7b
+    --output models/opencacao-8b
 ```
 
-Sortie : modèle fusionné dans `models/opencacao-7b/`, prêt pour vLLM.
+Sortie : modèle fusionné dans `models/opencacao-8b/`, prêt pour vLLM.
 
 ### 4. (Optionnel) Export GGUF pour le service CPU
 
@@ -81,8 +81,8 @@ Pour servir le modèle sans GPU via llama-cpp, convertir le modèle fusionné au
 GGUF quantifié (Q4_K_M) avec les outils `llama.cpp` :
 
 ```bash
-python convert_hf_to_gguf.py models/opencacao-7b --outfile models/opencacao-7b.gguf
-llama-quantize models/opencacao-7b.gguf models/opencacao-7b-Q4_K_M.gguf Q4_K_M
+python convert_hf_to_gguf.py models/opencacao-8b --outfile models/opencacao-8b.gguf
+llama-quantize models/opencacao-8b.gguf models/opencacao-8b-Q4_K_M.gguf Q4_K_M
 ```
 
 ### 5. Libérer l'instance GPU

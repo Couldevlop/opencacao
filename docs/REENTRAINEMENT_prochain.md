@@ -6,6 +6,20 @@ prompt, RAG, cache). Mais certains ne peuvent être ancrés que dans le **modèl
 lui-même** — c'est l'objet de ce ré-entraînement. Pour le flux générique, voir
 `docs/REENTRAINEMENT.md` ; ici on liste **ce qui est nouveau** et **comment valider**.
 
+## 0. Topologie — QUELLE machine exécute QUOI
+
+Trois machines distinctes ; **ne pas confondre** :
+
+| Machine | Accès / outils | Ce qui s'y exécute |
+|---|---|---|
+| 🖥️ **PC** (ton poste) | `kubectl` + `KUBECONFIG` (cluster Hetzner), `runpodctl`, `git` | Rapatrier le journal depuis Hetzner, transférer les fichiers vers le pod, rapatrier le GGUF, déployer en prod |
+| 🎮 **Pod RunPod (GPU)** | PyTorch/CUDA, GPU, dépôt cloné — **PAS de kubectl, PAS d'accès Hetzner** | Servir le maître, curer, entraîner, exporter le GGUF, éval |
+| ☁️ **Cluster Hetzner (prod, CX53)** | — (piloté depuis le PC via kubectl) | Héberge le journal sur `/data`, sert le modèle |
+
+> ⚠️ Le `kubectl` ne tourne **que sur le PC** (il pilote Hetzner). Le pod RunPod, lui,
+> n'a ni kubectl ni accès au cluster : les fichiers transitent **PC → pod** via
+> `runpodctl`. Chaque bloc ci-dessous est préfixé par 🖥️ (PC) ou 🎮 (pod).
+
 ## 1. Ce que le ré-entraînement doit ancrer (apports de la session)
 
 | Apport | Source | Ce que le modèle doit apprendre |
@@ -34,17 +48,17 @@ lui-même** — c'est l'objet de ce ré-entraînement. Pour le flux générique,
 
 > Règle simple : **24 Go** si tu cures avec le maître 32B (ou si tu ne fais que ré-entraîner) ; **48 Go** si tu veux le maître 72B pour une curation de meilleure qualité. Curation et entraînement se font **séquentiellement** sur un seul GPU (sers le maître → cure → arrête le maître → entraîne).
 
+**🎮 Sur le pod :**
 ```sh
 git clone https://github.com/Couldevlop/opencacao.git && cd opencacao
 export HF_TOKEN=hf_xxx                 # modèle de base Ministral (gated)
 nvidia-smi                             # vérifier le GPU (mémoire) et la version CUDA
 python -c "import torch; print(torch.__version__, torch.cuda.is_available())"  # 2.8.x, True
-# Transférer les corpus PRIVÉS du PC vers le pod (binaire runpodctl git-ignoré ; sur
-# le PC en git bash, le préfixer par ./ s'il n'est pas dans le PATH) :
-#   PC  :  ./runpodctl send corpus/corpus_cure.jsonl   ->  copie le code affiché
-#   pod :  runpodctl receive <code>
-#   (idem pour corpus/corpus_cacao_rag.jsonl)
 ```
+
+> Le `corpus_cacao_rag.jsonl` (privé) se transfère **PC → pod** via `runpodctl`,
+> comme le journal en §3. `corpus_refus.jsonl` et `corpus_cacao_demarrage.jsonl` sont
+> versionnés, donc déjà présents dans le dépôt cloné.
 
 > 🛡️ **Souveraineté — AUCUNE API tierce.** La curation (F11) et le juge d'éval optionnel
 > utilisent un **maître OUVERT auto-hébergé** servi via vLLM sur le pod
@@ -52,27 +66,39 @@ python -c "import torch; print(torch.__version__, torch.cuda.is_available())"  #
 > 24 Go) — exactement comme la distillation F2. **Pas de GLM-5.2/Z.ai ni aucun service
 > externe.** L'éval de base (§4/§6) est de toute façon **100 % déterministe** (sans LLM).
 
-## 3. (Optionnel mais recommandé) Régénérer / compléter le corpus
+## 3. (Optionnel mais recommandé) Compléter le corpus par la curation du journal
 
+**🖥️ Sur le PC — rapatrier le journal depuis Hetzner, puis l'envoyer au pod :**
 ```sh
-# Refus à jour (idempotent) :
-python scripts/build_refusals.py                       # -> corpus_refus.jsonl (415+)
-# Curation SOUVERAINE du journal prod rapatrié (F11) :
+export KUBECONFIG=kubeconfig-hetzner.yaml
 mkdir -p journal
 # Le nom du pod api change à chaque déploiement -> on le résout dynamiquement :
 POD=$(kubectl -n opencacao get pod -l app=api -o jsonpath='{.items[0].metadata.name}')
 kubectl -n opencacao cp "$POD:/data/interactions.jsonl" ./journal/interactions.jsonl
 kubectl -n opencacao cp "$POD:/data/feedback.jsonl"     ./journal/feedback.jsonl
-# 1) sers un MAÎTRE OUVERT auto-hébergé (aucune API tierce), comme pour F2 :
-CLE=$(python -c 'import secrets; print(secrets.token_urlsafe(24))')
+# Envoyer le journal au pod RunPod (binaire git-ignoré ; en git bash, préfixer par ./) :
+./runpodctl send journal/interactions.jsonl    # -> code ; sur le pod : runpodctl receive <code>
+./runpodctl send journal/feedback.jsonl
+```
+
+**🎮 Sur le pod — recevoir le journal, servir le maître ouvert, curer (souverain) :**
+```sh
+mkdir -p journal
+( cd journal && runpodctl receive <code-interactions> && runpodctl receive <code-feedback> )
+# (facultatif) régénérer/étendre les refus — corpus_refus.jsonl est déjà dans le dépôt cloné :
+python scripts/build_refusals.py                       # -> corpus_refus.jsonl (415+)
+# 1) sers un MAÎTRE OUVERT auto-hébergé — localhost, SANS clé (pas d'auth nécessaire en
+#    local) ni API tierce, comme pour F2 :
 python -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-72B-Instruct-AWQ \
-    --served-model-name maitre --quantization awq --api-key "$CLE" --port 8001 \
+    --served-model-name maitre --quantization awq --port 8001 \
     --gpu-memory-utilization 0.92 > /tmp/maitre.log 2>&1 &
-# 2) cure en pointant le curateur sur CE maître local :
-CORPUS_LLM_API_KEY="$CLE" python training/scripts/curate_journal.py --journal ./journal \
+# attends « Application startup complete » dans /tmp/maitre.log (un 72B : ~15-25 min) :
+#   tail -f /tmp/maitre.log
+# 2) cure (clé FACTICE non vide : curate_journal.py l'exige, le maître local l'ignore) :
+CORPUS_LLM_API_KEY=local python training/scripts/curate_journal.py --journal ./journal \
     --juge-endpoint http://localhost:8001 --juge-model maitre \
     --sortie corpus/corpus_cure.jsonl
-# 3) arrête le maître pour libérer le GPU avant l'entraînement.
+# 3) arrête le maître (kill %1 ou pkill -f vllm) pour libérer le GPU avant l'entraînement.
 ```
 
 ## 4. Mesurer la BASELINE (avant)
@@ -128,7 +154,7 @@ python training/scripts/evaluate.py \
 Le modèle se déploie **différemment** de l'image API (qui passe par GHCR/roll-image) :
 
 ```sh
-runpodctl send models/opencacao-7b-Q4_K_M.gguf     # sur le pod -> note le code
+runpodctl send models/opencacao-8b-Q4_K_M.gguf     # sur le pod -> note le code
 ./runpodctl receive <code>                         # sur ton PC (git bash : préfixe ./)
 export KUBECONFIG=kubeconfig-hetzner.yaml
 bash deploy/redeploy_model.sh models/opencacao-8b-Q4_K_M.gguf 1.1.0

@@ -1,7 +1,7 @@
 [project]
 name = "opencacao-api"
 version = "0.1.0"
-description = "API FastAPI d'OpenCacao-7B — conseil agronomique cacao Côte d'Ivoire"
+description = "API FastAPI d'OpenCacao-8B — conseil agronomique cacao Côte d'Ivoire"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = [

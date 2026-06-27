@@ -5,8 +5,8 @@ services:
     image: ghcr.io/abetlen/llama-cpp-python:v0.3.1
     command: >-
       python3 -m llama_cpp.server
-      --model /models/opencacao-7b-Q4_K_M.gguf
-      --model_alias opencacao-7b
+      --model /models/opencacao-8b-Q4_K_M.gguf
+      --model_alias opencacao-8b
       --host 0.0.0.0
       --port 8000
     volumes:

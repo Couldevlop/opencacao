@@ -19,7 +19,7 @@ Usage :
         --target 5000 \\
         --out corpus/corpus_cacao_rag.jsonl \\
         --llm-base-url http://localhost:8000 \\
-        --llm-modele opencacao-7b
+        --llm-modele opencacao-8b
 
 Variables d'environnement (fallback des options) :
     CORPUS_LLM_BASE_URL, CORPUS_LLM_MODEL, CORPUS_LLM_API_KEY, CORPUS_EMBED_MODEL
@@ -943,7 +943,7 @@ def _parser_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--llm-modele",
-        default=os.environ.get("CORPUS_LLM_MODEL", "opencacao-7b"),
+        default=os.environ.get("CORPUS_LLM_MODEL", "opencacao-8b"),
         help="Nom du modèle servi pour la génération.",
     )
     parser.add_argument(

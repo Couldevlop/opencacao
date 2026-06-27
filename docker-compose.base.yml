@@ -1,6 +1,6 @@
 # Validation du flux complet (GPU) avec le modèle de BASE Ministral-3-8B-Instruct,
 # AVANT tout entraînement LoRA. Chemin identique à la prod : même image vLLM,
-# même `served-model-name` (opencacao-7b) → la bascule vers le modèle affiné
+# même `served-model-name` (opencacao-8b) → la bascule vers le modèle affiné
 # (docker-compose.yml) ne touchera que les poids servis, pas l'API.
 #
 # Prérequis : GPU NVIDIA ~16 Go + nvidia-container-toolkit, et un token Hugging
@@ -15,7 +15,7 @@ services:
     # nom logique que le modèle cible : l'API ne voit aucune différence.
     command: >-
       --model mistralai/Ministral-3-8B-Instruct-2512
-      --served-model-name opencacao-7b
+      --served-model-name opencacao-8b
       --tokenizer-mode mistral
       --config-format mistral
       --load-format mistral
@@ -51,7 +51,7 @@ services:
     environment:
       INFERENCE_BACKEND: vllm
       INFERENCE_URL: http://inference:8000
-      MODEL_NAME: opencacao-7b
+      MODEL_NAME: opencacao-8b
       REDIS_URL: redis://redis:6379/0
     ports:
       - "8080:8080"

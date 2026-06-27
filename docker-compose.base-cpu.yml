@@ -1,6 +1,6 @@
 # Validation du flux complet en CPU (sans GPU) avec le modèle de BASE Ministral 3 8B
 # en GGUF quantifié, AVANT tout entraînement LoRA. Servi sous le même nom logique
-# (opencacao-7b) → bascule transparente vers le modèle affiné plus tard.
+# (opencacao-8b) → bascule transparente vers le modèle affiné plus tard.
 #
 # Prérequis : le fichier GGUF doit être présent dans ./models/ (voir README,
 # section « Valider le flux en CPU »). Aucun token HF nécessaire (quant communautaire).
@@ -15,7 +15,7 @@ services:
     command: >-
       python3 -m llama_cpp.server
       --model /models/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf
-      --model_alias opencacao-7b
+      --model_alias opencacao-8b
       --host 0.0.0.0
       --port 8000
       --n_ctx 4096
@@ -37,7 +37,7 @@ services:
     environment:
       INFERENCE_BACKEND: llama-cpp
       INFERENCE_URL: http://inference:8000
-      MODEL_NAME: opencacao-7b
+      MODEL_NAME: opencacao-8b
       REDIS_URL: redis://redis:6379/0
     ports:
       - "8080:8080"

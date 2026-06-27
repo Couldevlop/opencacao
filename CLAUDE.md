@@ -8,11 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## État actuel
 
-Le dépôt ne contient pour l'instant **que la spec** — aucun code, `docker-compose.yml`, `Makefile` ou `pyproject.toml` n'existe encore. L'arborescence décrite dans la spec (§9.1) est la cible à créer, pas l'état présent. Construire les fichiers conformément à la spec plutôt que de présumer leur existence.
+Le projet est **construit et en production** : API FastAPI (`api/`), frontend (`web/`), pipeline d'entraînement (`training/`), déploiement (`deploy/`), `Makefile` et `docker-compose*.yml` existent. L'app est servie sur https://opencacao.openlabconsulting.com (Hetzner K3s, CPU/GGUF llama.cpp), livrée via le pipeline CD GitOps (release.yml → GHCR → ArgoCD). L'arborescence cible de la spec (§9.1) est globalement en place — lire le code existant avant d'en présumer la structure, et le faire évoluer plutôt que le recréer.
 
 ## Projet
 
-OpenCacao-7B : assistant de conseil agronomique pour les producteurs de cacao ivoiriens, basé sur **Ministral 3 8B Instruct** (`mistralai/Ministral-3-8B-Instruct-2512`, migration validée depuis Mistral 7B v0.3) affiné par **LoRA 4-bit**, servi via une API FastAPI. Démonstration technique du livre blanc *« IA souveraine pour la Côte d'Ivoire »* (OpenLab Consulting). Souveraineté, reproductibilité, modestie — pas de produit commercial.
+OpenCacao-8B : assistant de conseil agronomique pour les producteurs de cacao ivoiriens, basé sur **Ministral 3 8B Instruct** (`mistralai/Ministral-3-8B-Instruct-2512`, migration validée depuis Mistral 7B v0.3) affiné par **LoRA 4-bit**, servi via une API FastAPI. Démonstration technique du livre blanc *« IA souveraine pour la Côte d'Ivoire »* (OpenLab Consulting). Souveraineté, reproductibilité, modestie — pas de produit commercial.
 
 ## Architecture (résumé)
 
@@ -20,7 +20,7 @@ Trois conteneurs principaux + Redis, en couches strictes :
 
 - **`api/`** — FastAPI public. Endpoints versionnés `/v1/`. **Aucune logique métier dans les routers** : tout passe par `app/services/` (`inference.py` client vers l'inférence, `guardrails.py` garde-fous, `prompts.py` templates système). Validation Pydantic v2 sur entrées ET sorties.
 - **`inference/`** — vLLM (GPU, préféré) ou llama-cpp (CPU, fallback GGUF). **Jamais exposé publiquement** : l'API le consomme en interne pour pouvoir appliquer garde-fous + journalisation.
-- **`training/`** — pipeline ponctuel sur GPU loué (24 Go). `corpus/*.jsonl` → `train_lora.py` → adaptateur LoRA → `merge_and_export.py` → `models/opencacao-7b/` → export GGUF.
+- **`training/`** — pipeline ponctuel sur GPU loué (24 Go). `corpus/*.jsonl` → `train_lora.py` → adaptateur LoRA → `merge_and_export.py` → `models/opencacao-8b/` → export GGUF.
 - **`redis`** — cache de réponses + rate-limit (20 req/min/IP par défaut).
 
 Flux requête : client → api (garde-fous, cache) → inference interne → réponse avec sources + disclaimer.

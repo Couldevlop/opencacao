@@ -57,7 +57,7 @@ Le script enchaîne, **tout sur le pod, sans API externe** :
 2. génère le corpus distillé (RAG sur les documents officiels CNRA/ANADER/CCC/FAO/FIRCA) ;
 3. **arrête le maître** (libère le GPU) ;
 4. assemble (+ refus F3 élargis + amorce + cure) → LoRA 4-bit → fusion ;
-5. exporte **`models/opencacao-7b-Q4_K_M.gguf`** (~5 Go).
+5. exporte **`models/opencacao-8b-Q4_K_M.gguf`** (~5 Go).
 
 ## Étape 5 — Mesurer le NOUVEAU modèle (F1) et décider
 Sers le modèle fusionné (`models/opencacao-8b`) sur :8000, puis :
@@ -71,7 +71,7 @@ make eval ENDPOINT=http://localhost:8000 MODEL=opencacao-8b
 
 ## Étape 6 — Rapatrier le GGUF
 ```sh
-runpodctl send models/opencacao-7b-Q4_K_M.gguf      # sur le pod
+runpodctl send models/opencacao-8b-Q4_K_M.gguf      # sur le pod
 runpodctl receive <code>                            # sur ton PC
 ```
 
