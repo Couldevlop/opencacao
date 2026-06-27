@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-MODELE="models/opencacao-7b"
+MODELE="models/opencacao-8b"
 QUESTION="${1:-Mes feuilles de cacaoyer jaunissent et les rameaux gonflent, que faire ?}"
 export HF_HOME="${HF_HOME:-/workspace/.hf}"
 

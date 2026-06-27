@@ -1,4 +1,4 @@
-# Architecture — OpenCacao-7B
+# Architecture — OpenCacao-8B
 
 Ce document complète la section 3 de [`CLAUDE_OpenCacao.md`](../CLAUDE_OpenCacao.md).
 
@@ -67,7 +67,7 @@ tous les garde-fous et la journalisation s'appliquent.
 ```
 corpus/*.jsonl
    └→ train_lora.py (GPU 24 Go) → models/lora-adapter/
-        └→ merge_and_export.py → models/opencacao-7b/
+        └→ merge_and_export.py → models/opencacao-8b/
              └→ export GGUF → service llama-cpp (CPU)
 ```
 

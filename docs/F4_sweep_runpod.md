@@ -77,7 +77,7 @@ Le script enchaîne, **tout sur le pod** :
 3. sert la base BF16 **+ tous les adaptateurs** via vLLM (LoRA, **sans fusion**) ;
 4. **évalue chaque combinaison** (garde-fous + qualité + juge + latence) ;
 5. **sélectionne** le meilleur point de contrôle d'après l'éval ;
-6. fusionne **uniquement le vainqueur** + exporte `models/opencacao-7b-Q4_K_M.gguf`.
+6. fusionne **uniquement le vainqueur** + exporte `models/opencacao-8b-Q4_K_M.gguf`.
 
 Le tableau comparatif et le vainqueur sont écrits dans
 `models/sweep/rapport_sweep.json`.
@@ -92,7 +92,7 @@ cat models/sweep/rapport_sweep.json
 
 ## Étape 6 — Rapatrier le GGUF
 ```sh
-runpodctl send models/opencacao-7b-Q4_K_M.gguf      # sur le pod
+runpodctl send models/opencacao-8b-Q4_K_M.gguf      # sur le pod
 runpodctl receive <code>                            # sur ton PC
 ```
 

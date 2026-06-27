@@ -95,7 +95,7 @@ bash training/scripts/pod_gguf.sh "${MERGED_DIR}"
 
 echo ""
 echo "================================ TERMINÉ ============================"
-echo " GGUF prêt : models/opencacao-7b-Q4_K_M.gguf (~5 Go)"
+echo " GGUF prêt : models/opencacao-8b-Q4_K_M.gguf (~5 Go)"
 echo " Suite (cf. docs/F2_distillation_runpod.md) : éval F1 avant/après, puis"
 echo " rapatrier + déployer sur le CX53 si garde-fous=100% ET qualité>=baseline."
 echo "===================================================================="

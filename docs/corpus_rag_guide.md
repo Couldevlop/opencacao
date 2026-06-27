@@ -43,7 +43,7 @@ Ministral 3 ou le modèle OpenCacao). Variables d'environnement :
 | Variable | Rôle | Défaut |
 |---|---|---|
 | `CORPUS_LLM_BASE_URL` | URL du serveur LLM | `http://localhost:8000` |
-| `CORPUS_LLM_MODEL` | Nom du modèle servi | `opencacao-7b` |
+| `CORPUS_LLM_MODEL` | Nom du modèle servi | `opencacao-8b` |
 | `CORPUS_LLM_API_KEY` | Jeton (optionnel) | — |
 | `CORPUS_EMBED_MODEL` | Modèle d'embeddings | `paraphrase-multilingual-MiniLM-L12-v2` |
 

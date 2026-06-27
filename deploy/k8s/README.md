@@ -16,8 +16,8 @@ Internet ──HTTPS──▶ Ingress Traefik ┬─ /v1 ─▶ api (FastAPI, ga
 ## 0. Prérequis : produire le modèle GGUF (à dé-risquer EN PREMIER)
 Sur le pod GPU (modèle fusionné présent) :
 ```sh
-bash training/scripts/pod_gguf.sh          # -> models/opencacao-7b-Q4_K_M.gguf (~5 Go)
-runpodctl send models/opencacao-7b-Q4_K_M.gguf
+bash training/scripts/pod_gguf.sh          # -> models/opencacao-8b-Q4_K_M.gguf (~5 Go)
+runpodctl send models/opencacao-8b-Q4_K_M.gguf
 ```
 Récupère-le sur ton PC (`runpodctl receive <code>`). **Teste-le** rapidement avant
 de déployer (ex. `docker run ... ghcr.io/ggml-org/llama.cpp:server -m … && curl /v1/models`) :
@@ -49,7 +49,7 @@ kubectl -n opencacao run gguf-loader --image=busybox --restart=Never \
   --overrides='{"spec":{"containers":[{"name":"l","image":"busybox","command":["sleep","3600"],
   "volumeMounts":[{"name":"m","mountPath":"/models"}]}],"volumes":[{"name":"m",
   "persistentVolumeClaim":{"claimName":"modele-gguf"}}]}}'
-kubectl -n opencacao cp opencacao-7b-Q4_K_M.gguf gguf-loader:/models/opencacao-7b-Q4_K_M.gguf
+kubectl -n opencacao cp opencacao-8b-Q4_K_M.gguf gguf-loader:/models/opencacao-8b-Q4_K_M.gguf
 kubectl -n opencacao delete pod gguf-loader
 ```
 *(Alternative : initContainer qui télécharge le GGUF depuis l'Object Storage S3 Hetzner.)*

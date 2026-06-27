@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Entraînement LoRA d'OpenCacao-7B sur un pod GPU loué (RunPod, etc.).
+# Entraînement LoRA d'OpenCacao-8B sur un pod GPU loué (RunPod, etc.).
 #
 # Tourne ENTIÈREMENT sur le pod : installe les dépendances d'entraînement,
 # affine Ministral 3 8B en LoRA 4-bit sur le corpus (RAG + démarrage), fusionne

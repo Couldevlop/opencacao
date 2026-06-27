@@ -2,7 +2,7 @@
 # Démo complète SUR LE POD : sert le modèle (vLLM) + l'API FastAPI qui sert aussi
 # l'interface web. Tout sur le port 8080, même origine -> aucun CORS.
 #
-# Pré-requis : dépôt cloné, modèle fusionné présent (models/opencacao-7b),
+# Pré-requis : dépôt cloné, modèle fusionné présent (models/opencacao-8b),
 #              GPU disponible.
 # Usage (racine du dépôt) :
 #   bash training/scripts/pod_demo.sh
@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-MODELE="${1:-models/opencacao-7b}"
+MODELE="${1:-models/opencacao-8b}"
 export HF_HOME="${HF_HOME:-/workspace/.hf}"
 
 echo "==> 0/3  Vérification de vLLM (requiert un driver CUDA >= 12.8)"
@@ -22,7 +22,7 @@ pkill -9 -f "vllm.entrypoints" 2>/dev/null || true
 sleep 2
 nohup python -m vllm.entrypoints.openai.api_server \
   --model "${MODELE}" \
-  --served-model-name opencacao-7b \
+  --served-model-name opencacao-8b \
   --limit-mm-per-prompt '{"image": 0}' \
   --port 8000 \
   --max-model-len 4096 \
@@ -47,7 +47,7 @@ echo "==> 3/3  Lancement de l'API + interface sur :8080"
 # se dégradent proprement. ALLOWED_HOSTS=* (CSV accepté depuis le correctif).
 export INFERENCE_BACKEND=vllm
 export INFERENCE_URL=http://localhost:8000
-export MODEL_NAME=opencacao-7b
+export MODEL_NAME=opencacao-8b
 export ALLOWED_HOSTS='*'
 export ENABLE_DOCS=false
 echo

@@ -5,11 +5,11 @@
 #   bash training/scripts/pod_serve.sh
 #   # puis, dans un 2e terminal : bash training/scripts/pod_ask.sh
 #
-# Argument optionnel : chemin du modèle (défaut : models/opencacao-7b).
+# Argument optionnel : chemin du modèle (défaut : models/opencacao-8b).
 
 set -euo pipefail
 
-MODELE="${1:-models/opencacao-7b}"
+MODELE="${1:-models/opencacao-8b}"
 export HF_HOME="${HF_HOME:-/workspace/.hf}"
 
 # Libère un éventuel vLLM résiduel (sinon VRAM occupée).
