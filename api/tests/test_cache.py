@@ -19,6 +19,7 @@ class FakeRedis:
         self.store: dict[str, str] = {}
         self.counters: dict[str, int] = {}
         self.expirations: dict[str, int] = {}
+        self.hashes: dict[str, dict[str, str]] = {}
         self.closed = False
 
     async def get(self, key: str) -> str | None:
@@ -33,6 +34,20 @@ class FakeRedis:
 
     async def expire(self, key: str, seconds: int) -> None:
         self.expirations[key] = seconds
+
+    async def hset(self, key: str, field: str, value: str) -> None:
+        self.hashes.setdefault(key, {})[field] = value
+
+    async def hgetall(self, key: str) -> dict[str, str]:
+        return dict(self.hashes.get(key, {}))
+
+    async def hdel(self, key: str, *fields: str) -> None:
+        bucket = self.hashes.get(key, {})
+        for field in fields:
+            bucket.pop(field, None)
+
+    async def hlen(self, key: str) -> int:
+        return len(self.hashes.get(key, {}))
 
     async def ping(self) -> bool:
         return True
@@ -54,6 +69,18 @@ class BrokenRedis:
         raise redis.RedisError("down")
 
     async def expire(self, key: str, seconds: int) -> None:
+        raise redis.RedisError("down")
+
+    async def hset(self, key: str, field: str, value: str) -> None:
+        raise redis.RedisError("down")
+
+    async def hgetall(self, key: str) -> dict[str, str]:
+        raise redis.RedisError("down")
+
+    async def hdel(self, key: str, *fields: str) -> None:
+        raise redis.RedisError("down")
+
+    async def hlen(self, key: str) -> int:
         raise redis.RedisError("down")
 
     async def ping(self) -> bool:
@@ -192,3 +219,67 @@ async def test_cache_isole_par_app_version() -> None:
     nouveau = CacheClient(partage, rate_limit_per_min=20, app_version="0.6.19")
     await ancien.set_cached("Q", "fr", '{"reponse": "ancien"}')
     assert await nouveau.get_cached("Q", "fr") is None
+
+
+# --- Cache sémantique (similarité d'embeddings) ---
+
+
+async def test_get_semantic_retrouve_une_paraphrase() -> None:
+    """Une question proche (vecteur quasi colinéaire) retrouve la réponse cachée."""
+    cache = CacheClient(FakeRedis(), rate_limit_per_min=20)
+    await cache.set_cached("Comment tailler le cacaoyer ?", "fr", '{"reponse": "Taillez ainsi."}')
+    await cache.index_semantic("Comment tailler le cacaoyer ?", "fr", [1.0, 0.0, 0.0])
+
+    # Paraphrase vectorisée presque identique -> cosinus ~1, au-dessus du seuil.
+    trouve = await cache.get_semantic("fr", [0.99, 0.02, 0.0], threshold=0.92)
+    assert trouve == '{"reponse": "Taillez ainsi."}'
+
+
+async def test_get_semantic_sous_le_seuil_retourne_none() -> None:
+    """Un vecteur trop différent (sous le seuil) n'est pas servi."""
+    cache = CacheClient(FakeRedis(), rate_limit_per_min=20)
+    await cache.set_cached("Comment tailler le cacaoyer ?", "fr", '{"reponse": "Taillez."}')
+    await cache.index_semantic("Comment tailler le cacaoyer ?", "fr", [1.0, 0.0, 0.0])
+
+    # Vecteur orthogonal -> cosinus 0 -> miss.
+    assert await cache.get_semantic("fr", [0.0, 1.0, 0.0], threshold=0.92) is None
+
+
+async def test_get_semantic_isole_par_langue() -> None:
+    """L'index sémantique est cloisonné par langue."""
+    cache = CacheClient(FakeRedis(), rate_limit_per_min=20)
+    await cache.set_cached("Comment tailler ?", "fr", '{"reponse": "FR"}')
+    await cache.index_semantic("Comment tailler ?", "fr", [1.0, 0.0, 0.0])
+
+    assert await cache.get_semantic("en", [1.0, 0.0, 0.0], threshold=0.92) is None
+
+
+async def test_get_semantic_ignore_une_entree_expiree() -> None:
+    """Si le payload a expiré (TTL) mais l'index demeure, on ne sert rien."""
+    fake = FakeRedis()
+    cache = CacheClient(fake, rate_limit_per_min=20)
+    await cache.index_semantic("Comment tailler ?", "fr", [1.0, 0.0, 0.0])  # index sans payload
+
+    assert await cache.get_semantic("fr", [1.0, 0.0, 0.0], threshold=0.92) is None
+
+
+async def test_index_semantic_plafonne_le_nombre_d_entrees() -> None:
+    """Au-delà du plafond, l'index n'enfle pas indéfiniment (éviction)."""
+    fake = FakeRedis()
+    cache = CacheClient(fake, rate_limit_per_min=20, semantic_max_entries=2)
+    for i in range(5):
+        await cache.index_semantic(f"Question {i} ?", "fr", [float(i), 1.0, 0.0])
+    bucket = next(iter(fake.hashes.values()))
+    assert len(bucket) <= 2
+
+
+async def test_get_semantic_tolere_panne() -> None:
+    """Une panne Redis sur l'index sémantique retombe en miss (None)."""
+    cache = CacheClient(BrokenRedis(), rate_limit_per_min=20)
+    assert await cache.get_semantic("fr", [1.0, 0.0, 0.0], threshold=0.92) is None
+
+
+async def test_index_semantic_tolere_panne() -> None:
+    """Une panne Redis pendant l'indexation est silencieuse (pas de crash)."""
+    cache = CacheClient(BrokenRedis(), rate_limit_per_min=20)
+    assert await cache.index_semantic("Q ?", "fr", [1.0, 0.0, 0.0]) is None

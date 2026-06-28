@@ -78,6 +78,17 @@ class Settings(BaseSettings):
     rag_poids_lexical: float = 0.35
     rag_seuil_lexical: float = 0.5
 
+    # --- Cache sémantique ---
+    # Sur un miss exact, vectorise la question et sert la réponse d'une question
+    # cachée sémantiquement proche (paraphrase) -> évite une génération CPU.
+    # Désactivé par défaut : activable sans rebuild via SEMANTIC_CACHE_ENABLED.
+    semantic_cache_enabled: bool = False
+    # Similarité cosinus minimale pour servir une réponse cachée (conservateur :
+    # mieux vaut un miss qu'une réponse hors sujet).
+    semantic_cache_threshold: float = 0.92
+    # Plafond d'entrées de l'index sémantique par (version, langue).
+    semantic_cache_max_entries: int = 2000
+
     # Pré-chauffage du cache au démarrage : génère une fois les questions FAQ
     # (app.application.faq) en tâche de fond -> réponses instantanées ensuite.
     prewarm_enabled: bool = True

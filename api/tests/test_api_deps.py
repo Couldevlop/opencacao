@@ -62,3 +62,43 @@ def test_ip_inconnue_si_pas_de_client(monkeypatch) -> None:
     _patch_settings(monkeypatch, trust_forwarded_for=False)
     req = _FakeRequest({}, host=None)
     assert get_client_ip(req) == "unknown"
+
+
+# --- Câblage du cache sémantique dans le ConseilService ---
+
+
+class _FakeState:
+    def __init__(self, **kw) -> None:
+        self.__dict__.update(kw)
+
+
+class _FakeAppRequest:
+    """Requête minimale exposant app.state, pour get_conseil_service."""
+
+    def __init__(self, state: _FakeState) -> None:
+        self.app = type("App", (), {"state": state})()
+
+
+def _state() -> _FakeState:
+    return _FakeState(
+        inference=object(), cache=object(), journal=object(), rag=None, embeddings=object()
+    )
+
+
+def test_conseil_service_sans_cache_semantique(monkeypatch) -> None:
+    """Flag OFF : le service est construit sans service d'embeddings (exact-match seul)."""
+    _patch_settings(monkeypatch, semantic_cache_enabled=False)
+    service = api_deps.get_conseil_service(_FakeAppRequest(_state()))
+    assert service._embeddings is None
+
+
+def test_conseil_service_avec_cache_semantique(monkeypatch) -> None:
+    """Flag ON : le service reçoit le client d'embeddings et le seuil configuré."""
+    emb = object()
+    state = _FakeState(
+        inference=object(), cache=object(), journal=object(), rag=None, embeddings=emb
+    )
+    _patch_settings(monkeypatch, semantic_cache_enabled=True, semantic_cache_threshold=0.9)
+    service = api_deps.get_conseil_service(_FakeAppRequest(state))
+    assert service._embeddings is emb
+    assert service._seuil_semantique == 0.9
