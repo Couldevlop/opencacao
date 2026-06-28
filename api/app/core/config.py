@@ -86,6 +86,10 @@ class Settings(BaseSettings):
     # Similarité cosinus minimale pour servir une réponse cachée (conservateur :
     # mieux vaut un miss qu'une réponse hors sujet).
     semantic_cache_threshold: float = 0.92
+    # Garde-fou lexical : couverture minimale des mots-clés de la question cachée par
+    # la question entrante. Bloque un voisin sémantique au qualificatif divergent
+    # (« cacaoyer adulte » vs « cacaoyer jeune »), dont la réponse diffère.
+    semantic_cache_lexical_min: float = 0.75
     # Plafond d'entrées de l'index sémantique par (version, langue).
     semantic_cache_max_entries: int = 2000
 

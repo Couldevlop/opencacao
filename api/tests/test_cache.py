@@ -225,14 +225,15 @@ async def test_cache_isole_par_app_version() -> None:
 
 
 async def test_get_semantic_retrouve_une_paraphrase() -> None:
-    """Une question proche (vecteur quasi colinéaire) retrouve la réponse cachée."""
+    """Une question proche (vecteur quasi colinéaire) retrouve réponse ET question cachée."""
     cache = CacheClient(FakeRedis(), rate_limit_per_min=20)
     await cache.set_cached("Comment tailler le cacaoyer ?", "fr", '{"reponse": "Taillez ainsi."}')
     await cache.index_semantic("Comment tailler le cacaoyer ?", "fr", [1.0, 0.0, 0.0])
 
     # Paraphrase vectorisée presque identique -> cosinus ~1, au-dessus du seuil.
+    # get_semantic renvoie (payload, question_cachée) pour permettre le garde-fou lexical.
     trouve = await cache.get_semantic("fr", [0.99, 0.02, 0.0], threshold=0.92)
-    assert trouve == '{"reponse": "Taillez ainsi."}'
+    assert trouve == ('{"reponse": "Taillez ainsi."}', "Comment tailler le cacaoyer ?")
 
 
 async def test_get_semantic_sous_le_seuil_retourne_none() -> None:

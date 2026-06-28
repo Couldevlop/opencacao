@@ -84,6 +84,7 @@ def get_conseil_service(request: Request) -> ConseilService:
         rag=getattr(request.app.state, "rag", None),
         embeddings=embeddings,
         semantic_cache_threshold=settings.semantic_cache_threshold,
+        semantic_cache_lexical_min=settings.semantic_cache_lexical_min,
     )
 
 

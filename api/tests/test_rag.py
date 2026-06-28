@@ -10,10 +10,35 @@ from app.services.rag import (
     RagIndex,
     RagRecuperateur,
     _mots_cles,
+    couverture_lexicale,
     formater_contexte,
     recouvrement_lexical,
     reranker,
 )
+
+
+def test_couverture_lexicale_paraphrase_complete() -> None:
+    """Une reformulation qui reprend tous les mots-clés couvre à 100 %."""
+    cov = couverture_lexicale(
+        "Comment tailler le cacaoyer adulte ?", "De quelle façon tailler mes cacaoyers adultes ?"
+    )
+    assert cov == 1.0  # cacaoyers/adultes radicalisés -> cacaoyer/adulte
+
+
+def test_couverture_lexicale_qualificatif_different() -> None:
+    """Un qualificatif porteur divergent (adulte vs jeune) fait chuter la couverture."""
+    cov = couverture_lexicale(
+        "Comment tailler le cacaoyer adulte ?", "Comment tailler un jeune cacaoyer ?"
+    )
+    assert cov < 0.75  # « adulte » absent de l'entrante
+
+
+def test_couverture_lexicale_sujet_different() -> None:
+    """Deux sujets distincts ne se couvrent quasiment pas."""
+    cov = couverture_lexicale(
+        "Comment lutter contre la pourriture brune ?", "Comment lutter contre les mirides ?"
+    )
+    assert cov < 0.6  # « pourriture/brune » absents -> sous le seuil du garde-fou (0,75)
 
 
 def _ecrire_index(chemin: Path) -> None:

@@ -58,8 +58,8 @@ class CachePort(Protocol):
 
     async def get_semantic(
         self, langue: str, embedding: list[float], threshold: float
-    ) -> str | None:
-        """Retourne la réponse d'une question cachée sémantiquement proche, ou None."""
+    ) -> tuple[str, str] | None:
+        """Retourne ``(payload, question)`` d'une entrée cachée proche, ou None."""
         ...
 
     async def index_semantic(self, question: str, langue: str, embedding: list[float]) -> None:

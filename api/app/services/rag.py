@@ -50,6 +50,34 @@ def recouvrement_lexical(mots_question: set[str], texte: str) -> float:
     return len(mots_question & _mots_cles(texte)) / len(mots_question)
 
 
+def _radical(mot: str) -> str:
+    """Radicalisation légère : retire un -s/-x final (pluriels) pour apparier
+    « cacaoyer » et « cacaoyers », « adulte » et « adultes »."""
+    return mot[:-1] if len(mot) > 4 and mot[-1] in "sx" else mot
+
+
+def couverture_lexicale(reference: str, candidat: str) -> float:
+    """Fraction des mots-clés (radicalisés) de ``reference`` présents dans ``candidat``.
+
+    Sert de garde-fou au cache sémantique : on n'autorise un hit que si la question
+    entrante (``candidat``) reprend les mots porteurs de la question cachée
+    (``reference``). Un qualificatif divergent (« adulte » vs « jeune ») fait ainsi
+    chuter la couverture et bloque un faux positif.
+
+    Args:
+        reference: Question cachée dont on exige la couverture.
+        candidat: Question entrante.
+
+    Returns:
+        Couverture de 0.0 à 1.0 (1.0 = tous les mots-clés de référence présents).
+    """
+    ref = {_radical(m) for m in _mots_cles(reference)}
+    if not ref:
+        return 0.0
+    cand = {_radical(m) for m in _mots_cles(candidat)}
+    return len(ref & cand) / len(ref)
+
+
 @dataclass(frozen=True)
 class Passage:
     """Extrait de connaissance retrouvé, avec sa source et son score de pertinence."""
