@@ -160,6 +160,7 @@ def _construire_rag(settings: Settings) -> tuple[object | None, object | None]:
         candidats=settings.rag_candidats,
         poids_lexical=settings.rag_poids_lexical,
         seuil_lexical=settings.rag_seuil_lexical,
+        hybride=settings.rag_hybride_enabled,
     )
 
 
