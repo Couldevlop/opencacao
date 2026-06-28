@@ -26,6 +26,7 @@ cd "$ROOT"
 cleanup() {
   echo "→ Démontage du pod de build"
   [ -n "${PF_PID:-}" ] && kill "$PF_PID" 2>/dev/null || true
+  pkill -f "port-forward svc/embeddings-build" 2>/dev/null || true
   kubectl -n "$NS" delete deploy/embeddings-build svc/embeddings-build --ignore-not-found >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -79,13 +80,26 @@ YAML
 echo "→ 3/5 Attente de la disponibilité du pod 4B (chargement ~4,3 Go)…"
 kubectl -n "$NS" rollout status deploy/embeddings-build --timeout=300s
 
-echo "→ 4/5 Port-forward + construction de l'index"
-kubectl -n "$NS" port-forward svc/embeddings-build "${PORT_LOCAL}:8001" >/tmp/pf_build.log 2>&1 &
+echo "→ 4/5 Port-forward (auto-redémarrant) + construction de l'index"
+# Boucle de reconnexion : si le tunnel lâche (fréquent sur un build long), il
+# repart aussitôt ; le retry par lot côté Python comble la coupure. Le build est
+# résumable (l'index partiel est conservé) -> aucun travail perdu.
+( while true; do
+    kubectl -n "$NS" port-forward svc/embeddings-build "${PORT_LOCAL}:8001" >>/tmp/pf_build.log 2>&1
+    echo "[pf] tunnel tombé, reconnexion…" >>/tmp/pf_build.log
+    sleep 2
+  done ) &
 PF_PID=$!
-sleep 6
-curl -sf --max-time 10 "http://127.0.0.1:${PORT_LOCAL}/health" >/dev/null \
-  || { echo "  ✗ embeddings-build injoignable"; cat /tmp/pf_build.log; exit 1; }
 
+# Attente de la première disponibilité du tunnel (jusqu'à ~30 s).
+ready=0
+for _ in $(seq 1 15); do
+  if curl -sf --max-time 5 "http://127.0.0.1:${PORT_LOCAL}/health" >/dev/null 2>&1; then ready=1; break; fi
+  sleep 2
+done
+[ "$ready" = 1 ] || { echo "  ✗ embeddings-build injoignable"; cat /tmp/pf_build.log; exit 1; }
+
+# build_rag_index.py est résumable : relancer le script reprend là où il s'est arrêté.
 python training/scripts/build_rag_index.py \
   --sources corpus/corpus_cacao_rag.jsonl corpus/corpus_cacao_demarrage.jsonl corpus/corpus_cure.jsonl \
   --embeddings-url "http://127.0.0.1:${PORT_LOCAL}" \
