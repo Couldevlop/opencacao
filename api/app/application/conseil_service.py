@@ -18,7 +18,7 @@ from app.domain.ports import CachePort, EmbeddingsPort, InferencePort, JournalPo
 from app.models.chat import DISCLAIMER
 from app.models.domain import Confiance, Langue
 from app.services import clarification, contacts, guardrails, postprocess
-from app.services.rag import RagRecuperateur
+from app.services.rag import RagRecuperateur, couverture_lexicale
 
 logger = get_logger(__name__)
 
@@ -38,6 +38,7 @@ class ConseilService:
         rag: RagRecuperateur | None = None,
         embeddings: EmbeddingsPort | None = None,
         semantic_cache_threshold: float = 0.92,
+        semantic_cache_lexical_min: float = 0.75,
     ) -> None:
         """Initialise le service avec ses dépendances (ports).
 
@@ -50,6 +51,8 @@ class ConseilService:
                 (désactive la couche sémantique : repli sur l'exact-match seul).
             semantic_cache_threshold: Similarité cosinus minimale pour servir une
                 réponse cachée sémantiquement proche.
+            semantic_cache_lexical_min: Couverture lexicale minimale (garde-fou) des
+                mots-clés de la question cachée par la question entrante.
         """
         self._inference = inference
         self._cache = cache
@@ -57,6 +60,7 @@ class ConseilService:
         self._rag = rag
         self._embeddings = embeddings
         self._seuil_semantique = semantic_cache_threshold
+        self._seuil_lexical = semantic_cache_lexical_min
 
     async def _vecteur_question(
         self, question: str, historique: list[dict[str, str]]
@@ -73,12 +77,26 @@ class ConseilService:
             return None
         return vecteurs[0]
 
-    async def _hit_semantique(self, langue: str, embedding: list[float] | None) -> dict | None:
-        """Retourne le paquet déchiffré d'une réponse cachée proche, ou None."""
+    async def _hit_semantique(
+        self, question: str, langue: str, embedding: list[float] | None
+    ) -> dict | None:
+        """Réponse cachée sémantiquement proche ET lexicalement compatible, ou None.
+
+        Deux conditions : similarité cosinus >= seuil (assurée par ``get_semantic``)
+        ET garde-fou lexical — la question entrante doit reprendre les mots-clés de la
+        question cachée. Ce dernier bloque un voisin sémantique au qualificatif
+        divergent (« cacaoyer adulte » vs « cacaoyer jeune »), dont la réponse diffère.
+        """
         if embedding is None:
             return None
-        paquet = await self._cache.get_semantic(langue, embedding, self._seuil_semantique)
-        return json.loads(paquet) if paquet is not None else None
+        trouve = await self._cache.get_semantic(langue, embedding, self._seuil_semantique)
+        if trouve is None:
+            return None
+        payload, question_cachee = trouve
+        if couverture_lexicale(question_cachee, question) < self._seuil_lexical:
+            logger.info("cache_semantique_rejet_lexical")
+            return None
+        return json.loads(payload)
 
     @staticmethod
     def _conseil_depuis_paquet(donnees: dict) -> Conseil:
@@ -211,7 +229,7 @@ class ConseilService:
                     question, langue, self._enrichir_contact(conseil, texte_conv)
                 )
             embedding = await self._vecteur_question(question, historique)
-            paquet = await self._hit_semantique(langue.value, embedding)
+            paquet = await self._hit_semantique(question, langue.value, embedding)
             if paquet is not None:
                 logger.info("cache_semantique_hit")
                 conseil = self._conseil_depuis_paquet(paquet)
@@ -363,7 +381,7 @@ class ConseilService:
                     yield ev
                 return
             embedding = await self._vecteur_question(question, historique)
-            paquet = await self._hit_semantique(langue.value, embedding)
+            paquet = await self._hit_semantique(question, langue.value, embedding)
             if paquet is not None:
                 logger.info("cache_semantique_hit")
                 async for ev in self._diffuser_cache(paquet, texte_conv, question, langue):

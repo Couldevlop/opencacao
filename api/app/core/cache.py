@@ -152,45 +152,52 @@ class CacheClient:
                     : max(1, len(existants) - self._semantic_max_entries + 1)
                 ]:
                     await self._redis.hdel(bucket, ancien)
-            await self._redis.hset(bucket, champ, json.dumps(embedding))
+            # On stocke le vecteur ET la question : un hit sémantique pourra ainsi
+            # être confirmé par un garde-fou lexical côté application.
+            await self._redis.hset(bucket, champ, json.dumps({"e": embedding, "q": question}))
             await self._redis.expire(bucket, self._CACHE_TTL_S)
         except redis.RedisError:
             return
 
     async def get_semantic(
         self, langue: str, embedding: list[float], threshold: float
-    ) -> str | None:
-        """Retourne le payload d'une question cachée sémantiquement proche, ou None.
+    ) -> tuple[str, str] | None:
+        """Retourne ``(payload, question)`` d'une entrée cachée proche, ou None.
 
         Balaie l'index ``(versions, langue)``, retient la meilleure similarité cosinus
-        et ne sert le payload que si elle atteint ``threshold``. Une entrée dont le
-        payload a expiré (TTL) est purgée et ignorée.
+        et ne renvoie l'entrée que si elle atteint ``threshold``. La question est
+        renvoyée pour permettre un garde-fou lexical côté application. Une entrée dont
+        le payload a expiré (TTL) est purgée et ignorée.
 
         Args:
             langue: Langue de la requête.
             embedding: Vecteur dense de la question entrante.
-            threshold: Similarité cosinus minimale pour servir une réponse.
+            threshold: Similarité cosinus minimale pour retenir une correspondance.
 
         Returns:
-            Le payload JSON de la meilleure correspondance, ou None.
+            ``(payload JSON, question cachée)`` de la meilleure correspondance, ou None.
         """
         bucket = self._semidx_key(langue)
         try:
             entrees = await self._redis.hgetall(bucket)
             meilleure_cle: str | None = None
+            meilleure_question = ""
             meilleure_sim = threshold
-            for cle, vecteur_json in entrees.items():
-                sim = _cosinus(embedding, json.loads(vecteur_json))
+            for cle, valeur_json in entrees.items():
+                entree = json.loads(valeur_json)
+                sim = _cosinus(embedding, entree["e"])
                 if sim >= meilleure_sim:
                     meilleure_sim = sim
                     meilleure_cle = cle
+                    meilleure_question = entree["q"]
             if meilleure_cle is None:
                 return None
             payload = await self._redis.get(meilleure_cle)
             if payload is None:  # entrée orpheline (payload expiré) -> purge
                 await self._redis.hdel(bucket, meilleure_cle)
-            return payload
-        except (redis.RedisError, ValueError):
+                return None
+            return payload, meilleure_question
+        except (redis.RedisError, ValueError, KeyError):
             return None
 
     async def hit_rate_limit(self, client_ip: str) -> bool:

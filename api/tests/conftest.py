@@ -28,7 +28,7 @@ class FakeCache:
         self._store: dict[str, str] = {}
         self._counts: dict[str, int] = {}
         self._rate_limit = rate_limit
-        self._sem: list[tuple[str, list[float], str]] = []  # (langue, vecteur, clé)
+        self._sem: list[tuple[str, list[float], str, str]] = []  # (langue, vecteur, clé, question)
 
     async def get_cached(self, question: str, langue: str) -> str | None:
         return self._store.get(f"{langue}:{question}")
@@ -38,20 +38,20 @@ class FakeCache:
 
     async def get_semantic(
         self, langue: str, embedding: list[float], threshold: float
-    ) -> str | None:
-        meilleure_cle: str | None = None
+    ) -> tuple[str, str] | None:
+        meilleure: tuple[str, str] | None = None
         meilleure_sim = threshold
-        for lg, vecteur, cle in self._sem:
+        for lg, vecteur, cle, question in self._sem:
             if lg != langue:
                 continue
             sim = _cosinus(embedding, vecteur)
-            if sim >= meilleure_sim:
+            if sim >= meilleure_sim and self._store.get(cle) is not None:
                 meilleure_sim = sim
-                meilleure_cle = cle
-        return self._store.get(meilleure_cle) if meilleure_cle else None
+                meilleure = (self._store[cle], question)
+        return meilleure
 
     async def index_semantic(self, question: str, langue: str, embedding: list[float]) -> None:
-        self._sem.append((langue, list(embedding), f"{langue}:{question}"))
+        self._sem.append((langue, list(embedding), f"{langue}:{question}", question))
 
     async def hit_rate_limit(self, client_ip: str) -> bool:
         self._counts[client_ip] = self._counts.get(client_ip, 0) + 1

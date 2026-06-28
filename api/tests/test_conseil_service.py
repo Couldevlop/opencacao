@@ -60,11 +60,11 @@ async def test_conseiller_hit_semantique_evite_inference() -> None:
     paquet = _serialiser(
         Conseil("Réponse déjà connue. Sources : CNRA.", Confiance.ELEVEE, ["CNRA"])
     )
-    await cache.set_cached("Comment tailler le cacaoyer adulte ?", "fr", paquet)
-    await cache.index_semantic("Comment tailler le cacaoyer adulte ?", "fr", [1.0, 0.0, 0.0])
+    await cache.set_cached("Comment tailler le cacaoyer ?", "fr", paquet)
+    await cache.index_semantic("Comment tailler le cacaoyer ?", "fr", [1.0, 0.0, 0.0])
     service, _, _ = _service_semantique(embeddings, cache=cache)
 
-    # Question reformulée : miss exact (clé différente) mais vecteur identique.
+    # Reformulation qui reprend les mots-clés (tailler/cacaoyer) -> cosinus + lexical OK.
     conseil = await service.conseiller(
         "De quelle façon tailler un cacaoyer ?", Langue.FR, "1.1.1.1"
     )
@@ -72,6 +72,21 @@ async def test_conseiller_hit_semantique_evite_inference() -> None:
     assert conseil.reponse.startswith("Réponse déjà connue")
     assert service._inference.appels == []  # aucune génération
     assert conseil.interaction_id is not None
+
+
+async def test_conseiller_garde_lexical_rejette_voisin_trompeur() -> None:
+    """Un voisin sémantique au qualificatif divergent (adulte/jeune) n'est PAS servi."""
+    embeddings = FakeEmbeddings(vecteur=[1.0, 0.0, 0.0])  # même vecteur -> cosinus = match
+    cache = FakeCache()
+    paquet = _serialiser(Conseil("Taille du cacaoyer ADULTE.", Confiance.ELEVEE, []))
+    await cache.set_cached("Comment tailler un cacaoyer adulte ?", "fr", paquet)
+    await cache.index_semantic("Comment tailler un cacaoyer adulte ?", "fr", [1.0, 0.0, 0.0])
+    service, _, _ = _service_semantique(embeddings, cache=cache)
+
+    # Cosinus identique, mais « adulte » absent de l'entrante -> garde-fou lexical bloque.
+    await service.conseiller("Comment tailler un jeune cacaoyer ?", Langue.FR, "2.2.2.2")
+
+    assert service._inference.appels  # génération (réponse « adulte » jamais resservie)
 
 
 async def test_conseiller_miss_semantique_genere() -> None:
@@ -124,8 +139,8 @@ async def test_stream_hit_semantique_evite_inference() -> None:
     embeddings = FakeEmbeddings(vecteur=[1.0, 0.0, 0.0])
     cache = FakeCache()
     paquet = _serialiser(Conseil("Réponse en flux cachée.", Confiance.ELEVEE, []))
-    await cache.set_cached("Comment tailler le cacaoyer adulte ?", "fr", paquet)
-    await cache.index_semantic("Comment tailler le cacaoyer adulte ?", "fr", [1.0, 0.0, 0.0])
+    await cache.set_cached("Comment tailler le cacaoyer ?", "fr", paquet)
+    await cache.index_semantic("Comment tailler le cacaoyer ?", "fr", [1.0, 0.0, 0.0])
     service, _, _ = _service_semantique(embeddings, cache=cache)
 
     evenements = [
