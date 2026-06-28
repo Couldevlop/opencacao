@@ -67,12 +67,23 @@ def get_auth_service(
 
 
 def get_conseil_service(request: Request) -> ConseilService:
-    """Construit le cas d'usage à partir des ports en état d'application."""
+    """Construit le cas d'usage à partir des ports en état d'application.
+
+    Le cache sémantique n'est branché que si activé en configuration ET si le
+    service d'embeddings est disponible (partagé avec le RAG). Sinon, le service
+    retombe sur le cache exact-match seul.
+    """
+    settings = get_settings()
+    embeddings = (
+        getattr(request.app.state, "embeddings", None) if settings.semantic_cache_enabled else None
+    )
     return ConseilService(
         inference=request.app.state.inference,
         cache=request.app.state.cache,
         journal=request.app.state.journal,
         rag=getattr(request.app.state, "rag", None),
+        embeddings=embeddings,
+        semantic_cache_threshold=settings.semantic_cache_threshold,
     )
 
 

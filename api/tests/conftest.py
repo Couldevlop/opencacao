@@ -16,23 +16,42 @@ from app.api_deps import (
     get_notifier,
 )
 from app.application.conseil_service import ConseilService
+from app.core.cache import _cosinus
 from app.core.config import get_settings
 from app.main import create_app
 
 
 class FakeCache:
-    """Cache en mémoire, sans Redis, pour les tests."""
+    """Cache en mémoire, sans Redis, pour les tests (exact + sémantique)."""
 
     def __init__(self, rate_limit: int = 20) -> None:
         self._store: dict[str, str] = {}
         self._counts: dict[str, int] = {}
         self._rate_limit = rate_limit
+        self._sem: list[tuple[str, list[float], str]] = []  # (langue, vecteur, clé)
 
     async def get_cached(self, question: str, langue: str) -> str | None:
         return self._store.get(f"{langue}:{question}")
 
     async def set_cached(self, question: str, langue: str, payload: str) -> None:
         self._store[f"{langue}:{question}"] = payload
+
+    async def get_semantic(
+        self, langue: str, embedding: list[float], threshold: float
+    ) -> str | None:
+        meilleure_cle: str | None = None
+        meilleure_sim = threshold
+        for lg, vecteur, cle in self._sem:
+            if lg != langue:
+                continue
+            sim = _cosinus(embedding, vecteur)
+            if sim >= meilleure_sim:
+                meilleure_sim = sim
+                meilleure_cle = cle
+        return self._store.get(meilleure_cle) if meilleure_cle else None
+
+    async def index_semantic(self, question: str, langue: str, embedding: list[float]) -> None:
+        self._sem.append((langue, list(embedding), f"{langue}:{question}"))
 
     async def hit_rate_limit(self, client_ip: str) -> bool:
         self._counts[client_ip] = self._counts.get(client_ip, 0) + 1
@@ -43,6 +62,21 @@ class FakeCache:
 
     async def close(self) -> None:
         return None
+
+
+class FakeEmbeddings:
+    """Service d'embeddings simulé : vecteur fixe, configurable pour échouer."""
+
+    def __init__(self, vecteur: list[float] | None = None, indisponible: bool = False) -> None:
+        self.vecteur = vecteur or [1.0, 0.0, 0.0]
+        self.indisponible = indisponible
+        self.appels: list[list[str]] = []
+
+    async def embed(self, textes: list[str]) -> list[list[float]] | None:
+        self.appels.append(list(textes))
+        if self.indisponible:
+            return None
+        return [list(self.vecteur) for _ in textes]
 
 
 class FakeInference:

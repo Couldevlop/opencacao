@@ -15,7 +15,7 @@ from app.domain.exceptions import RateLimitDepasse
 from app.models.domain import Confiance, Langue
 from app.services import guardrails
 
-from .conftest import FakeCache, FakeInference, FakeJournal
+from .conftest import FakeCache, FakeEmbeddings, FakeInference, FakeJournal
 
 
 def _service(
@@ -31,6 +31,127 @@ def _service(
         journal=journal,
     )
     return service, cache, journal
+
+
+def _service_semantique(
+    embeddings: FakeEmbeddings,
+    cache: FakeCache | None = None,
+    inference: FakeInference | None = None,
+) -> tuple[ConseilService, FakeCache, FakeJournal]:
+    cache = cache or FakeCache()
+    journal = FakeJournal()
+    service = ConseilService(
+        inference=inference or FakeInference(),
+        cache=cache,
+        journal=journal,
+        embeddings=embeddings,
+        semantic_cache_threshold=0.92,
+    )
+    return service, cache, journal
+
+
+# --- Cache sémantique (paraphrase -> réponse cachée, sans inférence) ---
+
+
+async def test_conseiller_hit_semantique_evite_inference() -> None:
+    """Une paraphrase d'une question cachée est servie sans appeler l'inférence."""
+    embeddings = FakeEmbeddings(vecteur=[1.0, 0.0, 0.0])
+    cache = FakeCache()
+    paquet = _serialiser(
+        Conseil("Réponse déjà connue. Sources : CNRA.", Confiance.ELEVEE, ["CNRA"])
+    )
+    await cache.set_cached("Comment tailler le cacaoyer adulte ?", "fr", paquet)
+    await cache.index_semantic("Comment tailler le cacaoyer adulte ?", "fr", [1.0, 0.0, 0.0])
+    service, _, _ = _service_semantique(embeddings, cache=cache)
+
+    # Question reformulée : miss exact (clé différente) mais vecteur identique.
+    conseil = await service.conseiller(
+        "De quelle façon tailler un cacaoyer ?", Langue.FR, "1.1.1.1"
+    )
+
+    assert conseil.reponse.startswith("Réponse déjà connue")
+    assert service._inference.appels == []  # aucune génération
+    assert conseil.interaction_id is not None
+
+
+async def test_conseiller_miss_semantique_genere() -> None:
+    """Un vecteur trop éloigné (sous le seuil) déclenche bien la génération."""
+    embeddings = FakeEmbeddings(vecteur=[0.0, 1.0, 0.0])  # orthogonal à l'indexé
+    cache = FakeCache()
+    await cache.set_cached(
+        "Comment tailler ?", "fr", _serialiser(Conseil("X", Confiance.ELEVEE, []))
+    )
+    await cache.index_semantic("Comment tailler ?", "fr", [1.0, 0.0, 0.0])
+    service, _, _ = _service_semantique(embeddings, cache=cache)
+
+    await service.conseiller("Question éloignée du sujet caché ?", Langue.FR, "2.2.2.2")
+
+    assert service._inference.appels  # génération bien déclenchée
+
+
+async def test_conseiller_sans_embeddings_inchange() -> None:
+    """Sans service d'embeddings, le comportement reste l'exact-match d'aujourd'hui."""
+    service, _, _ = _service()  # embeddings=None par défaut
+
+    await service.conseiller("Comment sécher mes fèves au soleil ?", Langue.FR, "3.3.3.3")
+
+    assert service._inference.appels  # génération (pas de couche sémantique)
+
+
+async def test_conseiller_embeddings_indisponible_fail_soft() -> None:
+    """Si le service d'embeddings tombe, on retombe en génération (pas de crash)."""
+    embeddings = FakeEmbeddings(indisponible=True)
+    service, _, _ = _service_semantique(embeddings)
+
+    await service.conseiller("Comment sécher mes fèves au soleil ?", Langue.FR, "4.4.4.4")
+
+    assert service._inference.appels  # fail-soft -> génération
+
+
+async def test_conseiller_indexe_apres_generation() -> None:
+    """Après une génération, la question est indexée pour les paraphrases futures."""
+    embeddings = FakeEmbeddings(vecteur=[1.0, 0.0, 0.0])
+    cache = FakeCache()
+    service, _, _ = _service_semantique(embeddings, cache=cache)
+
+    await service.conseiller("Comment sécher mes fèves au soleil ?", Langue.FR, "5.5.5.5")
+
+    assert cache._sem  # une entrée d'index sémantique a été créée
+
+
+async def test_stream_hit_semantique_evite_inference() -> None:
+    """En streaming aussi, une paraphrase cachée est diffusée sans inférence."""
+    embeddings = FakeEmbeddings(vecteur=[1.0, 0.0, 0.0])
+    cache = FakeCache()
+    paquet = _serialiser(Conseil("Réponse en flux cachée.", Confiance.ELEVEE, []))
+    await cache.set_cached("Comment tailler le cacaoyer adulte ?", "fr", paquet)
+    await cache.index_semantic("Comment tailler le cacaoyer adulte ?", "fr", [1.0, 0.0, 0.0])
+    service, _, _ = _service_semantique(embeddings, cache=cache)
+
+    evenements = [
+        ev
+        async for ev in service.conseiller_stream(
+            "De quelle façon tailler un cacaoyer ?", Langue.FR, "6.6.6.6"
+        )
+    ]
+
+    textes = "".join(ev.get("text", "") for ev in evenements if ev["type"] == "token")
+    assert "Réponse en flux cachée" in textes
+    assert service._inference.appels == []  # aucune génération
+
+
+async def test_stream_indexe_apres_generation() -> None:
+    """En streaming, une génération neuve est indexée pour les paraphrases futures."""
+    embeddings = FakeEmbeddings(vecteur=[1.0, 0.0, 0.0])
+    cache = FakeCache()
+    service, _, _ = _service_semantique(embeddings, cache=cache)
+
+    async for _ in service.conseiller_stream(
+        "Comment sécher mes fèves au soleil ?", Langue.FR, "7.7.7.7"
+    ):
+        pass
+
+    assert cache._sem  # entrée d'index créée après la génération en flux
 
 
 def _refus_phyto(_texte: str):

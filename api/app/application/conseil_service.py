@@ -14,7 +14,7 @@ from dataclasses import replace
 from app.core.logging import get_logger
 from app.domain.entities import Conseil
 from app.domain.exceptions import RateLimitDepasse
-from app.domain.ports import CachePort, InferencePort, JournalPort
+from app.domain.ports import CachePort, EmbeddingsPort, InferencePort, JournalPort
 from app.models.chat import DISCLAIMER
 from app.models.domain import Confiance, Langue
 from app.services import clarification, contacts, guardrails, postprocess
@@ -36,6 +36,8 @@ class ConseilService:
         cache: CachePort,
         journal: JournalPort,
         rag: RagRecuperateur | None = None,
+        embeddings: EmbeddingsPort | None = None,
+        semantic_cache_threshold: float = 0.92,
     ) -> None:
         """Initialise le service avec ses dépendances (ports).
 
@@ -44,11 +46,65 @@ class ConseilService:
             cache: Port de cache/rate-limit.
             journal: Port de journalisation (jeu de données d'amélioration).
             rag: Récupérateur RAG optionnel (contexte injecté au prompt), ou None.
+            embeddings: Service d'embeddings pour le cache sémantique, ou None
+                (désactive la couche sémantique : repli sur l'exact-match seul).
+            semantic_cache_threshold: Similarité cosinus minimale pour servir une
+                réponse cachée sémantiquement proche.
         """
         self._inference = inference
         self._cache = cache
         self._journal = journal
         self._rag = rag
+        self._embeddings = embeddings
+        self._seuil_semantique = semantic_cache_threshold
+
+    async def _vecteur_question(
+        self, question: str, historique: list[dict[str, str]]
+    ) -> list[float] | None:
+        """Vectorise la question pour le cache sémantique (tour unique uniquement).
+
+        Retourne None si la couche sémantique est désactivée, si on est en
+        multi-tours (le cache ne sert pas en dialogue) ou si l'embedding échoue.
+        """
+        if self._embeddings is None or historique:
+            return None
+        vecteurs = await self._embeddings.embed([question])
+        if not vecteurs:
+            return None
+        return vecteurs[0]
+
+    async def _hit_semantique(self, langue: str, embedding: list[float] | None) -> dict | None:
+        """Retourne le paquet déchiffré d'une réponse cachée proche, ou None."""
+        if embedding is None:
+            return None
+        paquet = await self._cache.get_semantic(langue, embedding, self._seuil_semantique)
+        return json.loads(paquet) if paquet is not None else None
+
+    @staticmethod
+    def _conseil_depuis_paquet(donnees: dict) -> Conseil:
+        """Reconstruit un Conseil depuis un paquet de cache sérialisé."""
+        return Conseil(
+            donnees["reponse"],
+            Confiance(donnees["confiance"]),
+            donnees["sources"],
+            redirection_anader=donnees["redirection_anader"],
+        )
+
+    async def _diffuser_cache(
+        self, donnees: dict, texte_conv: str, question: str, langue: Langue
+    ) -> AsyncIterator[dict]:
+        """Diffuse en flux une réponse de cache (exact ou sémantique) puis le final."""
+        conseil = self._enrichir_contact(self._conseil_depuis_paquet(donnees), texte_conv)
+        for ev in _evenements_token(donnees["reponse"], conseil.reponse):
+            yield ev
+        yield await self._evenement_final(
+            question,
+            langue,
+            conseil.reponse,
+            conseil.sources,
+            conseil.confiance,
+            redirection=conseil.redirection_anader,
+        )
 
     async def _contexte(self, requete: str) -> str | None:
         """Récupère le contexte RAG si activé (best-effort), sinon None.
@@ -145,16 +201,20 @@ class ConseilService:
 
         # Cache de réponses (instantané) — uniquement en tour unique : une réponse
         # multi-tours dépend du contexte et ne doit pas polluer/servir le cache.
+        # Exact d'abord (chemin le moins cher, sans embedding), puis sémantique.
+        embedding: list[float] | None = None
         if not historique:
             cached = await self._cache.get_cached(question, langue.value)
             if cached is not None:
-                donnees = json.loads(cached)
-                conseil = Conseil(
-                    reponse=donnees["reponse"],
-                    confiance=Confiance(donnees["confiance"]),
-                    sources=donnees["sources"],
-                    redirection_anader=donnees["redirection_anader"],
+                conseil = self._conseil_depuis_paquet(json.loads(cached))
+                return await self._journaliser(
+                    question, langue, self._enrichir_contact(conseil, texte_conv)
                 )
+            embedding = await self._vecteur_question(question, historique)
+            paquet = await self._hit_semantique(langue.value, embedding)
+            if paquet is not None:
+                logger.info("cache_semantique_hit")
+                conseil = self._conseil_depuis_paquet(paquet)
                 return await self._journaliser(
                     question, langue, self._enrichir_contact(conseil, texte_conv)
                 )
@@ -187,6 +247,8 @@ class ConseilService:
         )
         if not historique:
             await self._cache.set_cached(question, langue.value, _serialiser(conseil))
+            if embedding is not None:
+                await self._cache.index_semantic(question, langue.value, embedding)
         return await self._journaliser(
             question, langue, self._enrichir_contact(conseil, texte_conv)
         )
@@ -290,29 +352,22 @@ class ConseilService:
             )
             return
 
+        # Cache (tour unique) : exact d'abord (le moins cher), puis sémantique.
+        embedding: list[float] | None = None
         if not historique:
             cached = await self._cache.get_cached(question, langue.value)
             if cached is not None:
-                donnees = json.loads(cached)
-                conseil = self._enrichir_contact(
-                    Conseil(
-                        donnees["reponse"],
-                        Confiance(donnees["confiance"]),
-                        donnees["sources"],
-                        redirection_anader=donnees["redirection_anader"],
-                    ),
-                    texte_conv,
-                )
-                for ev in _evenements_token(donnees["reponse"], conseil.reponse):
+                async for ev in self._diffuser_cache(
+                    json.loads(cached), texte_conv, question, langue
+                ):
                     yield ev
-                yield await self._evenement_final(
-                    question,
-                    langue,
-                    conseil.reponse,
-                    conseil.sources,
-                    conseil.confiance,
-                    redirection=conseil.redirection_anader,
-                )
+                return
+            embedding = await self._vecteur_question(question, historique)
+            paquet = await self._hit_semantique(langue.value, embedding)
+            if paquet is not None:
+                logger.info("cache_semantique_hit")
+                async for ev in self._diffuser_cache(paquet, texte_conv, question, langue):
+                    yield ev
                 return
 
         # Rate-limit seulement avant l'inférence réelle (équité : cache/refus gratuits).
@@ -369,6 +424,8 @@ class ConseilService:
         base = Conseil(texte, confiance, sources, redirection_anader=False)
         if not historique:
             await self._cache.set_cached(question, langue.value, _serialiser(base))
+            if embedding is not None:
+                await self._cache.index_semantic(question, langue.value, embedding)
         conseil = self._enrichir_contact(base, texte_conv)
         if conseil.reponse != texte:  # contact ajouté : on le diffuse aussi en flux
             yield {"type": "token", "text": conseil.reponse[len(texte) :]}

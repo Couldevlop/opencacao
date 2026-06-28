@@ -49,11 +49,21 @@ class CachePort(Protocol):
     """Contrat d'un cache de réponses avec rate-limit."""
 
     async def get_cached(self, question: str, langue: str) -> str | None:
-        """Retourne la réponse en cache, ou None."""
+        """Retourne la réponse en cache (correspondance exacte), ou None."""
         ...
 
     async def set_cached(self, question: str, langue: str, payload: str) -> None:
         """Met une réponse en cache."""
+        ...
+
+    async def get_semantic(
+        self, langue: str, embedding: list[float], threshold: float
+    ) -> str | None:
+        """Retourne la réponse d'une question cachée sémantiquement proche, ou None."""
+        ...
+
+    async def index_semantic(self, question: str, langue: str, embedding: list[float]) -> None:
+        """Indexe le vecteur d'une question cachée (recherche par paraphrase)."""
         ...
 
     async def hit_rate_limit(self, client_ip: str) -> bool:
@@ -62,6 +72,15 @@ class CachePort(Protocol):
 
     async def ping(self) -> bool:
         """Indique si le cache est disponible."""
+        ...
+
+
+@runtime_checkable
+class EmbeddingsPort(Protocol):
+    """Contrat d'un service de vectorisation (embeddings denses)."""
+
+    async def embed(self, textes: list[str]) -> list[list[float]] | None:
+        """Vectorise une liste de textes. Retourne None si le service échoue."""
         ...
 
 

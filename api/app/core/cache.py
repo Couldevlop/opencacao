@@ -1,8 +1,10 @@
-"""Client Redis : cache de réponses et rate-limit par IP."""
+"""Client Redis : cache de réponses (exact + sémantique) et rate-limit par IP."""
 
 from __future__ import annotations
 
 import hashlib
+import json
+import math
 import re
 import unicodedata
 
@@ -12,6 +14,18 @@ from app.core.config import Settings
 
 _ESPACES = re.compile(r"\s+")
 _PONCTUATION = re.compile(r"[^\w\s]")
+
+
+def _cosinus(a: list[float], b: list[float]) -> float:
+    """Similarité cosinus entre deux vecteurs. 0.0 si l'un est nul ou de taille ≠."""
+    if len(a) != len(b):
+        return 0.0
+    produit = sum(x * y for x, y in zip(a, b, strict=True))
+    norme_a = math.sqrt(sum(x * x for x in a))
+    norme_b = math.sqrt(sum(y * y for y in b))
+    if norme_a == 0.0 or norme_b == 0.0:
+        return 0.0
+    return produit / (norme_a * norme_b)
 
 
 def _normaliser_question(question: str) -> str:
@@ -42,6 +56,7 @@ class CacheClient:
     """
 
     _CACHE_PREFIX = "cache:chat:"
+    _SEMIDX_PREFIX = "semidx:chat:"
     _RATE_PREFIX = "rate:"
     _CACHE_TTL_S = 604_800  # 7 jours : les conseils agronomiques sont stables.
 
@@ -51,6 +66,7 @@ class CacheClient:
         rate_limit_per_min: int,
         model_version: str = "",
         app_version: str = "",
+        semantic_max_entries: int = 2000,
     ) -> None:
         """Initialise le client de cache.
 
@@ -62,11 +78,14 @@ class CacheClient:
             app_version: Version de l'image API, également incluse dans la clé : un
                 déploiement qui change le post-traitement (extraction de sources,
                 RAG…) n'aille pas resservir d'anciennes réponses devenues fausses.
+            semantic_max_entries: Plafond d'entrées de l'index sémantique par
+                (version, langue), pour borner la taille et le coût du balayage.
         """
         self._redis = client
         self._rate_limit = rate_limit_per_min
         self._model_version = model_version
         self._app_version = app_version
+        self._semantic_max_entries = semantic_max_entries
 
     @classmethod
     def from_settings(cls, settings: Settings) -> CacheClient:
@@ -77,6 +96,7 @@ class CacheClient:
             settings.rate_limit_per_min,
             settings.model_version,
             settings.app_version,
+            settings.semantic_cache_max_entries,
         )
 
     @staticmethod
@@ -106,6 +126,72 @@ class CacheClient:
             )
         except redis.RedisError:
             return
+
+    def _semidx_key(self, langue: str) -> str:
+        """Clé du HASH d'index sémantique, cloisonné par (versions, langue)."""
+        return f"{self._SEMIDX_PREFIX}{self._app_version}:{self._model_version}:{langue}"
+
+    async def index_semantic(self, question: str, langue: str, embedding: list[float]) -> None:
+        """Indexe le vecteur d'une question cachée, pour la recherche par paraphrase.
+
+        Le champ du HASH est la clé de cache exacte : un hit sémantique permet ainsi
+        de récupérer directement le payload existant. L'index est plafonné par
+        ``semantic_max_entries`` (éviction d'une entrée arbitraire au-delà).
+
+        Args:
+            question: Question dont la réponse vient d'être cachée.
+            langue: Langue de la réponse.
+            embedding: Vecteur dense de la question.
+        """
+        bucket = self._semidx_key(langue)
+        champ = self._cache_key(question, langue, self._model_version, self._app_version)
+        try:
+            if await self._redis.hlen(bucket) >= self._semantic_max_entries:
+                existants = await self._redis.hgetall(bucket)
+                for ancien in list(existants)[
+                    : max(1, len(existants) - self._semantic_max_entries + 1)
+                ]:
+                    await self._redis.hdel(bucket, ancien)
+            await self._redis.hset(bucket, champ, json.dumps(embedding))
+            await self._redis.expire(bucket, self._CACHE_TTL_S)
+        except redis.RedisError:
+            return
+
+    async def get_semantic(
+        self, langue: str, embedding: list[float], threshold: float
+    ) -> str | None:
+        """Retourne le payload d'une question cachée sémantiquement proche, ou None.
+
+        Balaie l'index ``(versions, langue)``, retient la meilleure similarité cosinus
+        et ne sert le payload que si elle atteint ``threshold``. Une entrée dont le
+        payload a expiré (TTL) est purgée et ignorée.
+
+        Args:
+            langue: Langue de la requête.
+            embedding: Vecteur dense de la question entrante.
+            threshold: Similarité cosinus minimale pour servir une réponse.
+
+        Returns:
+            Le payload JSON de la meilleure correspondance, ou None.
+        """
+        bucket = self._semidx_key(langue)
+        try:
+            entrees = await self._redis.hgetall(bucket)
+            meilleure_cle: str | None = None
+            meilleure_sim = threshold
+            for cle, vecteur_json in entrees.items():
+                sim = _cosinus(embedding, json.loads(vecteur_json))
+                if sim >= meilleure_sim:
+                    meilleure_sim = sim
+                    meilleure_cle = cle
+            if meilleure_cle is None:
+                return None
+            payload = await self._redis.get(meilleure_cle)
+            if payload is None:  # entrée orpheline (payload expiré) -> purge
+                await self._redis.hdel(bucket, meilleure_cle)
+            return payload
+        except (redis.RedisError, ValueError):
+            return None
 
     async def hit_rate_limit(self, client_ip: str) -> bool:
         """Incrémente le compteur de l'IP et indique si la limite est dépassée.
