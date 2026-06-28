@@ -1,0 +1,57 @@
+# Sources à utiliser pour RÉGÉNÉRER les ~3 126 entrées orphelines (présentes dans
+# l'index prod 13 273, absentes du corpus canonique 10K) une fois un GPU/LLM dispo.
+#
+# Méthode prévue : régénérer les paires Q/R via le pipeline RAG (build_corpus_rag.py)
+# sur ces sources, OU régénérer une question par réponse préservée (orphelines_prod.jsonl),
+# puis embed Qwen3-4B et append additif à l'index 4B.
+#
+# ⚠️ EXCLURE FIRCA : Waopron ne l'utilise plus (guide régénération, rapport annuel,
+#    politique LCB-FT, pages firca-ci…) — la bascule 10K nettoie déjà ce FIRCA.
+#
+# Liste tenue à jour au fil des indications de Waopron (28 juin 2026).
+sources_a_conserver:
+  - url: "http://www.conseilcafecacao.ci/index.php?option=com_content&view=article&id=109&Itemid=180"
+    note: "Conseil du Café-Cacao — article id=109 (validé Waopron)"
+  - url: "https://guce.gouv.ci/bcc?lang=fr"
+    note: "GUCE-CI — Bourse du Café-Cacao (BCC) (validé Waopron)"
+  - url: "https://faolex.fao.org/docs/pdf/IVC132091.pdf"
+    note: "FAOLEX — texte réglementaire Côte d'Ivoire (filière café-cacao)"
+  - url: "https://www.droitci.info/files/930.10.12-Decret-du-17-octobre-2012_Cafe_exportateur--2022_09_27-06_08_23-UTC-.pdf"
+    note: "DroitCI — Décret 17 oct. 2012, agrément exportateur café (réglementaire)"
+  - url: "https://www.cocoainitiative.org/"
+    note: "International Cocoa Initiative (ICI) — durabilité / travail des enfants"
+  - url: "http://www.conseilcafecacao.ci/txtjur/ordonnances/N_2011_481.pdf"
+    note: "Conseil du Café-Cacao — Ordonnance n°2011-481 (réglementaire)"
+  - url: "http://www.conseilcafecacao.ci/docs/decrets/Decret_N_2012-1009.pdf"
+    note: "Conseil du Café-Cacao — Décret n°2012-1009 (réglementaire)"
+  - url: "http://www.conseilcafecacao.ci/index.php?option=com_k2&view=item&id=1514:agrement-exportateurs-exportateurs-hors-normes-et-tiers-detenteurs-au-titre-de-la-campagne-cafe-cacao-2025-2026&Itemid=18"
+    note: "Conseil du Café-Cacao — agréments exportateurs/tiers détenteurs campagne 2025-2026"
+  - url: "http://www.conseilcafecacao.ci/docs/2024-2025/COMMUNIQUE_EXPORTATEURS_HORS_NORMES_CAMPAGNE_25_26.pdf"
+    note: "Conseil du Café-Cacao — communiqué exportateurs hors normes campagne 25-26"
+  - url: "http://www.conseilcafecacao.ci/docs/2024-2025/COMMUNIQUE_AGREMENT_TIERS_DETENTEURS_CAMPAGNE_25_26.pdf"
+    note: "Conseil du Café-Cacao — communiqué agrément tiers détenteurs campagne 25-26"
+  - url: "http://www.conseilcafecacao.ci/docs/2024-2025/LETTRE_DENGAGEMENT_HORS_NORMES_RESIDUS_DECHETS_CAMPAGNE_25_26.pdf"
+    note: "Conseil du Café-Cacao — lettre d'engagement hors normes résidus/déchets campagne 25-26"
+  - url: "http://www.conseilcafecacao.ci/docs/2024-2025/LETTRE_DENGAGEMENT_TIERS_DETENTEURS_CAMPAGNE_25_26.pdf"
+    note: "Conseil du Café-Cacao — lettre d'engagement tiers détenteurs campagne 25-26"
+  - url: "http://www.conseilcafecacao.ci/docs/2024-2025/LISTE_PIECES_EXPORTATEURS_HORS_NORMES_CAMPAGNE_25_26.pdf"
+    note: "Conseil du Café-Cacao — liste des pièces exportateurs hors normes campagne 25-26"
+  - url: "http://www.conseilcafecacao.ci/docs/2024-2025/LISTES_PIECES_SOCIETES_COMMERCIALES_ANCIENNES_CAMPAGNE_25_26.pdf"
+    note: "Conseil du Café-Cacao — liste des pièces sociétés commerciales anciennes campagne 25-26"
+  - url: "http://www.conseilcafecacao.ci/docs/2024-2025/LISTE_PIECES_SOCIETES_COMMERCIALES_NOUVELLES_CAMPAGNE_25_26.pdf"
+    note: "Conseil du Café-Cacao — liste des pièces sociétés commerciales nouvelles campagne 25-26"
+  - url: "http://www.conseilcafecacao.ci/docs/2024-2025/LISTE_PIECES_SOCIETES_COOPERATIVES_ANCIENNES_CAMPAGNE_25_26.pdf"
+    note: "Conseil du Café-Cacao — liste des pièces sociétés coopératives anciennes campagne 25-26"
+  - url: "http://www.conseilcafecacao.ci/docs/2024-2025/LISTE_PIECES_SOCIETES_COOPERATIVES_NOUVELLES_CAMPAGNE_25_26.pdf"
+    note: "Conseil du Café-Cacao — liste des pièces sociétés coopératives nouvelles campagne 25-26"
+  - url: "http://www.conseilcafecacao.ci/docs/2024-2025/MODELE_LETTRE_SOCIETES_COMMERCIALES_CAMPAGNE_25_26.pdf"
+    note: "Conseil du Café-Cacao — modèle de lettre sociétés commerciales campagne 25-26"
+  - url: "http://www.conseilcafecacao.ci/docs/2024-2025/MODELE_LETTRE_SOCIETES_COOPERATIVES_CAMPAGNE_25_26.pdf"
+    note: "Conseil du Café-Cacao — modèle de lettre sociétés coopératives campagne 25-26"
+  - url: "http://www.conseilcafecacao.ci/docs/2024-2025/PIECES_TIERS_DETENTEURS_CAMPAGNE_25_26.pdf"
+    note: "Conseil du Café-Cacao — pièces tiers détenteurs campagne 25-26"
+  - url: "http://www.conseilcafecacao.ci/index.php"
+    note: "Conseil du Café-Cacao — page d'accueil : PRIX du jour cacao/café (dynamique, source de l'agent prix V3). NB: serveur renvoie 401 sur / ; utiliser /index.php en HTTP + curl -k (cert invalide). Snapshot 26/06/2026 ajouté au corpus_cure (cacao intermédiaire 2026 = 1200 FCFA/kg)."
+
+exclure:
+  - "FIRCA (toutes sources : PDF guide régénération, rapport annuel 2024, politique LCB-FT, pages firca-ci.*)"
