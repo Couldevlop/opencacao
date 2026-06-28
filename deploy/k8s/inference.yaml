@@ -34,6 +34,16 @@ spec:
             - "4096"
             - "-t"
             - "12"         # threads CPU (nœud 16 vCPU, on laisse 4 pour prod+système)
+            - "-fa"
+            - "on"         # flash-attention : génération CPU plus rapide
+            - "--cache-type-k"
+            - "q8_0"       # cache KV quantifié (K) : moins de RAM à contexte égal
+            - "--cache-type-v"
+            - "q8_0"       # cache KV quantifié (V)
+            - "-b"
+            - "2048"       # taille de batch logique
+            - "-ub"
+            - "512"        # taille de micro-batch physique
           ports:
             - containerPort: 8000
           volumeMounts:
