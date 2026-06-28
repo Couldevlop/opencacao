@@ -1,0 +1,76 @@
+# Service d'EMBEDDINGS 4B — Qwen3-Embedding-4B (GGUF Q8) servi par llama.cpp.
+# Remplace l'ancien embeddings.gguf (XLM-R 146 Mo, 768-dim) par Qwen3-4B (2560-dim).
+# À appliquer lors de la bascule (cf. docs/MIGRATION_embeddings_4b.md), APRÈS avoir
+# construit l'index RAG correspondant (rag_index_4b.jsonl) — sinon les vecteurs
+# requête/index sont de dimensions incompatibles et le RAG casse.
+#
+# Prérequis nœud : /opt/opencacao/models/embeddings-qwen3-4b.gguf (~4,3 Go) présent.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: embeddings
+  labels: { app: embeddings }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: embeddings }
+  # Recreate : un seul pod monte le modèle (4,3 Go) en lecture seule ; pas de
+  # rolling (éviterait deux pods chargeant 5 Go chacun en parallèle sur le nœud).
+  strategy: { type: Recreate }
+  template:
+    metadata:
+      labels: { app: embeddings }
+    spec:
+      containers:
+        - name: llamacpp
+          image: ghcr.io/ggml-org/llama.cpp:server
+          args:
+            - "--embeddings"
+            - "-m"
+            - "/models/embeddings-qwen3-4b.gguf"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8001"
+            # Questions courtes (~30 tokens) : -c 2048 large. -ub modéré pour borner
+            # l'empreinte mémoire du 4B (bien plus lourd que l'ancien 146 Mo).
+            - "-c"
+            - "2048"
+            - "-b"
+            - "2048"
+            - "-ub"
+            - "512"
+            # Régime permanent : 4 threads (~1-1,5 s/embed), laisse les cœurs à
+            # l'inférence. Le build de nuit utilise un pod séparé plus agressif.
+            - "-t"
+            - "4"
+          ports:
+            - containerPort: 8001
+          volumeMounts:
+            - name: modele
+              mountPath: /models
+              readOnly: true
+          resources:
+            # Le 4B Q8 occupe ~4,3 Go + KV/compute -> ~5-6 Go. Le nœud a ~20 Go libres.
+            requests: { cpu: "1", memory: "5Gi" }
+            limits: { cpu: "4", memory: "8Gi" }
+          readinessProbe:
+            httpGet: { path: /health, port: 8001 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 40  # le 4B met plus longtemps à charger que l'ancien
+      volumes:
+        - name: modele
+          hostPath:
+            path: /opt/opencacao/models
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: embeddings
+spec:
+  selector: { app: embeddings }
+  ports:
+    - port: 8001
+      targetPort: 8001

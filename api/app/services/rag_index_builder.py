@@ -25,6 +25,24 @@ SOURCES: tuple[str, ...] = ("CNRA", "ANADER", "Conseil du Café-Cacao", "FAO", "
 # Arrondi des vecteurs : index ~2× plus léger, sans impact sur le cosinus.
 _DECIMALES = 6
 
+# Préfixe d'instruction des embeddings Qwen3-Embedding. Le modèle attend un en-tête
+# « Instruct: <tâche>\nQuery: <texte> ». L'index étant symétrique (question↔question),
+# le MÊME préfixe doit être appliqué à l'indexation ET à la requête, sinon les
+# vecteurs ne sont pas comparables. Centralisé ici pour garantir l'identité de forme.
+_TACHE_EMBED = "Donner un conseil agronomique sur le cacao pour la question"
+
+
+def formater_pour_embedding(texte: str) -> str:
+    """Préfixe un texte avec l'instruction Qwen3 attendue (indexation et requête).
+
+    Args:
+        texte: Question (instruction du corpus, ou requête utilisateur).
+
+    Returns:
+        Le texte formaté ``Instruct: <tâche>\\nQuery: <texte>``.
+    """
+    return f"Instruct: {_TACHE_EMBED}\nQuery: {texte}"
+
 
 def detecter_source(output: str) -> str:
     """Retourne la première source reconnue citée dans le texte, sinon "".

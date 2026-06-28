@@ -10,6 +10,7 @@ import httpx
 
 from app.core.config import Settings
 from app.core.logging import get_logger
+from app.services.rag_index_builder import formater_pour_embedding
 
 logger = get_logger(__name__)
 
@@ -43,10 +44,13 @@ class EmbeddingsClient:
         """
         if not textes:
             return []
+        # Préfixe d'instruction Qwen3 — identique à celui de l'indexation RAG, sans
+        # quoi les vecteurs requête/index ne seraient pas comparables.
+        entrees = [formater_pour_embedding(texte) for texte in textes]
         try:
             response = await self._client.post(
                 f"{self._base_url}/v1/embeddings",
-                json={"input": textes, "model": "embeddings"},
+                json={"input": entrees, "model": "embeddings"},
             )
             response.raise_for_status()
             donnees = response.json()["data"]
