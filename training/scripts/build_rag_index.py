@@ -33,6 +33,7 @@ from app.services.rag_index_builder import (  # noqa: E402
     charger_paires,
     construire_entrees,
     ecrire_index,
+    formater_pour_embedding,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -43,7 +44,8 @@ def _embed(url: str, textes: list[str], lot: int = 32) -> list[list[float]]:
     """Vectorise les textes par lots via le service d'embeddings."""
     vecteurs: list[list[float]] = []
     for debut in range(0, len(textes), lot):
-        morceau = textes[debut : debut + lot]
+        # Même préfixe d'instruction Qwen3 qu'au moment de la requête (embeddings.py).
+        morceau = [formater_pour_embedding(t) for t in textes[debut : debut + lot]]
         corps = json.dumps({"input": morceau, "model": "embeddings"}).encode()
         requete = urllib.request.Request(  # noqa: S310 - URL interne maîtrisée
             url.rstrip("/") + "/v1/embeddings",
