@@ -20,6 +20,10 @@ class _Inference:
 
 
 class _Cache:
+    async def get_cached(self, q: str, lg: str) -> str | None:
+        return None
+
+    async def set_cached(self, q: str, lg: str, payload: str) -> None: ...
     async def hit_rate_limit(self, ip: str) -> bool:
         return False
 

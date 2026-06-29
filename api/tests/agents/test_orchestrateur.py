@@ -77,7 +77,8 @@ async def test_route_vers_agent_le_plus_pertinent() -> None:
     rag = _AgentEspion("rag", 0.4, "conseil RAG")
     meteo = _AgentEspion("meteo", 0.9, "conseil météo")
     orch = _orchestrateur(rag, meteo)
-    conseil = await orch.traiter("quel temps pour traiter ?", Langue.FR, "ip")
+    # Question factuelle (sans déclencher de clarification) : on vérifie le routage.
+    conseil = await orch.traiter("à quelle période récolter le cacao ?", Langue.FR, "ip")
     assert conseil.reponse == "conseil météo"
     assert meteo.recue is not None
     assert rag.recue is None
@@ -133,8 +134,10 @@ async def test_garde_fou_sortie_remplace_la_reponse(monkeypatch: pytest.MonkeyPa
     orch = _orchestrateur(rag)
     conseil = await orch.traiter("comment tailler le cacaoyer ?", Langue.FR, "ip")
     assert conseil.redirection_anader is True
-    assert conseil.reponse == guardrails.REFUS_PHYTO
-    assert conseil.reponse != "réponse de l'agent"
+    # La réponse compromise est remplacée par le refus phyto (éventuellement enrichi
+    # du contact ANADER, puisque la redirection est active).
+    assert guardrails.REFUS_PHYTO in conseil.reponse
+    assert "réponse de l'agent" not in conseil.reponse
 
 
 class _CacheCompteur(_CacheFactice):
@@ -156,3 +159,65 @@ async def test_refus_entree_ne_consomme_pas_le_quota() -> None:
     await orch.traiter("comment cultiver le maïs ?", Langue.FR, "ip")
     assert cache.appels_rate == 0
     assert rag.recue is None
+
+
+@pytest.mark.asyncio
+async def test_clarification_court_circuite_les_agents() -> None:
+    # Parité V2 : un symptôme déclenche une salve de clarification avant tout dispatch.
+    rag = _AgentEspion("rag", 1.0, "ne devrait pas répondre")
+    orch = _orchestrateur(rag)
+    conseil = await orch.traiter("les feuilles de mon cacaoyer jaunissent", Langue.FR, "ip")
+    assert "?" in conseil.reponse  # le système pose des questions complémentaires
+    assert rag.recue is None
+
+
+class _CacheAvecEntree(_CacheFactice):
+    def __init__(self, paquet: str) -> None:
+        super().__init__()
+        self._paquet = paquet
+
+    async def get_cached(self, q: str, lg: str) -> str | None:
+        return self._paquet
+
+
+@pytest.mark.asyncio
+async def test_cache_hit_court_circuite_les_agents() -> None:
+    # Parité V2 : une réponse en cache (tour unique) est servie sans appeler d'agent.
+    import json
+
+    paquet = json.dumps(
+        {
+            "reponse": "réponse cachée",
+            "confiance": "elevee",
+            "sources": ["CNRA"],
+            "redirection_anader": False,
+        }
+    )
+    rag = _AgentEspion("rag", 1.0, "ne devrait pas répondre")
+    orch = _orchestrateur(rag, cache=_CacheAvecEntree(paquet))
+    conseil = await orch.traiter("comment tailler le cacaoyer ?", Langue.FR, "ip")
+    assert conseil.reponse == "réponse cachée"
+    assert rag.recue is None
+
+
+class _AgentAnader:
+    nom = "rag"
+    description = "x"
+    mots_cles = ()
+
+    async def peut_traiter(self, requete: AgentRequete) -> float:
+        return 1.0
+
+    async def traiter(self, requete: AgentRequete) -> AgentReponse:
+        return AgentReponse(
+            "Rapprochez-vous de l'ANADER.", [], Confiance.MOYENNE, "rag", redirection_anader=True
+        )
+
+
+@pytest.mark.asyncio
+async def test_enrichit_le_contact_anader_quand_la_reponse_oriente() -> None:
+    # Parité V2 : une réponse orientant vers l'ANADER est enrichie du contact local.
+    orch = _orchestrateur(_AgentAnader())
+    conseil = await orch.traiter("que faire pour mon cacao ?", Langue.FR, "ip")
+    assert conseil.redirection_anader is True
+    assert "ANADER" in conseil.sources

@@ -1,16 +1,20 @@
 """Orchestrateur souverain : cas d'usage central de la plateforme agentique V3.
 
-Enchaîne garde-fous d'entrée (centralisés) → routage d'intention → dispatch vers
-l'agent retenu → garde-fou de sortie → journalisation. Les garde-fous métier ne
-sont jamais réimplémentés par agent : centralisés ici, ils s'appliquent à tous les
-agents — actuels comme à venir (Maladie, Satellite, Réglementation…).
+Enchaîne, autour du dispatch, les concerns transverses (parité avec ConseilService
+V2) : garde-fous d'entrée → clarification consultative → cache exact → routage →
+rate-limit → dispatch → garde-fou de sortie → enrichissement contact ANADER →
+journalisation. Les garde-fous, la clarification et l'enrichissement ne sont jamais
+réimplémentés par agent : centralisés ici, ils s'appliquent à tous les agents —
+actuels comme à venir (Maladie, Satellite, Réglementation EUDR…).
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 
-from app.application.contexte import fil_ancre
+from app.application import conseil_commun
+from app.application.contexte import fil_ancre, texte_conversation
 from app.application.routage import RouteurIntention
 from app.core.logging import get_logger
 from app.domain.agents import AgentPort, AgentRequete
@@ -18,7 +22,7 @@ from app.domain.entities import Conseil
 from app.domain.exceptions import RateLimitDepasse
 from app.domain.ports import CachePort, JournalPort
 from app.models.domain import Confiance, Langue
-from app.services import guardrails
+from app.services import clarification, guardrails
 
 logger = get_logger(__name__)
 
@@ -70,13 +74,36 @@ class Orchestrateur:
         """
         historique = historique or []
         fil = fil_ancre(question, historique)
+        texte_conv = texte_conversation(question, historique)
 
         # 1. Garde-fous d'entrée CENTRALISÉS : refus sans solliciter d'agent.
         refus = guardrails.evaluer(fil)
         if refus is not None:
             logger.info("garde_fou_declenche", categorie=refus.categorie.value)
-            conseil = Conseil(refus.message, Confiance.ELEVEE, [], redirection_anader=True)
+            conseil = conseil_commun.enrichir_contact(
+                Conseil(refus.message, Confiance.ELEVEE, [], redirection_anader=True), texte_conv
+            )
             return await self._journaliser(question, langue, conseil)
+
+        # 2. Clarification consultative (1er tour) : poser des questions plutôt que
+        #    répondre à l'aveugle. Parité V2 — instantané, aucune inférence.
+        clarif = clarification.analyser(question, historique)
+        if clarif is not None:
+            logger.info("clarification_demandee")
+            conseil = Conseil(clarif, Confiance.MOYENNE, [], redirection_anader=False)
+            return await self._journaliser(question, langue, conseil)
+
+        # 3. Cache exact de réponses (tour unique) : réponse instantanée, parité V2.
+        #    Le cache stocke le conseil NON enrichi ; l'enrichissement contact, qui
+        #    dépend de la conversation, est appliqué à chaque requête.
+        if not historique:
+            cached = await self._cache.get_cached(question, langue.value)
+            if cached is not None:
+                logger.info("cache_hit")
+                conseil = conseil_commun.enrichir_contact(
+                    conseil_commun.depuis_paquet(json.loads(cached)), texte_conv
+                )
+                return await self._journaliser(question, langue, conseil)
 
         requete = AgentRequete(
             question=question,
@@ -86,7 +113,7 @@ class Orchestrateur:
             historique=historique,
         )
 
-        # 2. Routage d'intention → agent (repli sur l'agent par défaut).
+        # 4. Routage d'intention → agent (repli sur l'agent par défaut).
         agent = await self._routeur.meilleur(requete)
         if agent is None:
             agent = self._agent_de_repli()
@@ -100,17 +127,20 @@ class Orchestrateur:
             )
             return await self._journaliser(question, langue, conseil)
 
-        # 3. Rate-limit UNIQUEMENT avant l'inférence réelle (équité : refus gratuits).
+        # 5. Rate-limit UNIQUEMENT avant l'inférence réelle (équité : refus/cache gratuits).
         if await self._cache.hit_rate_limit(client_ip):
             raise RateLimitDepasse
 
-        # 4. Dispatch vers l'agent.
+        # 6. Dispatch vers l'agent.
         reponse = await agent.traiter(requete)
 
-        # 5. Garde-fou de SORTIE (défense en profondeur).
+        # 7. Garde-fou de SORTIE (défense en profondeur).
         if guardrails.verifier_reponse(reponse.texte) is not None:
             logger.warning("garde_fou_sortie_declenche", agent=agent.nom)
-            conseil = Conseil(guardrails.REFUS_PHYTO, Confiance.ELEVEE, [], redirection_anader=True)
+            conseil = conseil_commun.enrichir_contact(
+                Conseil(guardrails.REFUS_PHYTO, Confiance.ELEVEE, [], redirection_anader=True),
+                texte_conv,
+            )
             return await self._journaliser(question, langue, conseil)
 
         conseil = Conseil(
@@ -119,7 +149,12 @@ class Orchestrateur:
             sources=reponse.sources,
             redirection_anader=reponse.redirection_anader,
         )
-        return await self._journaliser(question, langue, conseil)
+        # 8. Cache (tour unique) puis enrichissement contact + journalisation.
+        if not historique:
+            await self._cache.set_cached(question, langue.value, conseil_commun.serialiser(conseil))
+        return await self._journaliser(
+            question, langue, conseil_commun.enrichir_contact(conseil, texte_conv)
+        )
 
     def _agent_de_repli(self) -> AgentPort | None:
         """Retourne l'agent de repli (RAG par défaut), ou None s'il est absent."""

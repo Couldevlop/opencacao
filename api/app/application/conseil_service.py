@@ -11,6 +11,7 @@ import re
 from collections.abc import AsyncIterator
 from dataclasses import replace
 
+from app.application import conseil_commun
 from app.application.contexte import fil_ancre as _fil_ancre
 from app.application.contexte import texte_conversation as _texte_conversation
 from app.core.logging import get_logger
@@ -19,7 +20,7 @@ from app.domain.exceptions import RateLimitDepasse
 from app.domain.ports import CachePort, EmbeddingsPort, InferencePort, JournalPort
 from app.models.chat import DISCLAIMER
 from app.models.domain import Confiance, Langue
-from app.services import clarification, contacts, guardrails, postprocess
+from app.services import clarification, guardrails, postprocess
 from app.services.rag import RagRecuperateur, couverture_lexicale
 
 logger = get_logger(__name__)
@@ -103,12 +104,7 @@ class ConseilService:
     @staticmethod
     def _conseil_depuis_paquet(donnees: dict) -> Conseil:
         """Reconstruit un Conseil depuis un paquet de cache sérialisé."""
-        return Conseil(
-            donnees["reponse"],
-            Confiance(donnees["confiance"]),
-            donnees["sources"],
-            redirection_anader=donnees["redirection_anader"],
-        )
+        return conseil_commun.depuis_paquet(donnees)
 
     async def _diffuser_cache(
         self, donnees: dict, texte_conv: str, question: str, langue: Langue
@@ -139,41 +135,10 @@ class ConseilService:
     def _enrichir_contact(self, conseil: Conseil, texte_conversation: str) -> Conseil:
         """Ajoute le contact ANADER local exact si une mise en relation est pertinente.
 
-        Le contact (numéro/adresse) provient de l'annuaire vérifié — jamais du modèle.
-        Déclenché si la réponse oriente vers l'ANADER OU si l'utilisateur demande un
-        contact, ET si une localité connue figure dans la conversation. Sinon (localité
-        inconnue), on laisse le modèle demander la ville.
-
-        Args:
-            conseil: Conseil produit (avant enrichissement).
-            texte_conversation: Texte cumulé de la conversation (pour repérer la ville).
-
-        Returns:
-            Le conseil, éventuellement enrichi du contact local.
+        Délègue à :func:`conseil_commun.enrichir_contact` (logique partagée avec la
+        plateforme agentique V3).
         """
-        if not (conseil.redirection_anader or contacts.intention_contact(texte_conversation)):
-            return conseil
-        lignes: list[str] = []
-        contact = contacts.chercher(texte_conversation)
-        if contact is not None:
-            lignes.append(contacts.formater(contact))
-        # Repli garanti : tant que la DR locale n'est pas vérifiée (ou inconnue), on
-        # ajoute le siège (coordonnée confirmée) pour que le producteur ait toujours
-        # une ligne fiable.
-        if contact is None or not contact.verifie:
-            siege = contacts.siege()
-            if siege is not None:
-                lignes.append(contacts.formater(siege))
-        ajout = "\n".join(ligne for ligne in lignes if ligne and ligne not in conseil.reponse)
-        if not ajout:
-            return conseil
-        sources = conseil.sources if "ANADER" in conseil.sources else [*conseil.sources, "ANADER"]
-        return replace(
-            conseil,
-            reponse=f"{conseil.reponse}\n\n{ajout}",
-            sources=sources,
-            redirection_anader=True,
-        )
+        return conseil_commun.enrichir_contact(conseil, texte_conversation)
 
     async def conseiller(
         self,
@@ -503,12 +468,5 @@ def _evenements_token(texte_base: str, texte_enrichi: str) -> list[dict]:
 
 
 def _serialiser(conseil: Conseil) -> str:
-    """Sérialise un conseil pour le cache (sans l'id de journalisation)."""
-    return json.dumps(
-        {
-            "reponse": conseil.reponse,
-            "confiance": conseil.confiance.value,
-            "sources": conseil.sources,
-            "redirection_anader": conseil.redirection_anader,
-        }
-    )
+    """Sérialise un conseil pour le cache (délègue à conseil_commun)."""
+    return conseil_commun.serialiser(conseil)

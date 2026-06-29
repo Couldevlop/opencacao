@@ -22,7 +22,7 @@ def test_construction_orchestrateur_enregistre_les_quatre_agents() -> None:
     orch = _construire_orchestrateur(inference=object(), cache=object(), journal=object(), rag=None)
     assert isinstance(orch, Orchestrateur)
     noms = orch._routeur.registre.noms()  # noqa: SLF001
-    assert set(noms) == {"rag", "meteo", "prix", "reporting"}
+    assert set(noms) == {"rag", "meteo", "prix", "reglementation", "reporting"}
 
 
 class _State:

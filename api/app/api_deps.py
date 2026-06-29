@@ -95,6 +95,7 @@ def _construire_orchestrateur(
     from app.services.agents.agent_meteo import AgentMeteo
     from app.services.agents.agent_prix import AgentPrix
     from app.services.agents.agent_rag import AgentRag
+    from app.services.agents.agent_reglementation import AgentReglementation
     from app.services.agents.agent_reporting import AgentReporting
     from app.services.outils.indisponible import MeteoIndisponible, PrixIndisponible
     from app.services.outils.meteo import OutilMeteo
@@ -104,6 +105,7 @@ def _construire_orchestrateur(
     registre.enregistrer(AgentRag(inference, rag=rag))  # type: ignore[arg-type]
     registre.enregistrer(AgentMeteo(inference, OutilMeteo(MeteoIndisponible())))  # type: ignore[arg-type]
     registre.enregistrer(AgentPrix(inference, OutilPrix(PrixIndisponible())))  # type: ignore[arg-type]
+    registre.enregistrer(AgentReglementation(inference, rag=rag))  # type: ignore[arg-type]
     registre.enregistrer(AgentReporting(inference))  # type: ignore[arg-type]
     routeur = RouteurIntention(registre)
     return Orchestrateur(routeur, journal, cache, agent_defaut="rag")  # type: ignore[arg-type]
