@@ -2,6 +2,8 @@
 
 Ce document complète la section 3 de [`CLAUDE_OpenCacao.md`](../CLAUDE_OpenCacao.md).
 
+> **Plateforme agentique V3 (socle).** L'orchestrateur souverain, le registre extensible et les agents spécialisés (RAG/Météo/Prix/Reporting) sont décrits — architecture **et** cours pédagogique — dans [`agents_v3.md`](agents_v3.md) (version Word détaillée : `Documentation_Socle_Agentique_V3.docx`). Livrés derrière le flag `agents_enabled` (OFF par défaut) ; le chemin V2 reste seul en production tant qu'il est OFF.
+
 ## Vue d'ensemble
 
 ```

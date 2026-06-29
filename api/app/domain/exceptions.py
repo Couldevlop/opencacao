@@ -13,3 +13,7 @@ class InferenceUnavailable(DomainError):
 
 class RateLimitDepasse(DomainError):
     """Le client a dépassé le quota de requêtes autorisé."""
+
+
+class AgentIndisponible(DomainError):
+    """Levée quand un agent échoue à produire une réponse."""
