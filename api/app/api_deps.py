@@ -109,7 +109,7 @@ def _construire_orchestrateur(
     registre = RegistreAgents()
     registre.enregistrer(AgentRag(inference, rag=rag))  # type: ignore[arg-type]
     registre.enregistrer(AgentMeteo(inference, OutilMeteo(meteo)))  # type: ignore[arg-type]
-    registre.enregistrer(AgentPrix(inference, OutilPrix(prix)))  # type: ignore[arg-type]
+    registre.enregistrer(AgentPrix(inference, OutilPrix(prix), rag=rag))  # type: ignore[arg-type]
     registre.enregistrer(AgentReglementation(inference, rag=rag))  # type: ignore[arg-type]
     registre.enregistrer(AgentReporting(inference))  # type: ignore[arg-type]
     routeur = RouteurIntention(registre)

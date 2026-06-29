@@ -35,6 +35,11 @@ class _PrixVide:
         return {}
 
 
+class _RagFactice:
+    async def contexte_pour(self, texte: str) -> str:
+        return "Prix de mise à marché du cacao, juin 2026 : 2 966 FCFA/kg."
+
+
 def _requete(q: str) -> AgentRequete:
     return AgentRequete(q, Langue.FR, q, "ip", [])
 
@@ -73,6 +78,29 @@ async def test_prix_indisponible_ninvente_pas_de_prix() -> None:
     assert not re.search(r"\d+\s*fcfa", ctx)
     # …et redirection vers la source officielle.
     assert "conseil" in ctx or "anader" in ctx
+
+
+@pytest.mark.asyncio
+async def test_prix_combine_le_cours_officiel_et_le_contexte_rag() -> None:
+    # L'agent Prix doit combiner le prix bord-champ officiel (autoritaire, configuré)
+    # ET le contexte documentaire RAG (prix de mise à marché, historique, café…)
+    # afin de ne pas être plus pauvre que le chemin RAG sur les questions de marché.
+    inf = _InferenceFactice()
+    agent = AgentPrix(inf, OutilPrix(_PrixFactice()), rag=_RagFactice())
+    await agent.traiter(_requete("quels sont les prix de mise à marché du cacao ?"))
+    assert inf.contexte_recu is not None
+    assert "1800" in inf.contexte_recu  # prix bord-champ officiel (configuré)
+    assert "mise à marché" in inf.contexte_recu  # contexte documentaire RAG
+
+
+@pytest.mark.asyncio
+async def test_prix_sans_rag_garde_le_seul_cours() -> None:
+    # Sans RAG branché (rag=None), l'agent reste fonctionnel sur le seul cours.
+    inf = _InferenceFactice()
+    agent = AgentPrix(inf, OutilPrix(_PrixFactice()))
+    await agent.traiter(_requete("quel est le prix du cacao ?"))
+    assert inf.contexte_recu is not None
+    assert "1800" in inf.contexte_recu
 
 
 @pytest.mark.asyncio
