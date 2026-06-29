@@ -221,3 +221,69 @@ async def test_enrichit_le_contact_anader_quand_la_reponse_oriente() -> None:
     conseil = await orch.traiter("que faire pour mon cacao ?", Langue.FR, "ip")
     assert conseil.redirection_anader is True
     assert "ANADER" in conseil.sources
+
+
+class _AgentStream:
+    nom = "rag"
+    description = "x"
+    mots_cles = ()
+
+    def __init__(self, fragments: list[str]) -> None:
+        self._fragments = fragments
+
+    async def peut_traiter(self, requete: AgentRequete) -> float:
+        return 1.0
+
+    async def traiter(self, requete: AgentRequete) -> AgentReponse:
+        return AgentReponse("".join(self._fragments), [], Confiance.MOYENNE, "rag")
+
+    async def traiter_stream(self, requete: AgentRequete):
+        for fragment in self._fragments:
+            yield fragment
+
+
+@pytest.mark.asyncio
+async def test_traiter_stream_emet_des_phrases_puis_done() -> None:
+    agent = _AgentStream(["Taillez en saison sèche. ", "Sources : CNRA."])
+    orch = _orchestrateur(agent)
+    evenements = [
+        e async for e in orch.traiter_stream("comment tailler le cacaoyer ?", Langue.FR, "ip")
+    ]
+    assert evenements[-1]["type"] == "done"
+    tokens = [e for e in evenements if e["type"] == "token"]
+    assert len(tokens) >= 1
+    texte = "".join(e["text"] for e in tokens)
+    assert "saison sèche" in texte
+    assert "CNRA" in evenements[-1]["sources"]
+
+
+@pytest.mark.asyncio
+async def test_traiter_stream_garde_fou_sortie(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Le garde-fou de sortie phrase par phrase ne diffuse pas la phrase compromise.
+    from app.services import guardrails
+
+    monkeypatch.setattr(guardrails, "verifier_reponse", lambda texte: object())
+    agent = _AgentStream(["Phrase compromise. "])
+    orch = _orchestrateur(agent)
+    evenements = [
+        e async for e in orch.traiter_stream("comment tailler le cacaoyer ?", Langue.FR, "ip")
+    ]
+    texte = "".join(e["text"] for e in evenements if e["type"] == "token")
+    assert "Phrase compromise" not in texte
+    assert guardrails.REFUS_PHYTO in texte
+    assert evenements[-1]["redirection_anader"] is True
+
+
+@pytest.mark.asyncio
+async def test_traiter_stream_clarification_emise_en_bloc() -> None:
+    agent = _AgentStream(["ne devrait pas répondre"])
+    orch = _orchestrateur(agent)
+    evenements = [
+        e
+        async for e in orch.traiter_stream(
+            "les feuilles de mon cacaoyer jaunissent", Langue.FR, "ip"
+        )
+    ]
+    texte = "".join(e["text"] for e in evenements if e["type"] == "token")
+    assert "?" in texte  # questions de clarification
+    assert "ne devrait pas répondre" not in texte

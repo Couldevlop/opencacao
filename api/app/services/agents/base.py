@@ -8,6 +8,7 @@ confiance → attribuer la réponse » est mutualisée ici (pattern Template Met
 from __future__ import annotations
 
 import re
+from collections.abc import AsyncIterator
 
 from app.domain.agents import AgentReponse, AgentRequete
 from app.domain.ports import InferencePort
@@ -53,6 +54,28 @@ class AgentBase:
     def __init__(self, inference: InferencePort) -> None:
         """Initialise l'agent avec son port d'inférence."""
         self._inference = inference
+
+    async def _contexte(self, requete: AgentRequete) -> str | None:
+        """Contexte à injecter au prompt — spécifique à chaque agent.
+
+        La base ne fournit aucun contexte (un agent généraliste sans ancrage). Chaque
+        agent concret l'override pour construire SON contexte (RAG, prévisions, cours…).
+        ``traiter`` et ``traiter_stream`` partagent cette préparation : la spécificité
+        d'un agent tient dans ``_contexte`` (et son score ``peut_traiter``).
+        """
+        return None
+
+    async def traiter(self, requete: AgentRequete) -> AgentReponse:
+        """Construit le contexte propre à l'agent puis génère une réponse ancrée."""
+        return await self._generer(requete, await self._contexte(requete))
+
+    async def traiter_stream(self, requete: AgentRequete) -> AsyncIterator[str]:
+        """Variante flux : streame les fragments de génération (même contexte)."""
+        contexte = await self._contexte(requete)
+        async for fragment in self._inference.generer_stream(
+            requete.question, contexte=contexte, historique=requete.historique
+        ):
+            yield fragment
 
     async def _generer(self, requete: AgentRequete, contexte: str | None) -> AgentReponse:
         """Appelle l'inférence avec un contexte donné et post-traite la sortie."""

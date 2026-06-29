@@ -12,7 +12,7 @@ cacao ivoirien au marché européen — sujet cacao, donc admis par les garde-fo
 
 from __future__ import annotations
 
-from app.domain.agents import AgentReponse, AgentRequete
+from app.domain.agents import AgentRequete
 from app.domain.ports import InferencePort
 from app.services.agents.base import AgentBase, compter_mots_cles
 from app.services.rag import RagRecuperateur
@@ -85,8 +85,7 @@ class AgentReglementation(AgentBase):
             return 0.0
         return min(0.7 + 0.1 * touches, 1.0)
 
-    async def traiter(self, requete: AgentRequete) -> AgentReponse:
-        """Récupère le contexte RAG, le préfixe du cadre EUDR, puis génère."""
+    async def _contexte(self, requete: AgentRequete) -> str | None:
+        """Préfixe le contexte RAG du cadrage EUDR (ou le cadrage seul)."""
         contexte_rag = await self._rag.contexte_pour(requete.fil_ancre) if self._rag else None
-        contexte = f"{_CADRE_EUDR}\n\n{contexte_rag}" if contexte_rag else _CADRE_EUDR
-        return await self._generer(requete, contexte)
+        return f"{_CADRE_EUDR}\n\n{contexte_rag}" if contexte_rag else _CADRE_EUDR

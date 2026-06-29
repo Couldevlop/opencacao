@@ -12,7 +12,6 @@ from collections.abc import AsyncIterator
 
 from app.application.orchestrateur import Orchestrateur
 from app.domain.entities import Conseil
-from app.models.chat import DISCLAIMER
 from app.models.domain import Langue
 
 
@@ -40,20 +39,13 @@ class ConseilAgentique:
         client_ip: str,
         historique: list[dict[str, str]] | None = None,
     ) -> AsyncIterator[dict]:
-        """Variante « flux » : l'orchestrateur ne streame pas, on émet en un bloc.
+        """Variante « flux » : délègue au streaming réel de l'orchestrateur.
 
-        Reproduit le contrat d'événements de la V2 : un ``token`` (texte complet)
-        puis un ``done`` (métadonnées finales). Les exceptions métier
+        Émet les événements ``token`` (phrase par phrase, garde-fou de sortie
+        appliqué AVANT diffusion) puis ``done``. Les exceptions métier
         (RateLimitDepasse, InferenceUnavailable) se propagent comme en V2.
         """
-        conseil = await self._orchestrateur.traiter(question, langue, client_ip, historique)
-        if conseil.reponse:
-            yield {"type": "token", "text": conseil.reponse}
-        yield {
-            "type": "done",
-            "sources": conseil.sources,
-            "confiance": conseil.confiance.value,
-            "redirection_anader": conseil.redirection_anader,
-            "disclaimer": DISCLAIMER,
-            "interaction_id": conseil.interaction_id,
-        }
+        async for evenement in self._orchestrateur.traiter_stream(
+            question, langue, client_ip, historique
+        ):
+            yield evenement

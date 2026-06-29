@@ -14,7 +14,10 @@ class _Inference:
     async def generer(self, question, *, contexte=None, historique=None, **kw) -> str:
         return "Taillez en saison sèche. Sources : CNRA, ANADER."
 
-    def generer_stream(self, *a, **k): ...
+    async def generer_stream(self, question, *, contexte=None, historique=None, **kw):
+        for fragment in ("Taillez en saison sèche. ", "Sources : CNRA, ANADER."):
+            yield fragment
+
     async def ready(self) -> bool:
         return True
 
@@ -49,15 +52,19 @@ async def test_conseiller_delegue_a_l_orchestrateur() -> None:
 
 
 @pytest.mark.asyncio
-async def test_conseiller_stream_emet_token_puis_done() -> None:
+async def test_conseiller_stream_emet_des_phrases_puis_done() -> None:
     evenements = [
         e
         async for e in _adaptateur().conseiller_stream(
             "comment tailler le cacaoyer ?", Langue.FR, "ip"
         )
     ]
-    types = [e["type"] for e in evenements]
-    assert types == ["token", "done"]
+    # Streaming réel : un ou plusieurs 'token' (phrase par phrase) puis un 'done'.
+    assert evenements[-1]["type"] == "done"
+    tokens = [e for e in evenements if e["type"] == "token"]
+    assert tokens, "au moins un fragment doit être streamé"
+    texte = "".join(e["text"] for e in tokens)
+    assert "saison sèche" in texte
     done = evenements[-1]
     assert done["interaction_id"] == "id-xyz"
     assert "disclaimer" in done

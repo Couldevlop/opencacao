@@ -43,10 +43,6 @@ class AgentReporting(AgentBase):
             return 0.0
         return min(0.7 + 0.1 * touches, 1.0)
 
-    async def traiter(self, requete: AgentRequete) -> AgentReponse:
-        """Sans contributions fournies, se comporte comme une synthèse simple."""
-        return await self._generer(requete, contexte=None)
-
     async def synthetiser(
         self, requete: AgentRequete, contributions: list[AgentReponse]
     ) -> AgentReponse:
