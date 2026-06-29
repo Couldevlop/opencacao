@@ -82,9 +82,10 @@ data:
   METEO_TIMEOUT_S: "10"
   # Prix bord-champ officiel (Conseil du Café-Cacao), valeur ADMINISTRÉE par campagne.
   # 0 = non renseigné -> l'agent Prix NE DONNE AUCUN chiffre et redirige (jamais de
-  # prix inventé). À renseigner par Waopron à chaque campagne (valeur officielle).
-  PRIX_BORD_CHAMP_FCFA_KG: "0"
-  PRIX_CAMPAGNE: ""
+  # prix inventé). À mettre à jour à chaque session du Conseil (valeur officielle).
+  # Campagne intermédiaire 2026 : 1200 FCFA/kg (Conseil Café-Cacao, session N°1 du 26/06/2026).
+  PRIX_BORD_CHAMP_FCFA_KG: "1200"
+  PRIX_CAMPAGNE: "intermédiaire 2026"
 ---
 apiVersion: apps/v1
 kind: Deployment

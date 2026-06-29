@@ -9,6 +9,7 @@ from app.domain.agents import AgentRequete
 from app.domain.ports import InferencePort
 from app.services.agents.base import AgentBase, compter_mots_cles
 from app.services.outils.prix import OutilPrix
+from app.services.rag import RagRecuperateur
 
 # Déclencheurs MARCHÉ. Routage par mot entier : on liste donc les formes verbales
 # (« vend », « vendre »…) plutôt qu'un radical, et on évite « marche » (≠ « marché »)
@@ -43,15 +44,24 @@ class AgentPrix(AgentBase):
     description = "Prix/marché/change du cacao : aide à la commercialisation."
     mots_cles = _MOTS_PRIX
 
-    def __init__(self, inference: InferencePort, outil: OutilPrix) -> None:
+    def __init__(
+        self,
+        inference: InferencePort,
+        outil: OutilPrix,
+        rag: RagRecuperateur | None = None,
+    ) -> None:
         """Initialise l'agent Prix.
 
         Args:
             inference: Port d'inférence.
             outil: Outil de récupération du cours.
+            rag: Récupérateur documentaire optionnel : apporte les prix qui ne sont
+                pas la valeur administrée unique (mise à marché, historique, café…),
+                déjà indexés dans le corpus. None = agent limité au seul cours.
         """
         super().__init__(inference)
         self._outil = outil
+        self._rag = rag
 
     async def peut_traiter(self, requete: AgentRequete) -> float:
         """Score élevé si la question évoque le prix, la vente ou le marché (mot entier)."""
@@ -61,9 +71,15 @@ class AgentPrix(AgentBase):
         return min(0.7 + 0.1 * touches, 1.0)
 
     async def _contexte(self, requete: AgentRequete) -> str | None:
-        """Récupère le cours courant et le met en contexte injectable."""
-        cours = await self._outil.invoquer()
-        return _formater_cours(cours)
+        """Combine le prix bord-champ officiel et le contexte documentaire RAG.
+
+        Le cours administré (autoritaire) ancre la réponse ; le RAG complète avec les
+        autres prix (mise à marché, historique, café). Ainsi l'agent n'est pas plus
+        pauvre que le chemin RAG sur les questions de marché.
+        """
+        cours = _formater_cours(await self._outil.invoquer())
+        documentaire = await self._rag.contexte_pour(requete.fil_ancre) if self._rag else None
+        return "\n\n".join(part for part in (cours, documentaire) if part)
 
 
 def _formater_cours(cours: dict[str, object]) -> str:
