@@ -295,11 +295,13 @@ requête (question, langue, historique, ip)
 ┌──────────────────  ORCHESTRATEUR  ──────────────────┐
 │ 1. fil_ancre        (anti-dérive multi-tours)        │
 │ 2. garde-fou ENTRÉE (cacao-only) ──► refus ──────────┼─► Conseil (ANADER)
-│ 3. ROUTEUR          (qui répond ? score peut_traiter)│
-│ 4. rate-limit       (avant inférence, après routage) │
-│ 5. dispatch ─► AGENT ─► OUTIL (météo/prix) ─► LLM     │
-│ 6. garde-fou SORTIE (vérifie la génération)          │
-│ 7. journalisation   (trace + interaction_id)         │
+│ 3. clarification    (1er tour) ──► questions ────────┼─► Conseil
+│ 4. cache exact      (tour unique) ──► hit ───────────┼─► Conseil
+│ 5. ROUTEUR          (qui répond ? score peut_traiter)│
+│ 6. rate-limit       (avant inférence, après routage) │
+│ 7. dispatch ─► AGENT ─► OUTIL (météo/prix) ─► LLM     │
+│ 8. garde-fou SORTIE (vérifie la génération)          │
+│ 9. enrichissement ANADER + journalisation            │
 └──────────────────────────────────────────────────────┘
         │
         ▼
@@ -452,33 +454,39 @@ async def classer(self, requete) -> list[tuple[AgentPort, float]]:
         concept=[
             "C'est le control plane (plan de contrôle) / la boucle d'agent. Tout le reste "
             "exécute ; lui décide : qui agit, dans quel ordre, sous quelles contraintes. "
-            "Équivalent agentique de ConseilService. L'ordre de ses 7 étapes encode la "
-            "sécurité et l'équité.",
+            "Équivalent agentique de ConseilService — il en a la PARITÉ : autour du "
+            "dispatch, il enchaîne les mêmes concerns transverses (clarification, cache, "
+            "enrichissement contact). L'ordre des étapes encode la sécurité et l'équité.",
         ],
         decisions=[
             ("Garde-fous CENTRALISÉS, pas par agent —", "point d'application unique de la politique. Le filtre « cacao uniquement » ne peut pas être oublié sur un futur agent. Souveraineté structurelle."),
+            ("Concerns transverses centralisés —", "clarification consultative (avant dispatch), cache exact (tour unique) et enrichissement contact ANADER (sur chaque réponse) sont dans l'orchestrateur, pas dans les agents — exactement comme les garde-fous. Mutualisés avec la V2 via application/conseil_commun.py."),
             ("Défense en profondeur (entrée ET sortie) —", "l'entrée bloque la demande interdite (sur le fil ancré → pas de contournement multi-tours) ; la sortie inspecte ce que l'agent a réellement généré. On ne fait jamais confiance à la sortie d'un LLM sans la vérifier."),
-            ("Rate-limit après le routage, avant l'inférence —", "un refus ne coûte pas de génération CPU (~38 s) → il ne doit pas consommer le quota. On ne facture que le travail coûteux. Équité."),
+            ("Rate-limit après routage/cache, avant l'inférence —", "un refus, une clarification ou un hit de cache ne coûtent pas de génération CPU (~38 s) → ils ne consomment pas le quota. On ne facture que le travail coûteux. Équité."),
             ("Repli systématique —", "routeur indécis → agent RAG par défaut. « Je ne sais pas router » ≠ « je ne réponds pas »."),
-            ("dataclasses.replace —", "ajoute interaction_id à un Conseil frozen par copie (pas de mutation)."),
             ("Renvoie l'entité Conseil existante —", "tout l'aval V2 (router HTTP, DTO, disclaimer, streaming) marche sans changement. C'est ce qui permet le flag agents_enabled."),
         ],
         mental="L'orchestrateur est un routeur + garde + journaliseur. La boucle « décider → agir → vérifier » se généralise en cycles (plan-act-observe) dans les systèmes avancés ; notre version plate a la même structure.",
         code_blocks=[
             (
-                "Les 7 étapes (extrait condensé) :",
+                "Le pipeline (extrait condensé) :",
                 """
 fil = fil_ancre(question, historique)
-refus = guardrails.evaluer(fil)              # 2. garde-fou ENTRÉE
-if refus is not None:
-    return Conseil(refus.message, ELEVEE, [], redirection_anader=True)
-agent = await self._routeur.meilleur(requete) or self._agent_de_repli()  # 3
-if await self._cache.hit_rate_limit(client_ip):  # 4. rate-limit
+if guardrails.evaluer(fil):                       # 2. garde-fou ENTRÉE
+    return ...refus enrichi ANADER...
+if clarification.analyser(question, historique):  # 3. clarification (1er tour)
+    return ...questions...
+if not historique:                                # 4. cache exact
+    if (c := await cache.get_cached(question, langue.value)):
+        return ...enrichir(depuis_paquet(c))...
+agent = await routeur.meilleur(requete) or repli  # 5. routage
+if await cache.hit_rate_limit(client_ip):         # 6. rate-limit
     raise RateLimitDepasse
-reponse = await agent.traiter(requete)       # 5. dispatch
-if guardrails.verifier_reponse(reponse.texte):   # 6. garde-fou SORTIE
-    return Conseil(guardrails.REFUS_PHYTO, ELEVEE, [], redirection_anader=True)
-return await self._journaliser(question, langue, conseil)  # 7
+reponse = await agent.traiter(requete)            # 7. dispatch
+if guardrails.verifier_reponse(reponse.texte):    # 8. garde-fou SORTIE
+    return ...REFUS_PHYTO...
+await cache.set_cached(...)                        # 9. cache + enrichir + journal
+return await journaliser(enrichir_contact(conseil, texte_conv))
 """,
             ),
         ],
@@ -648,26 +656,26 @@ async def synthetiser(self, requete, contributions: list[AgentReponse]) -> Agent
     doc.add_page_break()
 
     # --- Recette ---
-    heading(doc, "Recette — Ajouter un agent en 4 étapes", level=1)
+    heading(doc, "Recette — Ajouter un agent en 4 étapes (appliquée à l'agent EUDR)", level=1)
     para(
         doc,
-        "C'est l'aboutissement du socle : l'extensibilité prouvée. Pour ajouter l'agent "
-        "n°5 (ex. Maladie, Satellite, Réglementation…) :",
+        "C'est l'aboutissement du socle : l'extensibilité prouvée. L'agent n°5 — "
+        "Réglementation EUDR — a été ajouté en suivant exactement cette recette :",
     )
     numbered(
         doc,
         [
-            ("Écrire l'agent —", "services/agents/agent_maladie.py héritant d'AgentBase, avec nom, description, mots_cles, peut_traiter(), traiter()."),
-            ("(Si besoin) un outil —", "services/outils/maladie.py + un MaladiePort mockable, sur le moule de meteo.py/prix.py."),
-            ("L'enregistrer —", "une ligne dans _construire_orchestrateur (api_deps) : registre.enregistrer(AgentMaladie(...))."),
-            ("Tester —", "api/tests/agents/test_agent_maladie.py (routage + injection de contexte), en TDD."),
+            ("Écrire l'agent —", "services/agents/agent_reglementation.py héritant d'AgentBase : nom=\"reglementation\", mots_cles (eudr, déforestation, traçabilité, export…), peut_traiter() (routage par mot entier), traiter() (préfixe un cadrage EUDR au contexte RAG)."),
+            ("(Si besoin) un outil —", "non nécessaire ici : l'agent réutilise le récupérateur RAG. Pour un agent à données externes, on ajouterait services/outils/<x>.py + un port mockable (moule meteo.py/prix.py)."),
+            ("L'enregistrer —", "UNE SEULE ligne dans _construire_orchestrateur (api_deps) : registre.enregistrer(AgentReglementation(inference, rag=rag))."),
+            ("Tester —", "api/tests/agents/test_agent_reglementation.py (routage + cadrage injecté), en TDD."),
         ],
     )
     para(
         doc,
-        "AUCUNE autre modification. L'orchestrateur, le registre et le routeur restent "
-        "intacts. C'est la définition opérationnelle d'« ouvert à l'extension, fermé à la "
-        "modification ».",
+        "AUCUNE autre modification. L'orchestrateur, le registre et le routeur sont restés "
+        "intacts — preuve concrète d'« ouvert à l'extension, fermé à la modification ». Les "
+        "agents suivants (Maladie, Satellite, Normes, ERP…) suivront le même moule.",
         italic=True,
         color=GREY,
     )
@@ -691,16 +699,22 @@ async def synthetiser(self, requete, contributions: list[AgentReponse]) -> Agent
     heading(doc, "Checklist d'activation (avant agents_enabled = ON)", level=1)
     para(
         doc,
-        "Le socle est sûr et dormant (flag OFF, V2 inchangée). Mais l'activer en l'état "
-        "dégraderait l'expérience par rapport à la V2 : le chemin agentique n'a pas encore "
-        "la parité fonctionnelle. À traiter avant tout rollout (revue adversariale du "
-        "29/06/2026) :",
+        "Le socle est sûr et dormant (flag OFF, V2 inchangée). La parité fonctionnelle "
+        "progresse ; état au 29/06/2026 :",
     )
+    para(doc, "Fait (parité V2 dans l'orchestrateur) :", size=11, color=OR)
     bullets(
         doc,
         [
-            ("Parité features V2 —", "l'orchestrateur ne fait pas encore l'enrichissement contact ANADER ni la clarification consultative que la V2 applique. Un agent ne doit pas faire disparaître ces features validées."),
-            ("Cache de réponses —", "l'orchestrateur n'utilise le cache que pour le rate-limit. Brancher get_cached/set_cached (et le préchauffage), sinon chaque tour relance l'inférence (~38 s CPU)."),
+            ("Enrichissement contact ANADER + clarification —", "l'orchestrateur applique clarification.analyser (avant dispatch) et conseil_commun.enrichir_contact (sur chaque réponse), comme la V2. Mutualisé dans application/conseil_commun.py."),
+            ("Cache exact de réponses —", "get_cached/set_cached branchés (tour unique), sérialisation partagée avec la V2 -> le pré-chauffage redevient utile, latence préservée."),
+        ],
+    )
+    para(doc, "Reste avant agents_enabled = ON :", size=11, color=OR)
+    bullets(
+        doc,
+        [
+            ("Cache sémantique —", "seul l'exact-match est branché (le sémantique nécessite le port embeddings)."),
             ("Vrai streaming —", "l'adaptateur émet la réponse en un bloc après génération complète. Pour l'UX, streamer token par token."),
             ("Sources météo/prix réelles —", "remplacer MeteoIndisponible/PrixIndisponible par des adaptateurs httpx (port mockable) avant que les agents Météo/Prix apportent une valeur."),
             ("Composition multi-agents —", "AgentReporting.synthetiser n'est pas encore branché dans l'orchestrateur (dispatch mono-agent). La synthèse fan-out/fan-in est une évolution V3+."),

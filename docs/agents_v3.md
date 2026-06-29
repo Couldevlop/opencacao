@@ -13,11 +13,13 @@
         ┌──────────────────────  ORCHESTRATEUR  ──────────────────────┐
         │ 1. fil_ancre        (anti-dérive multi-tours)               │
         │ 2. garde-fou ENTRÉE (cacao-only, centralisé) ──► refus ─────┼─► Conseil (ANADER)
-        │ 3. ROUTEUR          (qui répond ? score peut_traiter)       │
-        │ 4. rate-limit       (avant inférence, après routage)        │
-        │ 5. dispatch ───►  AGENT  ───► OUTIL (météo/prix) ──► LLM     │
-        │ 6. garde-fou SORTIE (vérifie la génération)                 │
-        │ 7. journalisation   (trace + interaction_id)                │
+        │ 3. clarification    (1er tour) ──► questions ───────────────┼─► Conseil
+        │ 4. cache exact      (tour unique) ──► hit ──────────────────┼─► Conseil
+        │ 5. ROUTEUR          (qui répond ? score peut_traiter)       │
+        │ 6. rate-limit       (avant inférence, après routage)        │
+        │ 7. dispatch ───►  AGENT  ───► OUTIL (météo/prix) ──► LLM     │
+        │ 8. garde-fou SORTIE (vérifie la génération)                 │
+        │ 9. enrichissement ANADER + journalisation                   │
         └──────────────────────────────────────────────────────────────┘
                                    │
                                    ▼
@@ -96,18 +98,21 @@ Les 7 étapes — **l'ordre encode la sécurité et l'équité** :
 ```
 1. fil_ancre          reconstruit l'intention réelle (multi-tours)
 2. garde-fou ENTRÉE   refus AVANT tout agent
-3. routage            choix de l'agent (repli RAG si rien)
-4. rate-limit         AVANT l'inférence, APRÈS le routage
-5. dispatch           agent.traiter()
-6. garde-fou SORTIE   filtre la génération
-7. journalisation     trace + interaction_id
+3. clarification      1er tour : poser des questions plutôt que répondre à l'aveugle
+4. cache exact        tour unique : sert une réponse cachée (instantané)
+5. routage            choix de l'agent (repli RAG si rien)
+6. rate-limit         AVANT l'inférence, APRÈS routage/cache
+7. dispatch           agent.traiter()
+8. garde-fou SORTIE   filtre la génération
+9. enrichissement     contact ANADER local + journalisation
 ```
 
 ### Les décisions (c'est ici qu'est l'expertise)
 1. **Garde-fous CENTRALISÉS, pas par agent.** Point d'application unique de la politique (*policy enforcement point*). Le filtre « cacao uniquement » ne peut pas être oublié sur un futur agent : tout passe par l'orchestrateur. Souveraineté structurelle.
-2. **Défense en profondeur : entrée ET sortie.** L'entrée bloque la *demande* interdite (sur le fil ancré → pas de contournement multi-tours). La sortie inspecte ce que l'agent a *réellement généré* (un LLM peut produire un dosage même sur une question anodine). Principe : **ne jamais faire confiance à la sortie d'un LLM sans la vérifier.**
-3. **Rate-limit après le routage, avant l'inférence.** Un refus ne coûte rien (pas de génération CPU ~38 s) → il ne doit pas consommer le quota. On ne facture que le travail coûteux. Équité.
-4. **Repli systématique (jamais d'impasse).** Routeur indécis → agent RAG par défaut. « Je ne sais pas router » ≠ « je ne réponds pas » : on dégrade vers le généraliste.
+2. **Concerns transverses centralisés (parité V2).** Clarification consultative, cache exact et enrichissement contact ANADER sont dans l'orchestrateur — comme les garde-fous, jamais dans les agents. Mutualisés avec la V2 via `application/conseil_commun.py` (le cache est même interopérable : une réponse pré-chauffée par la V2 est servie par la V3).
+3. **Défense en profondeur : entrée ET sortie.** L'entrée bloque la *demande* interdite (sur le fil ancré → pas de contournement multi-tours). La sortie inspecte ce que l'agent a *réellement généré* (un LLM peut produire un dosage même sur une question anodine). Principe : **ne jamais faire confiance à la sortie d'un LLM sans la vérifier.**
+4. **Rate-limit après routage/cache, avant l'inférence.** Un refus, une clarification ou un hit de cache ne coûtent rien (pas de génération CPU ~38 s) → ils ne consomment pas le quota. On ne facture que le travail coûteux. Équité.
+5. **Repli systématique (jamais d'impasse).** Routeur indécis → agent RAG par défaut. « Je ne sais pas router » ≠ « je ne réponds pas » : on dégrade vers le généraliste.
 
 ### Détails d'artisan
 - **`dataclasses.replace`** pour ajouter l'`interaction_id` à un `Conseil` `frozen` (copie au lieu de mutation).
@@ -196,16 +201,16 @@ Le router POST passe par `get_dialogue_service` (sessions V2), qui appelle `cons
 
 ---
 
-## Recette — Ajouter un agent (ex. Maladie) en 4 étapes
+## Recette — Ajouter un agent en 4 étapes (appliquée à l'agent EUDR)
 
-C'est l'aboutissement du socle : l'extensibilité prouvée. Pour ajouter l'agent n°5 (Maladie, Satellite, Réglementation…) :
+C'est l'aboutissement du socle : l'extensibilité prouvée. L'**agent n°5 — Réglementation EUDR** a été ajouté en suivant exactement cette recette :
 
-1. **Écrire l'agent** — `api/app/services/agents/agent_maladie.py` héritant d'`AgentBase`, avec `nom`, `description`, `mots_cles`, `peut_traiter()`, `traiter()`.
-2. **(Si besoin) un outil** — `api/app/services/outils/maladie.py` + un `MaladiePort` mockable, sur le moule de `meteo.py`/`prix.py`.
-3. **L'enregistrer** — une ligne dans `_construire_orchestrateur` (`api_deps.py`) : `registre.enregistrer(AgentMaladie(...))`.
-4. **Tester** — `api/tests/agents/test_agent_maladie.py` (routage + injection de contexte), en TDD.
+1. **Écrire l'agent** — `api/app/services/agents/agent_reglementation.py` héritant d'`AgentBase`, avec `nom="reglementation"`, `mots_cles` (eudr, déforestation, traçabilité, export…), `peut_traiter()` (routage par mot entier), `traiter()` (préfixe un cadrage EUDR au contexte RAG).
+2. **(Si besoin) un outil** — non nécessaire ici : l'agent réutilise le récupérateur RAG. (Pour un agent à données externes, on ajouterait `services/outils/<x>.py` + un port mockable, sur le moule de `meteo.py`/`prix.py`.)
+3. **L'enregistrer** — **une seule ligne** dans `_construire_orchestrateur` (`api_deps.py`) : `registre.enregistrer(AgentReglementation(inference, rag=rag))`.
+4. **Tester** — `api/tests/agents/test_agent_reglementation.py` (routage + cadrage injecté), en TDD.
 
-**Aucune autre modification.** L'orchestrateur, le registre et le routeur restent intacts. C'est la définition opérationnelle d'« ouvert à l'extension, fermé à la modification ».
+**Aucune autre modification.** L'orchestrateur, le registre et le routeur sont restés intacts — preuve concrète d'« ouvert à l'extension, fermé à la modification ». Les agents suivants (Maladie, Satellite, Normes, ERP…) suivront le même moule.
 
 > 📄 Une version Word détaillée de ce cours existe : `docs/Documentation_Socle_Agentique_V3.docx` (régénérable via `python scripts/build_doc_agentique.py`).
 
@@ -213,10 +218,14 @@ C'est l'aboutissement du socle : l'extensibilité prouvée. Pour ajouter l'agent
 
 ## Checklist d'activation (AVANT de passer `agents_enabled=ON`)
 
-Le socle est **sûr et dormant** (flag OFF, V2 inchangée). Mais l'activer en l'état *dégraderait* l'expérience par rapport à la V2 : le chemin agentique n'a pas encore la **parité fonctionnelle**. À traiter avant tout rollout (revue adversariale du 29/06/2026) :
+Le socle est **sûr et dormant** (flag OFF, V2 inchangée). La parité fonctionnelle progresse ; état au 29/06/2026 :
 
-- **Parité features V2 manquantes** : l'orchestrateur ne fait pas (encore) l'enrichissement contact ANADER (`contacts`) ni la clarification consultative (`clarification`) que la V2 applique. Un agent ne doit pas faire disparaître ces features validées.
-- **Cache de réponses** : l'orchestrateur n'utilise le cache que pour le rate-limit. Brancher `get_cached`/`set_cached` (et le préchauffage) sinon chaque tour relance l'inférence (~38 s CPU).
+**✅ Fait (parité V2 dans l'orchestrateur)**
+- **Enrichissement contact ANADER + clarification consultative** : l'orchestrateur applique désormais `clarification.analyser` (avant dispatch) et `conseil_commun.enrichir_contact` (sur chaque réponse), comme la V2. Mutualisé dans `application/conseil_commun.py`.
+- **Cache exact de réponses** : `get_cached`/`set_cached` branchés (tour unique), sérialisation partagée avec la V2 → le pré-chauffage redevient utile et la latence est préservée.
+
+**⏳ Reste avant `agents_enabled=ON`**
+- **Cache sémantique** : seul l'exact-match est branché (le sémantique nécessite le port embeddings).
 - **Vrai streaming** : l'adaptateur émet la réponse en un bloc après génération complète. Pour l'UX, streamer token par token (l'orchestrateur devra exposer une variante flux).
 - **Sources météo/prix réelles** : remplacer `MeteoIndisponible`/`PrixIndisponible` par des adaptateurs httpx (port mockable) avant que les agents Météo/Prix apportent une valeur.
 - **Composition multi-agents** : `AgentReporting.synthetiser` n'est pas encore branché dans l'orchestrateur (dispatch mono-agent). La synthèse multi-agents (fan-out/fan-in) est une évolution V3+.
