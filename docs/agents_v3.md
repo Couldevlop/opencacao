@@ -211,6 +211,20 @@ C'est l'aboutissement du socle : l'extensibilité prouvée. Pour ajouter l'agent
 
 ---
 
+## Checklist d'activation (AVANT de passer `agents_enabled=ON`)
+
+Le socle est **sûr et dormant** (flag OFF, V2 inchangée). Mais l'activer en l'état *dégraderait* l'expérience par rapport à la V2 : le chemin agentique n'a pas encore la **parité fonctionnelle**. À traiter avant tout rollout (revue adversariale du 29/06/2026) :
+
+- **Parité features V2 manquantes** : l'orchestrateur ne fait pas (encore) l'enrichissement contact ANADER (`contacts`) ni la clarification consultative (`clarification`) que la V2 applique. Un agent ne doit pas faire disparaître ces features validées.
+- **Cache de réponses** : l'orchestrateur n'utilise le cache que pour le rate-limit. Brancher `get_cached`/`set_cached` (et le préchauffage) sinon chaque tour relance l'inférence (~38 s CPU).
+- **Vrai streaming** : l'adaptateur émet la réponse en un bloc après génération complète. Pour l'UX, streamer token par token (l'orchestrateur devra exposer une variante flux).
+- **Sources météo/prix réelles** : remplacer `MeteoIndisponible`/`PrixIndisponible` par des adaptateurs httpx (port mockable) avant que les agents Météo/Prix apportent une valeur.
+- **Composition multi-agents** : `AgentReporting.synthetiser` n'est pas encore branché dans l'orchestrateur (dispatch mono-agent). La synthèse multi-agents (fan-out/fan-in) est une évolution V3+.
+
+> Le routage déterministe reste volontairement conservateur : sans signal fort (mot climatique/marché en **mot entier**), on retombe sur le RAG (généraliste ancré). Un routage sémantique (embeddings) est la prochaine étape pour lever cette prudence.
+
+---
+
 ## Garde-fous & souveraineté (rappel non négociable)
 - Périmètre **cacao uniquement** : vivier/anacarde/médical/dosages → redirection ANADER. Décision Waopron juin 2026.
 - Garde-fous **dans l'orchestrateur**, jamais par agent.
