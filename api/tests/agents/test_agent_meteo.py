@@ -47,3 +47,22 @@ async def test_traiter_injecte_les_previsions_dans_le_contexte() -> None:
     assert reponse.agent == "meteo"
     assert inf.contexte_recu is not None
     assert "pluie" in inf.contexte_recu.lower()
+
+
+@pytest.mark.asyncio
+async def test_question_agronomie_ne_route_pas_meteo() -> None:
+    # Sans mot climatique, une question d'agronomie reste au RAG (score météo nul).
+    agent = AgentMeteo(_InferenceFactice(), OutilMeteo(_MeteoFactice()))
+    assert await agent.peut_traiter(_requete("comment traiter les mirides du cacaoyer ?")) == 0.0
+    # Faux positif de sous-chaîne évité : « printemps » ne déclenche pas « temps ».
+    assert await agent.peut_traiter(_requete("au printemps le cacaoyer fleurit")) == 0.0
+
+
+@pytest.mark.asyncio
+async def test_outil_meteo_fail_soft() -> None:
+    # Un outil dont la source échoue renvoie {} (l'agent dégrade proprement).
+    class _SourceKO:
+        async def previsions(self, localite: str) -> dict:
+            raise RuntimeError("API météo indisponible")
+
+    assert await OutilMeteo(_SourceKO()).invoquer(localite="Daloa") == {}

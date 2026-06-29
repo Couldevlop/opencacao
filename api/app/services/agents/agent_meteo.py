@@ -10,28 +10,36 @@ import re
 
 from app.domain.agents import AgentReponse, AgentRequete
 from app.domain.ports import InferencePort
-from app.services.agents.base import AgentBase
+from app.services.agents.base import AgentBase, compter_mots_cles
 from app.services.outils.meteo import OutilMeteo
 
+# Déclencheurs CLIMATIQUES uniquement. On exclut volontairement les termes
+# d'agronomie générale (« traiter », « récolte », « temps ») : ambigus, ils
+# détournaient des questions ancrées sur le RAG vers la météo. En l'absence de mot
+# climatique, le conseil revient à l'agent RAG (généraliste). Routage par MOT ENTIER.
 _MOTS_METEO = (
     "pluie",
+    "pluies",
     "pleuvoir",
+    "pleut",
     "meteo",
     "météo",
-    "temps",
-    "traiter",
-    "traitement",
+    "climat",
+    "climatique",
+    "saison",
+    "saisons",
     "secher",
     "sécher",
     "sechage",
     "séchage",
-    "recolte",
-    "récolte",
-    "saison",
-    "fenetre",
-    "fenêtre",
+    "ensoleillement",
+    "soleil",
     "humidite",
     "humidité",
+    "fenetre",
+    "fenêtre",
+    "irrigation",
+    "arrosage",
 )
 
 
@@ -60,9 +68,8 @@ class AgentMeteo(AgentBase):
         self._geo_defaut = geo_defaut
 
     async def peut_traiter(self, requete: AgentRequete) -> float:
-        """Score élevé si la question évoque la météo ou une fenêtre d'action."""
-        texte = requete.fil_ancre.lower()
-        touches = sum(1 for mot in self.mots_cles if mot in texte)
+        """Score élevé si la question évoque le climat (mot entier)."""
+        touches = compter_mots_cles(requete.fil_ancre, self.mots_cles)
         if touches == 0:
             return 0.0
         return min(0.7 + 0.1 * touches, 1.0)

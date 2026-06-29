@@ -119,3 +119,40 @@ async def test_rate_limit_avant_inference() -> None:
     orch = _orchestrateur(rag, cache=_CacheFactice(limite=True))
     with pytest.raises(RateLimitDepasse):
         await orch.traiter("comment tailler le cacaoyer ?", Langue.FR, "ip")
+
+
+@pytest.mark.asyncio
+async def test_garde_fou_sortie_remplace_la_reponse(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Défense en profondeur : si la sortie d'un agent est jugée compromise par le
+    # garde-fou de sortie, l'orchestrateur la remplace par le refus phyto et redirige.
+    # On simule le déclenchement sans écrire de dosage (interdit, même en test).
+    from app.services import guardrails
+
+    monkeypatch.setattr(guardrails, "verifier_reponse", lambda texte: object())
+    rag = _AgentEspion("rag", 1.0, "réponse de l'agent")
+    orch = _orchestrateur(rag)
+    conseil = await orch.traiter("comment tailler le cacaoyer ?", Langue.FR, "ip")
+    assert conseil.redirection_anader is True
+    assert conseil.reponse == guardrails.REFUS_PHYTO
+    assert conseil.reponse != "réponse de l'agent"
+
+
+class _CacheCompteur(_CacheFactice):
+    def __init__(self) -> None:
+        super().__init__()
+        self.appels_rate = 0
+
+    async def hit_rate_limit(self, ip: str) -> bool:
+        self.appels_rate += 1
+        return False
+
+
+@pytest.mark.asyncio
+async def test_refus_entree_ne_consomme_pas_le_quota() -> None:
+    # Équité : un refus de garde-fou ne doit pas décompter le quota (pas d'inférence).
+    cache = _CacheCompteur()
+    rag = _AgentEspion("rag", 1.0, "ne devrait pas répondre")
+    orch = _orchestrateur(rag, cache=cache)
+    await orch.traiter("comment cultiver le maïs ?", Langue.FR, "ip")
+    assert cache.appels_rate == 0
+    assert rag.recue is None

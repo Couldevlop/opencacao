@@ -123,7 +123,7 @@ class Orchestrateur:
 
     def _agent_de_repli(self) -> AgentPort | None:
         """Retourne l'agent de repli (RAG par défaut), ou None s'il est absent."""
-        return self._routeur._registre.obtenir(self._agent_defaut)  # noqa: SLF001
+        return self._routeur.registre.obtenir(self._agent_defaut)
 
     async def _journaliser(self, question: str, langue: Langue, conseil: Conseil) -> Conseil:
         """Journalise l'interaction et renvoie le conseil enrichi de son id."""

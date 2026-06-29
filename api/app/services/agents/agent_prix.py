@@ -7,14 +7,21 @@ from __future__ import annotations
 
 from app.domain.agents import AgentReponse, AgentRequete
 from app.domain.ports import InferencePort
-from app.services.agents.base import AgentBase
+from app.services.agents.base import AgentBase, compter_mots_cles
 from app.services.outils.prix import OutilPrix
 
+# Déclencheurs MARCHÉ. Routage par mot entier : on liste donc les formes verbales
+# (« vend », « vendre »…) plutôt qu'un radical, et on évite « marche » (≠ « marché »)
+# qui matcherait « il marche ». Les expressions multi-mots sont gérées telles quelles.
 _MOTS_PRIX = (
     "prix",
-    "vend",  # radical : capture vend, vendre, vendu, vendez…
+    "vend",
+    "vends",
+    "vendre",
+    "vendu",
+    "vendez",
     "vente",
-    "marche",
+    "ventes",
     "marché",
     "fcfa",
     "cours",
@@ -24,6 +31,7 @@ _MOTS_PRIX = (
     "bord champ",
     "campagne",
     "acheteur",
+    "acheteurs",
     "commercialisation",
 )
 
@@ -46,9 +54,8 @@ class AgentPrix(AgentBase):
         self._outil = outil
 
     async def peut_traiter(self, requete: AgentRequete) -> float:
-        """Score élevé si la question évoque le prix, la vente ou le marché."""
-        texte = requete.fil_ancre.lower()
-        touches = sum(1 for mot in self.mots_cles if mot in texte)
+        """Score élevé si la question évoque le prix, la vente ou le marché (mot entier)."""
+        touches = compter_mots_cles(requete.fil_ancre, self.mots_cles)
         if touches == 0:
             return 0.0
         return min(0.7 + 0.1 * touches, 1.0)

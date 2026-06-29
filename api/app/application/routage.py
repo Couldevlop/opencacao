@@ -27,6 +27,11 @@ class RouteurIntention:
         self._registre = registre
         self._seuil = seuil
 
+    @property
+    def registre(self) -> RegistreAgents:
+        """Registre des agents (lecture seule) — repli et introspection."""
+        return self._registre
+
     async def classer(self, requete: AgentRequete) -> list[tuple[AgentPort, float]]:
         """Retourne les agents dont le score >= seuil, du plus pertinent au moins."""
         scores: list[tuple[AgentPort, float]] = []

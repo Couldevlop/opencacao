@@ -21,7 +21,7 @@ def test_construction_orchestrateur_enregistre_les_quatre_agents() -> None:
     # Ports factices : on ne teste que le câblage (aucun agent n'est appelé).
     orch = _construire_orchestrateur(inference=object(), cache=object(), journal=object(), rag=None)
     assert isinstance(orch, Orchestrateur)
-    noms = orch._routeur._registre.noms()  # noqa: SLF001
+    noms = orch._routeur.registre.noms()  # noqa: SLF001
     assert set(noms) == {"rag", "meteo", "prix", "reporting"}
 
 

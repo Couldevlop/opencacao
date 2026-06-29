@@ -9,7 +9,7 @@ from __future__ import annotations
 from app.domain.agents import AgentReponse, AgentRequete
 from app.domain.ports import InferencePort
 from app.models.domain import Confiance
-from app.services.agents.base import AgentBase
+from app.services.agents.base import AgentBase, compter_mots_cles
 
 _MOTS_REPORTING = (
     "rapport",
@@ -37,9 +37,8 @@ class AgentReporting(AgentBase):
         super().__init__(inference)
 
     async def peut_traiter(self, requete: AgentRequete) -> float:
-        """Score élevé si l'utilisateur demande une synthèse ou un bilan."""
-        texte = requete.fil_ancre.lower()
-        touches = sum(1 for mot in self.mots_cles if mot in texte)
+        """Score élevé si l'utilisateur demande une synthèse ou un bilan (mot entier)."""
+        touches = compter_mots_cles(requete.fil_ancre, self.mots_cles)
         if touches == 0:
             return 0.0
         return min(0.7 + 0.1 * touches, 1.0)

@@ -47,3 +47,10 @@ async def test_traiter_injecte_le_cours_dans_le_contexte() -> None:
     assert reponse.agent == "prix"
     assert inf.contexte_recu is not None
     assert "1800" in inf.contexte_recu
+
+
+@pytest.mark.asyncio
+async def test_prix_evite_les_faux_positifs_de_sous_chaine() -> None:
+    # « discours » ne déclenche pas « cours » ; « vendredi » ne déclenche pas « vend ».
+    agent = AgentPrix(_InferenceFactice(), OutilPrix(_PrixFactice()))
+    assert await agent.peut_traiter(_requete("le discours du président vendredi")) == 0.0
