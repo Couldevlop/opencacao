@@ -75,6 +75,16 @@ data:
   AUTH_EMAIL_FROM: "noreply@openlabconsulting.com"
   AUTH_EMAIL_FROM_NAME: "OpenCacao"
   ZEPTOMAIL_API_URL: "https://api.zeptomail.com/v1.1/email"
+  # Plateforme agentique V3 (orchestrateur + agents RAG/Météo/Prix/Réglementation/
+  # Reporting). Activée en prod (juin 2026). Le chemin V2 reste le repli si OFF.
+  AGENTS_ENABLED: "true"
+  # Source Météo réelle (Open-Meteo, API libre sans clé) : délai max par requête.
+  METEO_TIMEOUT_S: "10"
+  # Prix bord-champ officiel (Conseil du Café-Cacao), valeur ADMINISTRÉE par campagne.
+  # 0 = non renseigné -> l'agent Prix NE DONNE AUCUN chiffre et redirige (jamais de
+  # prix inventé). À renseigner par Waopron à chaque campagne (valeur officielle).
+  PRIX_BORD_CHAMP_FCFA_KG: "0"
+  PRIX_CAMPAGNE: ""
 ---
 apiVersion: apps/v1
 kind: Deployment
