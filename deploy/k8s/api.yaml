@@ -48,6 +48,15 @@ data:
   RAG_CANDIDATS: "30"
   RAG_POIDS_LEXICAL: "0.5"
   RAG_SEUIL_LEXICAL: "0.33"
+  # Cache sémantique : sert une réponse cachée pour une question proche (cosinus
+  # >= seuil). Le seuil cosinus (0,92) EST le garde-fou de précision — vérifié en
+  # prod (un sujet différent est régénéré). Le garde-fou lexical (couverture des
+  # mots-clés de la question cachée) était contre-productif à 0,75 : il rejetait les
+  # vraies paraphrases (autres mots) sans bloquer les quasi-doublons à qualificatif
+  # divergent (jeune/adulte, qui partagent presque tous les mots). Abaissé à 0,3
+  # (juin 2026) pour laisser passer les paraphrases qui franchissent déjà le cosinus.
+  SEMANTIC_CACHE_ENABLED: "true"
+  SEMANTIC_CACHE_LEXICAL_MIN: "0.3"
   # Analytique des visites + géolocalisation pays (base GeoLite2 locale, IP non stockée).
   LOG_VISITES: "true"
   GEOIP_DB_PATH: "/models/GeoLite2-Country.mmdb"

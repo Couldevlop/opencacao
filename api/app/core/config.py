@@ -87,6 +87,14 @@ class Settings(BaseSettings):
     # OFF par défaut : tant que le flag est OFF, le chemin V2 (ConseilService) reste
     # seul en production. Activable sans rebuild via AGENTS_ENABLED (ConfigMap).
     agents_enabled: bool = False
+    # Sources de données des agents Météo/Prix (souveraineté : données factuelles,
+    # jamais un LLM tiers). Météo = Open-Meteo (API publique libre, sans clé).
+    meteo_timeout_s: float = 10.0
+    # Prix bord-champ officiel (Conseil Café-Cacao), valeur administrée par campagne.
+    # 0 = non renseigné -> l'agent Prix dégrade vers le RAG (jamais de prix inventé).
+    # À mettre à jour à chaque campagne via ConfigMap (PRIX_BORD_CHAMP_FCFA_KG).
+    prix_bord_champ_fcfa_kg: int = 0
+    prix_campagne: str = ""
 
     # --- Cache sémantique ---
     # Sur un miss exact, vectorise la question et sert la réponse d'une question
