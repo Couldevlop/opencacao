@@ -97,14 +97,19 @@ def _construire_orchestrateur(
     from app.services.agents.agent_rag import AgentRag
     from app.services.agents.agent_reglementation import AgentReglementation
     from app.services.agents.agent_reporting import AgentReporting
-    from app.services.outils.indisponible import MeteoIndisponible, PrixIndisponible
     from app.services.outils.meteo import OutilMeteo
+    from app.services.outils.meteo_openmeteo import MeteoOpenMeteo
     from app.services.outils.prix import OutilPrix
+    from app.services.outils.prix_campagne import PrixCampagne
+
+    settings = get_settings()
+    meteo = MeteoOpenMeteo(timeout_s=settings.meteo_timeout_s)
+    prix = PrixCampagne(settings.prix_bord_champ_fcfa_kg, settings.prix_campagne)
 
     registre = RegistreAgents()
     registre.enregistrer(AgentRag(inference, rag=rag))  # type: ignore[arg-type]
-    registre.enregistrer(AgentMeteo(inference, OutilMeteo(MeteoIndisponible())))  # type: ignore[arg-type]
-    registre.enregistrer(AgentPrix(inference, OutilPrix(PrixIndisponible())))  # type: ignore[arg-type]
+    registre.enregistrer(AgentMeteo(inference, OutilMeteo(meteo)))  # type: ignore[arg-type]
+    registre.enregistrer(AgentPrix(inference, OutilPrix(prix)))  # type: ignore[arg-type]
     registre.enregistrer(AgentReglementation(inference, rag=rag))  # type: ignore[arg-type]
     registre.enregistrer(AgentReporting(inference))  # type: ignore[arg-type]
     routeur = RouteurIntention(registre)
