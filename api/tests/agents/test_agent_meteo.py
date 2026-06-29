@@ -50,6 +50,16 @@ async def test_traiter_injecte_les_previsions_dans_le_contexte() -> None:
 
 
 @pytest.mark.asyncio
+async def test_peut_traiter_sur_vocabulaire_meteo_courant() -> None:
+    # Les questions usuelles sur prévisions/précipitations/averses doivent partir à
+    # l'agent Météo (et non tomber au RAG faute de mot-clé).
+    agent = AgentMeteo(_InferenceFactice(), OutilMeteo(_MeteoFactice()))
+    assert await agent.peut_traiter(_requete("quelles précipitations à Soubré ?")) >= 0.7
+    assert await agent.peut_traiter(_requete("quelles sont les prévisions à Daloa ?")) >= 0.7
+    assert await agent.peut_traiter(_requete("y aura-t-il des averses demain ?")) >= 0.7
+
+
+@pytest.mark.asyncio
 async def test_question_agronomie_ne_route_pas_meteo() -> None:
     # Sans mot climatique, une question d'agronomie reste au RAG (score météo nul).
     agent = AgentMeteo(_InferenceFactice(), OutilMeteo(_MeteoFactice()))
