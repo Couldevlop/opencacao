@@ -66,10 +66,22 @@ class AgentPrix(AgentBase):
         return _formater_cours(cours)
 
 
-def _formater_cours(cours: dict[str, object]) -> str | None:
-    """Met en forme le cours en contexte injectable, ou None si vide."""
+def _formater_cours(cours: dict[str, object]) -> str:
+    """Met en forme le cours en contexte injectable.
+
+    Garde-fou souveraineté (non négociable) : si aucun prix officiel n'est
+    disponible, on n'injecte PAS un contexte vide (qui laisserait le modèle
+    fabriquer un chiffre — bug observé en prod). On injecte une consigne explicite
+    interdisant d'avancer un prix et redirigeant vers la source officielle.
+    """
     if not cours:
-        return None
+        return (
+            "Aucun prix bord-champ officiel n'est disponible dans le système. "
+            "N'avance AUCUN chiffre de prix et n'en invente sous aucun prétexte : "
+            "explique au producteur que le prix officiel est fixé par le Conseil du "
+            "Café-Cacao et invite-le à le vérifier auprès du Conseil du Café-Cacao "
+            "ou de son agent ANADER local."
+        )
     prix = cours.get("prix_bord_champ_fcfa_kg", "?")
     campagne = cours.get("campagne", "")
     return f"Prix bord-champ de référence : {prix} FCFA/kg (campagne {campagne})."
