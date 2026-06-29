@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from app.services.rag import (
+    _BM25,
     Passage,
     RagIndex,
     RagRecuperateur,
@@ -15,6 +16,57 @@ from app.services.rag import (
     recouvrement_lexical,
     reranker,
 )
+
+
+def test_bm25_classe_en_tete_le_doc_contenant_le_terme() -> None:
+    """BM25 donne le meilleur score au document contenant le terme rare de la requête."""
+    docs = [
+        "taille et entretien du cacaoyer",
+        "fertilisation de la cacaoyere",
+        "le swollen shoot est une maladie virale du cacaoyer",
+    ]
+    bm25 = _BM25.construire(docs)
+    top = bm25.top(_mots_cles("comment reconnaitre le swollen shoot"), 3)
+    assert top[0] == 2  # le doc « swollen shoot » remonte en tête
+
+
+def _ecrire_index_custom(chemin: Path, entrees: list[dict]) -> None:
+    chemin.write_text(
+        "\n".join(json.dumps(e, ensure_ascii=False) for e in entrees) + "\n", encoding="utf-8"
+    )
+
+
+def test_vivier_hybride_recupere_un_doc_que_le_dense_manque(tmp_path: Path) -> None:
+    """Un doc lexicalement pertinent hors du top dense est ramené par le canal BM25."""
+    chemin = tmp_path / "idx.jsonl"
+    _ecrire_index_custom(
+        chemin,
+        [
+            {
+                "texte": "Taille et entretien du cacaoyer.",
+                "source": "CNRA",
+                "vecteur": [1.0, 0.0, 0.0],
+            },
+            {
+                "texte": "Fertilisation de la cacaoyère.",
+                "source": "CNRA",
+                "vecteur": [0.0, 1.0, 0.0],
+            },
+            {
+                "texte": "Le swollen shoot est une maladie virale du cacaoyer.",
+                "source": "CNRA",
+                "vecteur": [0.0, 0.0, 1.0],
+            },
+        ],
+    )
+    index = RagIndex.charger(chemin)
+    assert index is not None
+    # Vecteur orienté vers doc0/doc1 (composante nulle sur doc2) : le dense top-2
+    # = {doc0, doc1}. La question contient « swollen shoot » -> BM25 doit ramener doc2.
+    vivier = index.vivier_hybride([0.9, 0.4, 0.0], "Comment reconnaître le swollen shoot ?", 2)
+    textes = [p.texte for p in vivier]
+    assert any("swollen" in t.lower() for t in textes)  # ramené par BM25
+    assert any("Taille" in t for t in textes)  # doc dense conservé
 
 
 def test_couverture_lexicale_paraphrase_complete() -> None:

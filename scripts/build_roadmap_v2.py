@@ -669,6 +669,7 @@ backlog_eff = [
     ("F9", "6 RAG", "Embeddings plus forts (multilingual-e5 / BGE-M3) + top_k 8 → reranking → 3 ; calibrer le seuil.", "Should", 5, "Ext-S3"),
     ("F10", "6 RAG", "Récupération hybride BM25 + dense (recall sur noms de maladies/variétés).", "Could", 3, "Ext-S3"),
     ("F12", "1 Mesure", "Harnais A/B (qualité + latence) comparant les versions de modèle, choix de la version à déployer.", "Could", 3, "Ext-S3"),
+    ("F13", "8 Multilingue", "Réponses multilingues (EN) : élargir l'enum Langue (DTO n'accepte que 'fr') + prompt système EN + clé cache/RAG par langue. Retrieval cross-lingue déjà acquis via Qwen3-4B (question EN → fiche FR retrouvée).", "Could", 5, "Ext-S3"),
 ]
 PHASE_COLOR = {"Ext-S1": "1565C0", "Ext-S2": "2E7D32", "Ext-S3": "6A1B9A"}
 r += 1

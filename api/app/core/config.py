@@ -77,6 +77,10 @@ class Settings(BaseSettings):
     rag_candidats: int = 12
     rag_poids_lexical: float = 0.35
     rag_seuil_lexical: float = 0.5
+    # Récupération hybride (F10) : on complète le vivier dense par un canal BM25
+    # (recall lexical sur tout le corpus) — rattrape les noms rares de maladies/
+    # variétés que le dense classe hors vivier. Désactivable via RAG_HYBRIDE_ENABLED.
+    rag_hybride_enabled: bool = True
 
     # --- Cache sémantique ---
     # Sur un miss exact, vectorise la question et sert la réponse d'une question

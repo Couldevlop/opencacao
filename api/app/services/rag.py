@@ -9,8 +9,10 @@ démarrage de l'API.
 from __future__ import annotations
 
 import json
+import math
 import re
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,9 +40,18 @@ def _sans_accents(texte: str) -> str:
     return "".join(c for c in decompose if unicodedata.category(c) != "Mn")
 
 
+def _tokens(texte: str) -> list[str]:
+    """Liste des mots significatifs d'un texte (sans accents, sans mots vides).
+
+    Conserve les répétitions (nécessaire au calcul des fréquences BM25), contrairement
+    à :func:`_mots_cles` qui en fait un ensemble.
+    """
+    return [m for m in _RE_MOT.findall(_sans_accents(texte)) if m not in _MOTS_VIDES]
+
+
 def _mots_cles(texte: str) -> set[str]:
     """Ensemble des mots significatifs d'un texte (sans accents, sans mots vides)."""
-    return {m for m in _RE_MOT.findall(_sans_accents(texte)) if m not in _MOTS_VIDES}
+    return set(_tokens(texte))
 
 
 def recouvrement_lexical(mots_question: set[str], texte: str) -> float:
@@ -78,6 +89,61 @@ def couverture_lexicale(reference: str, candidat: str) -> float:
     return len(ref & cand) / len(ref)
 
 
+class _BM25:
+    """Index BM25 (sparse) en mémoire — recall lexical complémentaire au dense (F10).
+
+    Implémentation autonome (aucune dépendance hors spec). BM25 Okapi : favorise les
+    documents contenant les termes *rares* de la requête (noms de maladies/variétés)
+    que la similarité dense peut classer hors du vivier.
+    """
+
+    def __init__(self, docs_tokens: list[list[str]], k1: float = 1.5, b: float = 0.75) -> None:
+        self._k1 = k1
+        self._b = b
+        self._n = len(docs_tokens)
+        self._dl = [len(t) for t in docs_tokens]
+        self._avgdl = (sum(self._dl) / self._n) if self._n else 0.0
+        self._tf: list[Counter[str]] = [Counter(t) for t in docs_tokens]
+        df: Counter[str] = Counter()
+        for tokens in docs_tokens:
+            df.update(set(tokens))
+        # IDF BM25 (lissé, plancher à 0 pour éviter les contributions négatives).
+        self._idf = {
+            mot: max(0.0, math.log(1 + (self._n - freq + 0.5) / (freq + 0.5)))
+            for mot, freq in df.items()
+        }
+
+    @classmethod
+    def construire(cls, textes: list[str]) -> _BM25:
+        """Construit l'index BM25 en tokenisant chaque document (mêmes règles que F9)."""
+        return cls([_tokens(texte) for texte in textes])
+
+    def scores(self, mots_requete: set[str]) -> np.ndarray:
+        """Score BM25 de chaque document pour les mots de la requête."""
+        res = np.zeros(self._n, dtype=np.float32)
+        if self._avgdl == 0:
+            return res
+        for i in range(self._n):
+            tf = self._tf[i]
+            dl = self._dl[i]
+            total = 0.0
+            for mot in mots_requete:
+                freq = tf.get(mot, 0)
+                if freq == 0:
+                    continue
+                idf = self._idf.get(mot, 0.0)
+                denom = freq + self._k1 * (1 - self._b + self._b * dl / self._avgdl)
+                total += idf * freq * (self._k1 + 1) / denom
+            res[i] = total
+        return res
+
+    def top(self, mots_requete: set[str], n: int) -> list[int]:
+        """Indices des n meilleurs documents par score BM25 (score strictement positif)."""
+        scores = self.scores(set(mots_requete))
+        ordre = [i for i in np.argsort(-scores).tolist() if scores[i] > 0]
+        return ordre[:n]
+
+
 @dataclass(frozen=True)
 class Passage:
     """Extrait de connaissance retrouvé, avec sa source et son score de pertinence."""
@@ -94,6 +160,11 @@ class RagIndex:
         self._textes = textes
         self._sources = sources
         self._matrice = matrice  # (N, D), lignes normalisées L2
+        # Index BM25 (F10) : recall lexical sur tout le corpus. On indexe « texte +
+        # source » comme le reranking, pour que le nom de source soit aussi cherchable.
+        self._bm25 = _BM25.construire(
+            [f"{texte} {source}" for texte, source in zip(textes, sources, strict=True)]
+        )
 
     @property
     def taille(self) -> int:
@@ -153,6 +224,34 @@ class RagIndex:
         n = min(n, len(scores))
         indices = np.argpartition(-scores, n - 1)[:n]
         indices = indices[np.argsort(-scores[indices])]
+        return [Passage(self._textes[i], self._sources[i], float(scores[i])) for i in indices]
+
+    def vivier_hybride(self, vecteur: list[float], question: str, n: int) -> list[Passage]:
+        """Vivier hybride (F10) : union des n meilleurs DENSE et des n meilleurs BM25.
+
+        Le canal dense capte la proximité sémantique ; le canal BM25 rattrape les
+        documents lexicalement pertinents (terme rare : maladie, variété) que le dense
+        classe hors du vivier. Chaque passage porte son score dense réel (0 si nul) afin
+        que le reranking (F9) fusionne dense + lexical de façon homogène.
+
+        Args:
+            vecteur: Vecteur dense de la question.
+            question: Question (pour le canal BM25 lexical).
+            n: Taille de chaque canal avant union.
+
+        Returns:
+            Les passages du vivier hybride, triés par score dense décroissant.
+        """
+        requete = np.asarray(vecteur, dtype=np.float32)
+        norme = np.linalg.norm(requete)
+        if norme == 0 or self._matrice.size == 0:
+            return []
+        scores = self._matrice @ (requete / norme)
+        n = min(n, len(scores))
+        denses = np.argpartition(-scores, n - 1)[:n].tolist()
+        bm25 = self._bm25.top(_mots_cles(question), n)
+        # Union en préservant l'unicité ; tri final par score dense décroissant.
+        indices = sorted(set(denses) | set(bm25), key=lambda i: -scores[i])
         return [Passage(self._textes[i], self._sources[i], float(scores[i])) for i in indices]
 
 
@@ -216,6 +315,7 @@ class RagRecuperateur:
         candidats: int = 12,
         poids_lexical: float = 0.35,
         seuil_lexical: float = 0.5,
+        hybride: bool = True,
     ) -> None:
         """Initialise le récupérateur RAG.
 
@@ -235,13 +335,17 @@ class RagRecuperateur:
         self._candidats = max(candidats, top_k)
         self._poids_lexical = poids_lexical
         self._seuil_lexical = seuil_lexical
+        self._hybride = hybride
 
     async def contexte_pour(self, question: str) -> str | None:
         """Retourne le bloc de contexte pour la question, ou None si rien de pertinent."""
         vecteurs = await self._embeddings.embed([question])
         if not vecteurs:
             return None
-        viviers = self._index.candidats(vecteurs[0], self._candidats)
+        if self._hybride:
+            viviers = self._index.vivier_hybride(vecteurs[0], question, self._candidats)
+        else:
+            viviers = self._index.candidats(vecteurs[0], self._candidats)
         passages = reranker(
             question,
             viviers,
