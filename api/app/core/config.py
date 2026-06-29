@@ -82,6 +82,12 @@ class Settings(BaseSettings):
     # variétés que le dense classe hors vivier. Désactivable via RAG_HYBRIDE_ENABLED.
     rag_hybride_enabled: bool = True
 
+    # --- Plateforme agentique V3 ---
+    # Active l'orchestrateur + les agents spécialisés (RAG/Météo/Prix/Reporting).
+    # OFF par défaut : tant que le flag est OFF, le chemin V2 (ConseilService) reste
+    # seul en production. Activable sans rebuild via AGENTS_ENABLED (ConfigMap).
+    agents_enabled: bool = False
+
     # --- Cache sémantique ---
     # Sur un miss exact, vectorise la question et sert la réponse d'une question
     # cachée sémantiquement proche (paraphrase) -> évite une génération CPU.

@@ -9,8 +9,12 @@ from __future__ import annotations
 from fastapi import Depends, Request
 
 from app.application.auth_service import AuthService
+from app.application.conseil_agentique import ConseilAgentique
 from app.application.conseil_service import ConseilService
 from app.application.dialogue_session import DialogueSessionService
+from app.application.orchestrateur import Orchestrateur
+from app.application.registre import RegistreAgents
+from app.application.routage import RouteurIntention
 from app.core.config import Settings, get_settings
 from app.domain.ports import (
     AuthStorePort,
@@ -66,14 +70,67 @@ def get_auth_service(
     return AuthService(store, notifier, ttl_minutes=settings.auth_token_ttl_min)
 
 
-def get_conseil_service(request: Request) -> ConseilService:
+def _construire_orchestrateur(
+    inference: object,
+    cache: object,
+    journal: object,
+    rag: object,
+) -> Orchestrateur:
+    """Composition racine de la plateforme agentique (testable sans FastAPI).
+
+    Assemble le graphe : registre → 4 agents Cœur enregistrés → routeur →
+    orchestrateur. Les outils Météo/Prix sont branchés sur des sources « indisponibles »
+    (résultat vide) tant qu'aucune API réelle n'est câblée : l'agent dégrade alors
+    proprement en conseil générique, et le socle reste déployable sans dépendance.
+
+    Args:
+        inference: Port d'inférence.
+        cache: Port de cache/rate-limit.
+        journal: Port de journalisation.
+        rag: Récupérateur RAG, ou None.
+
+    Returns:
+        Un orchestrateur prêt à traiter, avec rag/meteo/prix/reporting enregistrés.
+    """
+    from app.services.agents.agent_meteo import AgentMeteo
+    from app.services.agents.agent_prix import AgentPrix
+    from app.services.agents.agent_rag import AgentRag
+    from app.services.agents.agent_reporting import AgentReporting
+    from app.services.outils.indisponible import MeteoIndisponible, PrixIndisponible
+    from app.services.outils.meteo import OutilMeteo
+    from app.services.outils.prix import OutilPrix
+
+    registre = RegistreAgents()
+    registre.enregistrer(AgentRag(inference, rag=rag))  # type: ignore[arg-type]
+    registre.enregistrer(AgentMeteo(inference, OutilMeteo(MeteoIndisponible())))  # type: ignore[arg-type]
+    registre.enregistrer(AgentPrix(inference, OutilPrix(PrixIndisponible())))  # type: ignore[arg-type]
+    registre.enregistrer(AgentReporting(inference))  # type: ignore[arg-type]
+    routeur = RouteurIntention(registre)
+    return Orchestrateur(routeur, journal, cache, agent_defaut="rag")  # type: ignore[arg-type]
+
+
+def get_orchestrateur(request: Request) -> Orchestrateur:
+    """Construit l'orchestrateur depuis les ports en état d'application."""
+    return _construire_orchestrateur(
+        inference=request.app.state.inference,
+        cache=request.app.state.cache,
+        journal=request.app.state.journal,
+        rag=getattr(request.app.state, "rag", None),
+    )
+
+
+def get_conseil_service(request: Request) -> ConseilService | ConseilAgentique:
     """Construit le cas d'usage à partir des ports en état d'application.
 
-    Le cache sémantique n'est branché que si activé en configuration ET si le
-    service d'embeddings est disponible (partagé avec le RAG). Sinon, le service
-    retombe sur le cache exact-match seul.
+    Quand ``agents_enabled`` est ON, renvoie un adaptateur agentique (orchestrateur
+    V3) qui présente la même interface que ``ConseilService`` — le dialogue avec
+    sessions et le router restent inchangés. Sinon, le cache sémantique n'est branché
+    que si activé en configuration ET si le service d'embeddings est disponible
+    (partagé avec le RAG) ; à défaut, le service retombe sur le cache exact-match seul.
     """
     settings = get_settings()
+    if settings.agents_enabled:
+        return ConseilAgentique(get_orchestrateur(request))
     embeddings = (
         getattr(request.app.state, "embeddings", None) if settings.semantic_cache_enabled else None
     )
