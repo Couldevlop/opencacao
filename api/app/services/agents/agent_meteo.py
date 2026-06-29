@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-from app.domain.agents import AgentReponse, AgentRequete
+from app.domain.agents import AgentRequete
 from app.domain.ports import InferencePort
 from app.services.agents.base import AgentBase, compter_mots_cles
 from app.services.outils.meteo import OutilMeteo
@@ -74,12 +74,11 @@ class AgentMeteo(AgentBase):
             return 0.0
         return min(0.7 + 0.1 * touches, 1.0)
 
-    async def traiter(self, requete: AgentRequete) -> AgentReponse:
-        """Récupère les prévisions et génère un conseil sensible au climat."""
+    async def _contexte(self, requete: AgentRequete) -> str | None:
+        """Récupère les prévisions de la localité détectée et les met en contexte."""
         localite = _detecter_localite(requete.fil_ancre) or self._geo_defaut
         previsions = await self._outil.invoquer(localite=localite)
-        contexte = _formater_previsions(localite, previsions)
-        return await self._generer(requete, contexte)
+        return _formater_previsions(localite, previsions)
 
 
 def _detecter_localite(texte: str) -> str | None:

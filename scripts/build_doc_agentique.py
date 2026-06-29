@@ -708,6 +708,7 @@ async def synthetiser(self, requete, contributions: list[AgentReponse]) -> Agent
         [
             ("Enrichissement contact ANADER + clarification —", "l'orchestrateur applique clarification.analyser (avant dispatch) et conseil_commun.enrichir_contact (sur chaque réponse), comme la V2. Mutualisé dans application/conseil_commun.py."),
             ("Cache exact de réponses —", "get_cached/set_cached branchés (tour unique), sérialisation partagée avec la V2 -> le pré-chauffage redevient utile, latence préservée."),
+            ("Vrai streaming token-par-token —", "Orchestrateur.traiter_stream streame les fragments de l'agent avec garde-fou de sortie phrase par phrase, puis enrichissement + événement final. Mutualisé dans application/flux.py. L'UI web a un affichage progressif identique à la V2."),
         ],
     )
     para(doc, "Reste avant agents_enabled = ON :", size=11, color=OR)
@@ -715,7 +716,6 @@ async def synthetiser(self, requete, contributions: list[AgentReponse]) -> Agent
         doc,
         [
             ("Cache sémantique —", "seul l'exact-match est branché (le sémantique nécessite le port embeddings)."),
-            ("Vrai streaming —", "l'adaptateur émet la réponse en un bloc après génération complète. Pour l'UX, streamer token par token."),
             ("Sources météo/prix réelles —", "remplacer MeteoIndisponible/PrixIndisponible par des adaptateurs httpx (port mockable) avant que les agents Météo/Prix apportent une valeur."),
             ("Composition multi-agents —", "AgentReporting.synthetiser n'est pas encore branché dans l'orchestrateur (dispatch mono-agent). La synthèse fan-out/fan-in est une évolution V3+."),
         ],

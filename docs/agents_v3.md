@@ -223,10 +223,10 @@ Le socle est **sûr et dormant** (flag OFF, V2 inchangée). La parité fonctionn
 **✅ Fait (parité V2 dans l'orchestrateur)**
 - **Enrichissement contact ANADER + clarification consultative** : l'orchestrateur applique désormais `clarification.analyser` (avant dispatch) et `conseil_commun.enrichir_contact` (sur chaque réponse), comme la V2. Mutualisé dans `application/conseil_commun.py`.
 - **Cache exact de réponses** : `get_cached`/`set_cached` branchés (tour unique), sérialisation partagée avec la V2 → le pré-chauffage redevient utile et la latence est préservée.
+- **Vrai streaming token-par-token** : `Orchestrateur.traiter_stream` streame les fragments de l'agent avec **garde-fou de sortie phrase par phrase** (aucun dosage diffusé), puis enrichissement + événement final. Mutualisé dans `application/flux.py` (`FiltreSortie`, `evenement_final`). L'adaptateur `conseiller_stream` y délègue → l'UI web a un affichage progressif identique à la V2. `AgentBase` expose `traiter_stream` (chaque agent ne définit que `_contexte`).
 
 **⏳ Reste avant `agents_enabled=ON`**
 - **Cache sémantique** : seul l'exact-match est branché (le sémantique nécessite le port embeddings).
-- **Vrai streaming** : l'adaptateur émet la réponse en un bloc après génération complète. Pour l'UX, streamer token par token (l'orchestrateur devra exposer une variante flux).
 - **Sources météo/prix réelles** : remplacer `MeteoIndisponible`/`PrixIndisponible` par des adaptateurs httpx (port mockable) avant que les agents Météo/Prix apportent une valeur.
 - **Composition multi-agents** : `AgentReporting.synthetiser` n'est pas encore branché dans l'orchestrateur (dispatch mono-agent). La synthèse multi-agents (fan-out/fan-in) est une évolution V3+.
 

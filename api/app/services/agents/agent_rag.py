@@ -6,7 +6,7 @@ quand le routeur ne sait pas trancher.
 
 from __future__ import annotations
 
-from app.domain.agents import AgentReponse, AgentRequete
+from app.domain.agents import AgentRequete
 from app.domain.ports import InferencePort
 from app.services.agents.base import AgentBase
 from app.services.rag import RagRecuperateur
@@ -33,7 +33,6 @@ class AgentRag(AgentBase):
         """Score de repli : l'agronomie générale couvre toute question cacao."""
         return 0.4
 
-    async def traiter(self, requete: AgentRequete) -> AgentReponse:
-        """Récupère le contexte RAG (best-effort) puis génère une réponse ancrée."""
-        contexte = await self._rag.contexte_pour(requete.fil_ancre) if self._rag else None
-        return await self._generer(requete, contexte)
+    async def _contexte(self, requete: AgentRequete) -> str | None:
+        """Récupère le contexte documentaire RAG (best-effort), ou None."""
+        return await self._rag.contexte_pour(requete.fil_ancre) if self._rag else None

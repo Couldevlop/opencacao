@@ -67,3 +67,15 @@ def test_chat_via_orchestrateur_refuse_hors_filiere(agents_client: TestClient) -
     reponse = agents_client.post("/v1/chat", json={"question": "comment cultiver le maïs ?"})
     assert reponse.status_code == 200
     assert reponse.json()["redirection_anader"] is True
+
+
+def test_chat_stream_via_orchestrateur(agents_client: TestClient) -> None:
+    # Le flux SSE passe par le streaming réel de l'orchestrateur (token… puis done).
+    with agents_client.stream(
+        "POST", "/v1/chat/stream", json={"question": "comment tailler le cacaoyer ?"}
+    ) as reponse:
+        assert reponse.status_code == 200
+        corps = "".join(reponse.iter_text())
+    assert '"type": "token"' in corps
+    assert '"type": "done"' in corps
+    assert "disclaimer" in corps

@@ -5,7 +5,7 @@ Tool use : récupère le cours via OutilPrix et l'injecte comme contexte factuel
 
 from __future__ import annotations
 
-from app.domain.agents import AgentReponse, AgentRequete
+from app.domain.agents import AgentRequete
 from app.domain.ports import InferencePort
 from app.services.agents.base import AgentBase, compter_mots_cles
 from app.services.outils.prix import OutilPrix
@@ -60,11 +60,10 @@ class AgentPrix(AgentBase):
             return 0.0
         return min(0.7 + 0.1 * touches, 1.0)
 
-    async def traiter(self, requete: AgentRequete) -> AgentReponse:
-        """Récupère le cours et génère une synthèse de commercialisation."""
+    async def _contexte(self, requete: AgentRequete) -> str | None:
+        """Récupère le cours courant et le met en contexte injectable."""
         cours = await self._outil.invoquer()
-        contexte = _formater_cours(cours)
-        return await self._generer(requete, contexte)
+        return _formater_cours(cours)
 
 
 def _formater_cours(cours: dict[str, object]) -> str | None:
