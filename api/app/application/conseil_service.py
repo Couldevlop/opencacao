@@ -11,6 +11,8 @@ import re
 from collections.abc import AsyncIterator
 from dataclasses import replace
 
+from app.application.contexte import fil_ancre as _fil_ancre
+from app.application.contexte import texte_conversation as _texte_conversation
 from app.core.logging import get_logger
 from app.domain.entities import Conseil
 from app.domain.exceptions import RateLimitDepasse
@@ -490,41 +492,6 @@ class ConseilService:
             "disclaimer": DISCLAIMER,
             "interaction_id": interaction_id,
         }
-
-
-def _fil_ancre(question: str, historique: list[dict[str, str]]) -> str:
-    """Ancre la question sur le dernier tour utilisateur (anti-dérive multi-tours).
-
-    Une question de suivi (« Et à quelle fréquence ? », « quelle dose ? ») est, seule,
-    dépourvue d'ancrage : elle perd le sujet engagé au tour précédent. On préfixe donc
-    le dernier tour utilisateur de l'historique. Déterministe (aucun appel au modèle) ;
-    en tour unique, retourne la question inchangée.
-
-    Sert à deux usages (B4) :
-      - la **requête RAG**, pour ne pas récupérer de passages hors sujet ;
-      - le **garde-fou d'entrée**, pour qu'un refus (ex. demande de dosage) ne soit pas
-        contourné en étalant l'intention sur deux tours (« je traite au fongicide » puis
-        « quelle dose ? »).
-
-    Args:
-        question: Dernière question du producteur.
-        historique: Tours précédents de la conversation.
-
-    Returns:
-        La question, contextualisée si un tour utilisateur précède.
-    """
-    dernier_user = next(
-        (t.get("content", "") for t in reversed(historique) if t.get("role") == "user"),
-        "",
-    )
-    return f"{dernier_user} {question}".strip() if dernier_user else question
-
-
-def _texte_conversation(question: str, historique: list[dict[str, str]]) -> str:
-    """Concatène les messages utilisateur (historique + question) pour repérer une ville."""
-    parties = [t.get("content", "") for t in historique if t.get("role") == "user"]
-    parties.append(question)
-    return " ".join(parties)
 
 
 def _evenements_token(texte_base: str, texte_enrichi: str) -> list[dict]:

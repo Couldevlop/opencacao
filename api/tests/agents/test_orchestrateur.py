@@ -1,0 +1,121 @@
+"""L'orchestrateur : garde-fous centralisés, routage, dispatch, journalisation."""
+
+from __future__ import annotations
+
+import pytest
+
+from app.application.orchestrateur import Orchestrateur
+from app.application.registre import RegistreAgents
+from app.application.routage import RouteurIntention
+from app.domain.agents import AgentReponse, AgentRequete
+from app.models.domain import Confiance, Langue
+
+
+class _AgentEspion:
+    def __init__(self, nom: str, score: float, texte: str) -> None:
+        self.nom = nom
+        self.description = nom
+        self.mots_cles = (nom,)
+        self._score = score
+        self._texte = texte
+        self.recue: AgentRequete | None = None
+
+    async def peut_traiter(self, requete: AgentRequete) -> float:
+        return self._score
+
+    async def traiter(self, requete: AgentRequete) -> AgentReponse:
+        self.recue = requete
+        return AgentReponse(self._texte, ["CNRA"], Confiance.ELEVEE, self.nom)
+
+
+class _JournalFactice:
+    def __init__(self) -> None:
+        self.interactions: list[tuple] = []
+
+    async def enregistrer_interaction(self, *args: object) -> str:
+        self.interactions.append(args)
+        return "id-1"
+
+    async def enregistrer_feedback(self, interaction_id: str, vote: str) -> None: ...
+    async def enregistrer_visite(self, *a: object) -> None: ...
+
+
+class _CacheFactice:
+    def __init__(self, limite: bool = False) -> None:
+        self._limite = limite
+
+    async def get_cached(self, q: str, lg: str) -> str | None:
+        return None
+
+    async def set_cached(self, q: str, lg: str, payload: str) -> None: ...
+    async def get_semantic(self, lg, emb, th):
+        return None
+
+    async def index_semantic(self, q, lg, emb) -> None: ...
+    async def hit_rate_limit(self, ip: str) -> bool:
+        return self._limite
+
+    async def ping(self) -> bool:
+        return True
+
+
+def _orchestrateur(*agents, journal=None, cache=None, defaut="rag") -> Orchestrateur:
+    registre = RegistreAgents()
+    for a in agents:
+        registre.enregistrer(a)
+    routeur = RouteurIntention(registre, seuil=0.3)
+    return Orchestrateur(
+        routeur,
+        journal or _JournalFactice(),
+        cache or _CacheFactice(),
+        agent_defaut=defaut,
+    )
+
+
+@pytest.mark.asyncio
+async def test_route_vers_agent_le_plus_pertinent() -> None:
+    rag = _AgentEspion("rag", 0.4, "conseil RAG")
+    meteo = _AgentEspion("meteo", 0.9, "conseil météo")
+    orch = _orchestrateur(rag, meteo)
+    conseil = await orch.traiter("quel temps pour traiter ?", Langue.FR, "ip")
+    assert conseil.reponse == "conseil météo"
+    assert meteo.recue is not None
+    assert rag.recue is None
+
+
+@pytest.mark.asyncio
+async def test_repli_sur_agent_defaut_si_aucun_routage() -> None:
+    rag = _AgentEspion("rag", 0.0, "conseil RAG")
+    orch = _orchestrateur(rag, defaut="rag")
+    conseil = await orch.traiter("question vague", Langue.FR, "ip")
+    assert conseil.reponse == "conseil RAG"  # repli RAG
+
+
+@pytest.mark.asyncio
+async def test_garde_fou_entree_court_circuite_les_agents() -> None:
+    rag = _AgentEspion("rag", 1.0, "ne devrait pas répondre")
+    orch = _orchestrateur(rag)
+    # Question hors filière (maïs) → refus ANADER sans appeler d'agent.
+    conseil = await orch.traiter("Comment cultiver le maïs ?", Langue.FR, "ip")
+    assert conseil.redirection_anader is True
+    assert rag.recue is None
+
+
+@pytest.mark.asyncio
+async def test_journalise_l_interaction() -> None:
+    journal = _JournalFactice()
+    rag = _AgentEspion("rag", 1.0, "conseil")
+    orch = _orchestrateur(rag, journal=journal)
+    conseil = await orch.traiter("comment tailler le cacaoyer ?", Langue.FR, "ip")
+    assert conseil.interaction_id == "id-1"
+    assert len(journal.interactions) == 1
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_avant_inference() -> None:
+    from app.domain.exceptions import RateLimitDepasse
+
+    rag = _AgentEspion("rag", 1.0, "conseil")
+    orch = _orchestrateur(rag, cache=_CacheFactice(limite=True))
+    with pytest.raises(RateLimitDepasse):
+        await orch.traiter("comment tailler le cacaoyer ?", Langue.FR, "ip")
