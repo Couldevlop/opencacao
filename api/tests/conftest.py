@@ -146,6 +146,18 @@ class FakeJournal:
         self.visites.append({"pays": pays, "continent": continent, "canal": canal})
 
 
+class FakeRag:
+    """Récupérateur RAG simulé : renvoie un contexte fixe (ou None)."""
+
+    def __init__(self, contexte: str | None = "Extrait de source officielle.") -> None:
+        self.contexte = contexte
+        self.appels: list[str] = []
+
+    async def contexte_pour(self, question: str) -> str | None:
+        self.appels.append(question)
+        return self.contexte
+
+
 class FakeNotifier:
     """Notifier de lien magique en mémoire : capture (email, lien) sans rien envoyer."""
 
@@ -174,6 +186,11 @@ def fake_inference() -> FakeInference:
 @pytest.fixture
 def fake_journal() -> FakeJournal:
     return FakeJournal()
+
+
+@pytest.fixture
+def fake_rag() -> FakeRag:
+    return FakeRag()
 
 
 @pytest.fixture
