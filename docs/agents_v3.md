@@ -165,13 +165,49 @@ Différence instructive : `OutilMeteo.invoquer` prend `localite`, `OutilPrix.inv
 
 ## 8. Synthèse multi-agents — `services/agents/agent_reporting.py`
 
-*(À compléter à la livraison de la Task 8.)*
+### Le concept
+Jusqu'ici un seul agent répond (routage *vers un* agent). L'agent Reporting **compose la sortie de plusieurs agents** (RAG + Météo + Prix) en une synthèse narrative. C'est le passage du **mono-agent au multi-agents** — le germe des architectures « agent superviseur ».
+
+### Les décisions
+- **Construit en dernier** : il *dépend* des autres. Il illustre qu'un agent peut consommer le travail d'agents pairs.
+- **Agrégation prudente** : les sources des contributions sont unionnées sans doublon ; la confiance retenue est **la plus basse** des contributions (on ne surestime jamais une synthèse).
+- **Fusion séquentielle simple** : la généralisation *fan-out / fan-in* (exécution parallèle pilotée par l'orchestrateur) est une évolution V3+ explicitement hors socle.
+
+### Modèle mental
+> Le routage choisit QUI parle ; la synthèse fait PARLER ENSEMBLE. C'est la bascule du mono-agent vers le multi-agents.
+
+---
+
+## 9. Câblage derrière un flag — `config.py`, `api_deps.py`, adaptateur
+
+### Le concept
+Une plateforme agentique se met en service **progressivement**, derrière `agents_enabled` (OFF par défaut). La **composition racine** (`api_deps._construire_orchestrateur`) est le seul endroit où l'on assemble le graphe : registre → 4 agents → routeur → orchestrateur.
+
+### La pièce clé : l'adaptateur `ConseilAgentique`
+Le router POST passe par `get_dialogue_service` (sessions V2), qui appelle `conseiller()`/`conseiller_stream()` sur un `ConseilService`. L'orchestrateur expose `traiter()` — **même signature, même `Conseil` en retour**. On crée donc `ConseilAgentique`, un adaptateur qui présente l'orchestrateur **sous l'interface de `ConseilService`** (duck typing). Résultat : `DialogueSessionService` et le router restent **inchangés**, les sessions sont préservées, et `get_conseil_service` renvoie l'adaptateur quand le flag est ON.
+
+### Les décisions
+- **Feature flag** → bascule V2↔V3 sans risque, rollback instantané.
+- **Composition root unique** → tout le câblage en un lieu ; le reste du code n'en sait rien.
+- **Outils « indisponibles »** → Météo/Prix enregistrés avec une source neutre (`{}`) tant qu'aucune API réelle n'est branchée ; l'agent dégrade en conseil générique. Socle 100 % testable et déployable sans dépendance externe.
+
+### Modèle mental
+> Livrer sans casser : la V3 s'insère dans la V2 par un adaptateur, derrière un flag. Elle ne la remplace pas.
 
 ---
 
 ## Recette — Ajouter un agent (ex. Maladie) en 4 étapes
 
-*(À compléter à la livraison de la Task 10.)*
+C'est l'aboutissement du socle : l'extensibilité prouvée. Pour ajouter l'agent n°5 (Maladie, Satellite, Réglementation…) :
+
+1. **Écrire l'agent** — `api/app/services/agents/agent_maladie.py` héritant d'`AgentBase`, avec `nom`, `description`, `mots_cles`, `peut_traiter()`, `traiter()`.
+2. **(Si besoin) un outil** — `api/app/services/outils/maladie.py` + un `MaladiePort` mockable, sur le moule de `meteo.py`/`prix.py`.
+3. **L'enregistrer** — une ligne dans `_construire_orchestrateur` (`api_deps.py`) : `registre.enregistrer(AgentMaladie(...))`.
+4. **Tester** — `api/tests/agents/test_agent_maladie.py` (routage + injection de contexte), en TDD.
+
+**Aucune autre modification.** L'orchestrateur, le registre et le routeur restent intacts. C'est la définition opérationnelle d'« ouvert à l'extension, fermé à la modification ».
+
+> 📄 Une version Word détaillée de ce cours existe : `docs/Documentation_Socle_Agentique_V3.docx` (régénérable via `python scripts/build_doc_agentique.py`).
 
 ---
 
