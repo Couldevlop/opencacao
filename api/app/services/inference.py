@@ -103,6 +103,9 @@ class InferenceClient:
             "model": self._model_name,
             "messages": build_messages(question, contexte, historique),
             "max_tokens": max_tokens if max_tokens is not None else self._max_tokens,
+            # Réutilise le KV du préfixe commun (message système constant) d'une requête
+            # à l'autre -> le prompt système n'est plus re-prérempli (latence CPU).
+            "cache_prompt": True,
             **self._params_decodage(temperature),
         }
         try:
@@ -144,6 +147,7 @@ class InferenceClient:
             "messages": build_messages(question, contexte, historique),
             "max_tokens": max_tokens if max_tokens is not None else self._max_tokens,
             "stream": True,
+            "cache_prompt": True,
             **self._params_decodage(temperature),
         }
         try:
