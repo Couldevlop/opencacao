@@ -299,9 +299,11 @@ _FIN_PHRASE = re.compile(r"[.!?\n]")
 def tronquer_passage(texte: str, max_chars: int) -> str:
     """Tronque un passage à ``max_chars``, de préférence à une frontière de phrase.
 
-    Réduit les tokens d'entrée injectés au modèle sans couper un mot en deux : coupe à
-    la dernière fin de phrase (``.!?\\n``) de la fenêtre si elle est assez tardive,
-    sinon au dernier espace. Ajoute « … » si tronqué. Passage déjà court : inchangé.
+    Réduit les tokens d'entrée injectés au modèle. On coupe à la dernière fin de phrase
+    (``.!?\\n``) de la fenêtre si elle est assez tardive, sinon au dernier espace — donc
+    sans couper un mot en deux dès lors que le texte contient des espaces (cas du corpus
+    cacao en prose). Un bloc sans aucun espace est coupé à ``max_chars`` faute de
+    frontière. Ajoute « … » si tronqué. Passage déjà court : inchangé.
 
     Args:
         texte: Le texte du passage.

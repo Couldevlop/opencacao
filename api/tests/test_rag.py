@@ -347,13 +347,22 @@ def test_tronquer_passage_repli_sur_espace() -> None:
     assert contenu.endswith("mot")  # coupé à une frontière de mot
 
 
+def test_tronquer_passage_sans_espace_coupe_a_max_chars() -> None:
+    # Bloc sans aucune frontière (ni phrase ni espace) : coupé à max_chars, suffixé « … ».
+    texte = "z" * 1000
+    r = rag.tronquer_passage(texte, 480)
+    assert r.endswith("…")
+    assert len(r) <= 482
+    assert texte.startswith(r[:-2].rstrip())  # préfixe de l'original (pas de fabrication)
+
+
 def test_formater_contexte_tronque_les_longs_garde_les_courts() -> None:
     passages = [
         rag.Passage(texte="x" * 1000, source="CNRA", score=0.9),
         rag.Passage(texte="Court.", source="ANADER", score=0.8),
     ]
     sortie = rag.formater_contexte(passages, max_chars=480)
-    assert "[1]" in sortie and "[2]" in sortie  # les 3->2 passages conservés
+    assert "[1]" in sortie and "[2]" in sortie  # les 2 passages conservés (nombre non réduit)
     assert "Court." in sortie  # passage court inchangé
     assert "…" in sortie  # passage long tronqué
     assert ("x" * 1000) not in sortie  # le long a bien été coupé
