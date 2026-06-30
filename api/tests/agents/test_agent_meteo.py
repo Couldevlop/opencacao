@@ -122,3 +122,23 @@ async def test_sans_localite_demande_la_commune() -> None:
     assert meteo.appelee_avec is None
     assert inf.contexte_recu is not None
     assert "commune" in inf.contexte_recu.lower()
+
+
+@pytest.mark.asyncio
+async def test_previsions_vides_loggue_un_warning() -> None:
+    # Localité cacaoyère mais prévisions indisponibles (API tombée) : on journalise
+    # pour l'observabilité, et on dégrade en contexte None (jamais de météo inventée).
+    import structlog
+
+    class _MeteoVide:
+        async def previsions(self, localite: str) -> dict:
+            return {}
+
+    inf = _InferenceFactice()
+    agent = AgentMeteo(inf, OutilMeteo(_MeteoVide()))
+    with structlog.testing.capture_logs() as logs:
+        await agent.traiter(_requete("quel temps à Daloa ?"))
+    assert inf.contexte_recu is None
+    assert any(
+        e["event"] == "meteo_previsions_vides" and e.get("localite") == "Daloa" for e in logs
+    )

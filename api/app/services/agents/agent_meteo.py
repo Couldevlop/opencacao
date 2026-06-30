@@ -11,11 +11,14 @@ Trois cas, évalués sur tout le fil (historique + dernier tour) :
 
 from __future__ import annotations
 
+from app.core.logging import get_logger
 from app.domain.agents import AgentRequete
 from app.domain.ports import InferencePort
 from app.services import localites
 from app.services.agents.base import AgentBase, compter_mots_cles
 from app.services.outils.meteo import OutilMeteo
+
+logger = get_logger(__name__)
 
 # Déclencheurs CLIMATIQUES uniquement. On exclut volontairement les termes
 # d'agronomie générale (« traiter », « récolte », « temps ») : ambigus, ils
@@ -108,6 +111,10 @@ class AgentMeteo(AgentBase):
         localite = localites.detecter(texte)
         if localite is not None:
             previsions = await self._outil.invoquer(localite=localite)
+            if not previsions:
+                # Localité valide mais source météo indisponible : on le signale
+                # (observabilité) ; le contexte sera None -> dégradation propre.
+                logger.warning("meteo_previsions_vides", localite=localite)
             return _formater_previsions(localite, previsions)
         nord = localites.detecter_nord(texte)
         if nord is not None:
