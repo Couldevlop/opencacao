@@ -100,4 +100,13 @@ def _formater_cours(cours: dict[str, object]) -> str:
         )
     prix = cours.get("prix_bord_champ_fcfa_kg", "?")
     campagne = cours.get("campagne", "")
-    return f"Prix bord-champ de référence : {prix} FCFA/kg (campagne {campagne})."
+    # Le prix officiel doit PRIMER sur d'éventuels prix historiques présents dans le
+    # contexte RAG (mise à marché, campagnes passées). Sans cette autorité explicite,
+    # le modèle attrapait parfois un montant périmé du RAG (bug prod : « 850 FCFA »).
+    return (
+        f"PRIX BORD-CHAMP OFFICIEL ACTUEL (autoritaire) : {prix} FCFA/kg "
+        f"(campagne {campagne}). C'est LE prix actuel : utilise CE chiffre pour toute "
+        "question sur le prix actuel du cacao. Tout autre montant en FCFA présent dans "
+        "le contexte ci-dessous est un prix HISTORIQUE ou indicatif (campagnes passées, "
+        "mise à marché, café) : ne le présente JAMAIS comme le prix actuel."
+    )
