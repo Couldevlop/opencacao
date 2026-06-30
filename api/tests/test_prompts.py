@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.services.prompts import build_messages
+from app.services.prompts import SYSTEM_PROMPT, build_messages
 
 
 def test_tour_unique() -> None:
@@ -39,3 +39,15 @@ def test_historique_filtre_les_roles_invalides() -> None:
     msgs = build_messages("question", None, historique)
     assert [m["role"] for m in msgs] == ["system", "user"]
     assert msgs[-1]["content"] == "question"
+
+
+def test_system_prompt_consigne_brievete_ferme() -> None:
+    # Le levier de latence : une consigne ferme de brièveté (pas la molle « reste concis »).
+    assert "10 phrases maximum" in SYSTEM_PROMPT
+
+
+def test_system_prompt_conserve_les_regles_critiques() -> None:
+    # Non-régression : la concision ne doit effacer AUCUN garde-fou métier.
+    assert "UNIQUEMENT le cacao" in SYSTEM_PROMPT
+    assert "dosages précis" in SYSTEM_PROMPT
+    assert "jamais toi-même un numéro" in SYSTEM_PROMPT

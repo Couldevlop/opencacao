@@ -47,10 +47,10 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     rate_limit_per_min: int = 20
 
-    # Plafond de génération. Les réponses cacao sont brèves (consigne « SMS ») :
-    # abaisser réduit la latence CPU sur les réponses longues. Réglable sans
-    # rebuild via INFERENCE_MAX_TOKENS.
-    inference_max_tokens: int = 512
+    # Plafond de génération. Les réponses cacao sont brèves (consigne « 10 phrases
+    # maximum » dans le prompt système) : ce plafond sert de filet de sécurité, le
+    # modèle s'arrête bien avant. Réglable sans rebuild via INFERENCE_MAX_TOKENS.
+    inference_max_tokens: int = 400
 
     # Paramètres de décodage (qualité de génération). Réglés bas/conservateurs pour
     # un petit modèle CPU : réponses ancrées et factuelles plutôt que créatives.
