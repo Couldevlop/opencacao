@@ -10,6 +10,7 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from app.models.domain import CategorieRefus
+from app.services.localites import LOCALITES_NORD
 
 # --- Messages de refus standardisés (constantes) ---
 
@@ -263,28 +264,6 @@ _TERMES_HORS_FILIERE = (
 )
 
 
-# Localités de savane du Nord (districts Savanes, Bagoué, Poro, Tchologo, Hambol,
-# Bounkani…) : climat trop sec pour le cacaoyer. Quand une question porte sur la
-# CULTURE du cacao dans l'une d'elles, on corrige (ce n'est pas une zone cacaoyère)
-# plutôt que de laisser le modèle affirmer le contraire (la géographie est peu fiable
-# à apprendre par fine-tuning). Clé normalisée (sans accents) -> nom d'affichage.
-_LOCALITES_NORD = {
-    "korhogo": "Korhogo",
-    "katiola": "Katiola",
-    "ferkessedougou": "Ferkessédougou",
-    "ferke": "Ferké",
-    "boundiali": "Boundiali",
-    "odienne": "Odienné",
-    "tengrela": "Tengréla",
-    "bouna": "Bouna",
-    "dabakala": "Dabakala",
-    "niakaramandougou": "Niakaramandougou",
-    "kong": "Kong",
-    "minignan": "Minignan",
-    "ouangolodougou": "Ouangolodougou",
-    "sinematiali": "Sinématiali",
-    "kouto": "Kouto",
-}
 # Termes signalant une intention de CULTURE de cacao (vs simple mention de la ville,
 # ex. demande de contact ANADER) : la correction ne se déclenche que si l'un apparaît.
 _TERMES_ZONE_DECLENCHEUR = (
@@ -328,7 +307,7 @@ _RE_FILIERE = _compiler(_TERMES_FILIERE)
 _RE_HORS_FILIERE = _compiler(_TERMES_HORS_FILIERE)
 _RE_ZONE_DECLENCHEUR = _compiler(_TERMES_ZONE_DECLENCHEUR)
 _RE_LOCALITES_NORD = tuple(
-    (re.compile(rf"\b{re.escape(cle)}\b"), nom) for cle, nom in _LOCALITES_NORD.items()
+    (re.compile(rf"\b{re.escape(cle)}\b"), nom) for cle, nom in LOCALITES_NORD.items()
 )
 
 
