@@ -27,15 +27,24 @@ sur Prix. Hors périmètre.
 1. **Source de détection** : réutiliser la liste officielle des localités déjà
    présente dans `contacts_zones.yaml` (10 Directions Régionales / 60 zones),
    extraite dans un module partagé à responsabilité unique.
-2. **Sans localité détectée** : ne PAS injecter de prévision ; injecter une
-   **consigne explicite** demandant la commune et interdisant d'inventer une donnée
-   météo (même pattern de souveraineté que `agent_prix._formater_cours` pour un prix
-   manquant). Le modèle demande alors poliment la commune.
+2. **Trois cas** dans l'agent Météo, évalués sur tout le fil :
+   - **localité cacaoyère** détectée → prévisions Open-Meteo (inchangé) ;
+   - **localité non cacaoyère** détectée (zone de savane du Nord) → consigne
+     expliquant que la localité n'est pas concernée par la culture du cacao, sans
+     prévision (même rationnel que le garde-fou `REFUS_ZONE_NON_CACAO`) ;
+   - **aucune localité** → consigne demandant la commune, sans inventer de météo
+     (même pattern de souveraineté que `agent_prix._formater_cours`).
+   Dans les deux cas de consigne, on n'injecte PAS de contexte vide : on guide le
+   modèle, qui répond alors dans la langue/le ton du producteur.
 3. **Détection sur tout le fil** : concaténer les tours `historique` (rôle user) +
    `fil_ancre`, pas seulement le dernier tour, afin qu'une ville citée plus tôt
    reste connue au tour suivant.
 4. **Retrait de la regex `à <Ville>`** et du paramètre `geo_defaut`. Plus de
    centroïde pays, plus de faux positifs (« à Midi »).
+5. **Connaissance « zone cacaoyère ou non »** : on réutilise la deny-list curée
+   existante `_LOCALITES_NORD` (15 villes de savane, décision métier Waopron) ; on
+   ne l'élargit PAS. Elle migre dans `localites.py` (source unique de la
+   connaissance des localités) ; `guardrails.py` l'importe — comportement identique.
 
 **Compromis assumé** : une ville hors des 60 zones n'est plus géocodée — on demande
 la commune (sûr) plutôt que risquer un géocodage hasardeux.
@@ -50,17 +59,25 @@ vérité = `app/data/contacts_zones.yaml`.
 API publique :
 
 - `detecter(texte: str) -> str | None` — renvoie le **nom canonique** (casse
-  d'origine du YAML, ex. `San-Pédro`) de la première localité reconnue, ou `None`.
+  d'origine du YAML, ex. `San-Pédro`) de la première localité **cacaoyère** reconnue
+  (zones du YAML **moins** la deny-list Nord), ou `None`. Sert au géocodage Météo.
   Matching insensible casse/accents, mot-frontière, libellé le plus long d'abord.
+- `detecter_nord(texte: str) -> str | None` — renvoie le nom d'affichage de la
+  première ville **non cacaoyère** (deny-list de savane du Nord) citée, ou `None`.
 - `chercher_zone(texte: str) -> dict | None` — renvoie le dict de la Direction
-  Régionale correspondante (consommé par `contacts.py`).
+  Régionale correspondante, **toutes zones** (Nord inclus : un producteur du Nord
+  garde droit au contact ANADER). Consommé par `contacts.py`.
 
-Internes (migrés depuis `contacts.py`) :
+Données et internes (migrés depuis `contacts.py` et `guardrails.py`) :
 
+- `LOCALITES_NORD: dict[str, str]` — deny-list curée des villes de savane non
+  cacaoyères (15 entrées clé normalisée → nom d'affichage). Importée par
+  `guardrails.py` (qui ne la redéfinit plus). **Non élargie** (décision Waopron).
 - `_normaliser(texte)` — minuscule + suppression des accents.
 - `_index()` (lru_cache) — parse le YAML, construit la liste
   `(regex_sur_libellé_normalisé, nom_canonique, dr_dict)` triée par longueur de
-  libellé décroissante (un libellé long « san pedro » prime sur un court).
+  libellé décroissante (un libellé long « san pedro » prime sur un court). `detecter`
+  exclut les entrées dont le nom est dans `LOCALITES_NORD`.
 
 ### Refactor `api/app/services/contacts.py`
 
@@ -70,21 +87,34 @@ Internes (migrés depuis `contacts.py`) :
 **Comportement public identique** — la suite de tests existante de `contacts`
 verrouille la non-régression.
 
+### Refactor `api/app/services/guardrails.py`
+
+`_LOCALITES_NORD` (le dict) migre dans `localites.py` ; `guardrails.py` importe
+`localites.LOCALITES_NORD` pour construire `_RE_LOCALITES_NORD`. Le `_normaliser`
+local de `guardrails` reste (il sert à d'autres règles) — pas de couplage forcé.
+**Comportement de `evaluer` identique** : ses tests existants (dont le cas
+`ZONE_NON_CACAO`) verrouillent la non-régression.
+
 ### `api/app/services/agents/agent_meteo.py`
 
 - Supprimer `_detecter_localite` (regex) et le paramètre `geo_defaut`.
 - `_contexte` :
   1. `texte = _fil_complet(requete)` — concat des `content` des tours `historique`
      de rôle `user` + `requete.fil_ancre`.
-  2. `localite = localites.detecter(texte)`.
-  3. si `localite` → `previsions = await self._outil.invoquer(localite=localite)` →
+  2. `localite = localites.detecter(texte)` (cacaoyère). Si trouvée →
+     `previsions = await self._outil.invoquer(localite=localite)` →
      `_formater_previsions(localite, previsions)` (inchangé).
-  4. sinon → renvoyer la **consigne** (texte fixe) : aucune prévision possible sans
-     commune ; demander dans quelle commune se trouve le producteur ; ne JAMAIS
+  3. sinon `nord = localites.detecter_nord(texte)`. Si trouvée → **consigne zone non
+     cacaoyère** (texte fixe nommant la localité) : cette localité est en savane du
+     Nord, non cacaoyère ; explique au producteur qu'elle n'est pas concernée par la
+     culture du cacao ; ne donne aucune prévision ni donnée inventée.
+  4. sinon → **consigne commune** (texte fixe) : aucune prévision possible sans
+     commune ; demande dans quelle commune se trouve le producteur ; ne JAMAIS
      inventer de donnée météo.
 
-Le câblage `api_deps.py:111` (`AgentMeteo(inference, OutilMeteo(meteo))`) est déjà
-sans `geo_defaut` : aucun changement de construction.
+`OutilMeteo` n'est invoqué que dans le cas 2 (localité cacaoyère). Le câblage
+`api_deps.py:111` (`AgentMeteo(inference, OutilMeteo(meteo))`) est déjà sans
+`geo_defaut` : aucun changement de construction.
 
 ## Flux de données
 
@@ -92,20 +122,24 @@ sans `geo_defaut` : aucun changement de construction.
 question + historique
         │
         ▼
-_fil_complet ──► localites.detecter ──► localite ?
-                                          │
-                 ┌────────────────────────┴───────────────┐
-                 │ oui                                     │ non
-                 ▼                                         ▼
-   OutilMeteo.invoquer(localite)              consigne « demande la commune,
-   → Open-Meteo (géocode + prévision)           n'invente aucune météo »
-                 │                                         │
-                 ▼                                         │
-   _formater_previsions(localite, …)                       │
-                 └───────────────► contexte ◄──────────────┘
-                                      │
-                                      ▼
-                         inférence (contexte injecté)
+_fil_complet ──► localites.detecter (cacaoyère) ──► localite ?
+                                                       │
+        ┌──────────────────────────────────────┬──────┴── oui ──┐
+        │ non                                   │                ▼
+        ▼                                       │   OutilMeteo.invoquer(localite)
+localites.detecter_nord ──► ville Nord ?        │   → Open-Meteo (géocode + prév.)
+        │                                       │                │
+   ┌────┴── oui ──┐         ┌── non ──┐         │                ▼
+   ▼              │         ▼         │         │   _formater_previsions(localite,…)
+consigne « zone   │   consigne        │         │                │
+non cacaoyère »   │   « demande la    │         │                │
+                  │     commune »     │         │                │
+                  └────────┬──────────┴─────────┴────────────────┘
+                           ▼
+                       contexte
+                           │
+                           ▼
+              inférence (contexte injecté)
 ```
 
 ## Gestion des erreurs / dégradation
@@ -124,16 +158,23 @@ _fil_complet ──► localites.detecter ──► localite ?
 - mot-frontière : pas de match partiel (ville ⊄ d'un autre mot).
 - aucun match → `None`.
 - YAML absent/illisible (monkeypatch chemin) → `None`.
+- `detecter("temps à Korhogo ?")` → `None` (ville Nord exclue du détecteur cacao).
+- `detecter_nord("temps à Korhogo ?")` → `"Korhogo"`.
+- `detecter_nord("temps à Daloa ?")` → `None`.
 
 ### `api/tests/agents/test_agent_meteo.py`
-- ville dans `fil_ancre` → `OutilMeteo` invoqué avec cette ville ; contexte = prévisions.
-- ville **seulement dans `historique`** (pas dans le dernier tour) → toujours détectée.
-- aucune ville → contexte = consigne (contient « commune », interdit d'inventer ;
-  `OutilMeteo` non invoqué).
+- ville cacaoyère dans `fil_ancre` → `OutilMeteo` invoqué avec cette ville ;
+  contexte = prévisions.
+- ville cacaoyère **seulement dans `historique`** (pas dans le dernier tour) →
+  toujours détectée.
+- **ville Nord** (ex. Korhogo) → contexte = consigne « zone non cacaoyère » (nomme la
+  localité, interdit d'inventer ; `OutilMeteo` non invoqué).
+- aucune ville → contexte = consigne « commune » (contient « commune », interdit
+  d'inventer ; `OutilMeteo` non invoqué).
 - les tests de mots-clés météo existants restent verts.
 
-### `api/tests/services/test_contacts.py` (existant)
-- suite verte après refactor (garde-fou de non-régression).
+### `api/tests/services/test_contacts.py` et `test_guardrails.py` (existants)
+- suites vertes après refactor (garde-fous de non-régression, dont `ZONE_NON_CACAO`).
 
 Couverture min. 80 % sur `api/app/` maintenue ; inférence et réseau mockés.
 
