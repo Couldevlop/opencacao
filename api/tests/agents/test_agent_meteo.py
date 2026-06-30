@@ -24,7 +24,11 @@ class _InferenceFactice:
 
 
 class _MeteoFactice:
+    def __init__(self) -> None:
+        self.appelee_avec: str | None = None
+
     async def previsions(self, localite: str) -> dict:
+        self.appelee_avec = localite
         return {"localite": localite, "pluie_mm_24h": 12, "resume": "pluie demain"}
 
 
@@ -76,3 +80,45 @@ async def test_outil_meteo_fail_soft() -> None:
             raise RuntimeError("API météo indisponible")
 
     assert await OutilMeteo(_SourceKO()).invoquer(localite="Daloa") == {}
+
+
+@pytest.mark.asyncio
+async def test_localite_dans_historique_est_detectee() -> None:
+    # La ville est citée dans un tour précédent, pas dans le dernier message.
+    inf = _InferenceFactice()
+    meteo = _MeteoFactice()
+    agent = AgentMeteo(inf, OutilMeteo(meteo))
+    requete = AgentRequete(
+        "et la pluie demain ?",
+        Langue.FR,
+        "et la pluie demain ?",
+        "ip",
+        [{"role": "user", "content": "je suis planteur à Daloa"}],
+    )
+    await agent.traiter(requete)
+    assert meteo.appelee_avec == "Daloa"
+
+
+@pytest.mark.asyncio
+async def test_zone_nord_consigne_sans_prevision() -> None:
+    # Une ville de savane du Nord : on n'interroge PAS la météo, on redirige.
+    inf = _InferenceFactice()
+    meteo = _MeteoFactice()
+    agent = AgentMeteo(inf, OutilMeteo(meteo))
+    await agent.traiter(_requete("quel temps à Korhogo ?"))
+    assert meteo.appelee_avec is None
+    assert inf.contexte_recu is not None
+    assert "Korhogo" in inf.contexte_recu
+    assert "savane" in inf.contexte_recu.lower()
+
+
+@pytest.mark.asyncio
+async def test_sans_localite_demande_la_commune() -> None:
+    # Aucune ville : on demande la commune, sans interroger la météo ni inventer.
+    inf = _InferenceFactice()
+    meteo = _MeteoFactice()
+    agent = AgentMeteo(inf, OutilMeteo(meteo))
+    await agent.traiter(_requete("y aura-t-il des averses demain ?"))
+    assert meteo.appelee_avec is None
+    assert inf.contexte_recu is not None
+    assert "commune" in inf.contexte_recu.lower()
