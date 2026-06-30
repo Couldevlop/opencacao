@@ -11,7 +11,6 @@ il demande la ville, et ce module fournit la coordonnée vérifiée correspondan
 from __future__ import annotations
 
 import re
-import unicodedata
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -19,6 +18,7 @@ from pathlib import Path
 import yaml
 
 from app.core.logging import get_logger
+from app.services import localites
 
 logger = get_logger(__name__)
 
@@ -44,14 +44,6 @@ class ContactDR:
     zone: str = ""  # zone qui a déclenché la correspondance
 
 
-def _normaliser(texte: str) -> str:
-    """Minuscule + suppression des accents, pour une comparaison robuste."""
-    sans_accent = "".join(
-        c for c in unicodedata.normalize("NFD", texte) if unicodedata.category(c) != "Mn"
-    )
-    return sans_accent.lower()
-
-
 @lru_cache(maxsize=1)
 def _annuaire() -> dict:
     """Charge l'annuaire YAML (mémoïsé). Renvoie {} si absent/illisible."""
@@ -60,23 +52,6 @@ def _annuaire() -> dict:
     except (OSError, yaml.YAMLError) as exc:
         logger.warning("annuaire_contacts_illisible", error=str(exc))
         return {}
-
-
-@lru_cache(maxsize=1)
-def _index_zones() -> list[tuple[re.Pattern, dict]]:
-    """Construit l'index (regex zone/siège normalisé -> DR), du plus long au plus court.
-
-    Trié par longueur décroissante pour qu'un libellé long (« san pedro ») prime sur
-    un libellé court. Le mot-frontière évite les correspondances partielles.
-    """
-    paires: list[tuple[str, dict]] = []
-    for dr in _annuaire().get("directions_regionales", []):
-        libelles = {dr.get("siege", ""), *dr.get("zones", [])}
-        for libelle in libelles:
-            if libelle:
-                paires.append((_normaliser(libelle), dr))
-    paires.sort(key=lambda p: len(p[0]), reverse=True)
-    return [(re.compile(rf"\b{re.escape(norm)}\b"), dr) for norm, dr in paires]
 
 
 def intention_contact(texte: str) -> bool:
@@ -93,19 +68,18 @@ def chercher(texte: str) -> ContactDR | None:
     Returns:
         Le contact de la DR correspondante, ou None si aucune localité connue n'apparaît.
     """
-    norm = _normaliser(texte)
-    for motif, dr in _index_zones():
-        m = motif.search(norm)
-        if m:
-            return ContactDR(
-                nom=dr.get("nom", "ANADER"),
-                siege=dr.get("siege", ""),
-                tel=dr.get("tel", ""),
-                email=dr.get("email", ""),
-                verifie=bool(dr.get("verifie", False)),
-                zone=m.group(0),
-            )
-    return None
+    trouve = localites.chercher_zone(texte)
+    if trouve is None:
+        return None
+    dr, zone = trouve
+    return ContactDR(
+        nom=dr.get("nom", "ANADER"),
+        siege=dr.get("siege", ""),
+        tel=dr.get("tel", ""),
+        email=dr.get("email", ""),
+        verifie=bool(dr.get("verifie", False)),
+        zone=zone,
+    )
 
 
 def siege() -> ContactDR | None:
