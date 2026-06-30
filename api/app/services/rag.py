@@ -293,12 +293,48 @@ def reranker(
     return [passage for _, passage in notes[:top_k]]
 
 
-def formater_contexte(passages: list[Passage]) -> str:
-    """Met en forme les passages récupérés pour injection dans le prompt."""
+_FIN_PHRASE = re.compile(r"[.!?\n]")
+
+
+def tronquer_passage(texte: str, max_chars: int) -> str:
+    """Tronque un passage à ``max_chars``, de préférence à une frontière de phrase.
+
+    Réduit les tokens d'entrée injectés au modèle. On coupe à la dernière fin de phrase
+    (``.!?\\n``) de la fenêtre si elle est assez tardive, sinon au dernier espace — donc
+    sans couper un mot en deux dès lors que le texte contient des espaces (cas du corpus
+    cacao en prose). Un bloc sans aucun espace est coupé à ``max_chars`` faute de
+    frontière. Ajoute « … » si tronqué. Passage déjà court : inchangé.
+
+    Args:
+        texte: Le texte du passage.
+        max_chars: Longueur maximale visée (caractères).
+
+    Returns:
+        Le texte tronqué (suffixé « … »), ou le texte d'origine s'il est déjà court.
+    """
+    if len(texte) <= max_chars:
+        return texte
+    fenetre = texte[:max_chars]
+    coupures = [m.end() for m in _FIN_PHRASE.finditer(fenetre)]
+    if coupures and coupures[-1] >= max_chars // 2:
+        return fenetre[: coupures[-1]].rstrip() + " …"
+    espace = fenetre.rfind(" ")
+    contenu = fenetre[:espace] if espace > 0 else fenetre
+    return contenu.rstrip() + " …"
+
+
+def formater_contexte(passages: list[Passage], max_chars: int | None = None) -> str:
+    """Met en forme les passages récupérés pour injection dans le prompt.
+
+    Si ``max_chars`` est fourni, chaque passage est tronqué à cette longueur (à une
+    frontière de phrase) pour réduire les tokens d'entrée — donc le préremplissage CPU.
+    Sans ``max_chars`` : comportement inchangé (rétrocompat).
+    """
     blocs = []
     for numero, passage in enumerate(passages, start=1):
         source = f" (source : {passage.source})" if passage.source else ""
-        blocs.append(f"[{numero}]{source} {passage.texte}")
+        texte = tronquer_passage(passage.texte, max_chars) if max_chars else passage.texte
+        blocs.append(f"[{numero}]{source} {texte}")
     return "\n\n".join(blocs)
 
 
@@ -316,6 +352,7 @@ class RagRecuperateur:
         poids_lexical: float = 0.35,
         seuil_lexical: float = 0.5,
         hybride: bool = True,
+        passage_max_chars: int = 0,
     ) -> None:
         """Initialise le récupérateur RAG.
 
@@ -327,6 +364,7 @@ class RagRecuperateur:
             candidats: Taille du vivier récupéré par similarité dense avant reranking.
             poids_lexical: Poids du recouvrement lexical dans le score fusionné.
             seuil_lexical: Recouvrement lexical minimal (voie de secours du reranking).
+            passage_max_chars: Plafond de longueur d'un passage injecté (0 = illimité).
         """
         self._embeddings = embeddings
         self._index = index
@@ -336,6 +374,7 @@ class RagRecuperateur:
         self._poids_lexical = poids_lexical
         self._seuil_lexical = seuil_lexical
         self._hybride = hybride
+        self._passage_max_chars = passage_max_chars
 
     async def contexte_pour(self, question: str) -> str | None:
         """Retourne le bloc de contexte pour la question, ou None si rien de pertinent."""
@@ -362,4 +401,4 @@ class RagRecuperateur:
             meilleur=round(passages[0].score, 3),
             viviers=len(viviers),
         )
-        return formater_contexte(passages)
+        return formater_contexte(passages, self._passage_max_chars or None)

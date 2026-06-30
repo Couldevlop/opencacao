@@ -81,6 +81,9 @@ class Settings(BaseSettings):
     # (recall lexical sur tout le corpus) — rattrape les noms rares de maladies/
     # variétés que le dense classe hors vivier. Désactivable via RAG_HYBRIDE_ENABLED.
     rag_hybride_enabled: bool = True
+    # Plafond de longueur d'un passage RAG injecté (réduit les tokens d'entrée -> la
+    # latence de préremplissage CPU). Coupe à une frontière de phrase. Réglable à chaud.
+    rag_passage_max_chars: int = 480
 
     # --- Plateforme agentique V3 ---
     # Active l'orchestrateur + les agents spécialisés (RAG/Météo/Prix/Reporting).

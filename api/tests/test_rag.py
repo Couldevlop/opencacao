@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from app.services import rag
 from app.services.rag import (
     _BM25,
     Passage,
@@ -317,3 +318,62 @@ async def test_construire_rag_actif_mais_index_absent(tmp_path: Path) -> None:
         Settings(rag_enabled=True, rag_index_path=str(tmp_path / "absent.jsonl"))
     )
     assert resultat == (None, None)
+
+
+# --- Plafond de longueur des passages RAG (chantier latence) ---
+
+
+def test_tronquer_passage_court_inchange() -> None:
+    assert rag.tronquer_passage("Texte court.", 480) == "Texte court."
+
+
+def test_tronquer_passage_long_coupe_a_la_phrase() -> None:
+    texte = ("a" * 300) + ". " + ("b" * 300)  # > 480 ; fin de phrase à ~301
+    r = rag.tronquer_passage(texte, 480)
+    assert len(r) <= 482
+    assert r.endswith("…")
+    contenu = r[:-2].rstrip()
+    assert texte.startswith(contenu)  # pas de réécriture, pas de mot coupé
+    assert contenu.endswith(".")  # coupé à une fin de phrase
+
+
+def test_tronquer_passage_repli_sur_espace() -> None:
+    texte = "mot " * 300  # > 480, aucune fin de phrase
+    r = rag.tronquer_passage(texte, 480)
+    assert len(r) <= 482
+    assert r.endswith("…")
+    contenu = r[:-2].rstrip()
+    assert texte.startswith(contenu)
+    assert contenu.endswith("mot")  # coupé à une frontière de mot
+
+
+def test_tronquer_passage_sans_espace_coupe_a_max_chars() -> None:
+    # Bloc sans aucune frontière (ni phrase ni espace) : coupé à max_chars, suffixé « … ».
+    texte = "z" * 1000
+    r = rag.tronquer_passage(texte, 480)
+    assert r.endswith("…")
+    assert len(r) <= 482
+    assert texte.startswith(r[:-2].rstrip())  # préfixe de l'original (pas de fabrication)
+
+
+def test_formater_contexte_tronque_les_longs_garde_les_courts() -> None:
+    passages = [
+        rag.Passage(texte="x" * 1000, source="CNRA", score=0.9),
+        rag.Passage(texte="Court.", source="ANADER", score=0.8),
+    ]
+    sortie = rag.formater_contexte(passages, max_chars=480)
+    assert "[1]" in sortie and "[2]" in sortie  # les 2 passages conservés (nombre non réduit)
+    assert "Court." in sortie  # passage court inchangé
+    assert "…" in sortie  # passage long tronqué
+    assert ("x" * 1000) not in sortie  # le long a bien été coupé
+
+
+def test_formater_contexte_sans_max_chars_inchange() -> None:
+    passages = [rag.Passage(texte="y" * 1000, source="CNRA", score=0.9)]
+    assert ("y" * 1000) in rag.formater_contexte(passages)
+
+
+def test_rag_passage_max_chars_defaut() -> None:
+    from app.core.config import Settings
+
+    assert Settings().rag_passage_max_chars == 480

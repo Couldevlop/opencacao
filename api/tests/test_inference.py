@@ -166,3 +166,39 @@ async def test_generer_stream_erreur_http_leve_indisponible() -> None:
 def test_inference_max_tokens_defaut_400() -> None:
     # Plafond de sécurité aligné sur la cible du chantier latence (réponses concises).
     assert Settings().inference_max_tokens == 400
+
+
+async def test_cache_prompt_envoye_dans_le_payload() -> None:
+    """Le flag cache_prompt est transmis à l'inférence (réutilisation du préfixe système)."""
+    vu: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        vu.update(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+    transport = httpx.MockTransport(handler)
+    http = httpx.AsyncClient(transport=transport, base_url="http://inference:8000")
+    client = InferenceClient("http://inference:8000", "opencacao-8b", 10.0, client=http)
+    await client.generer("Question ?")
+    assert vu.get("cache_prompt") is True
+    await client.close()
+
+
+async def test_cache_prompt_envoye_dans_le_payload_stream() -> None:
+    """cache_prompt est aussi transmis sur le chemin streaming."""
+    vu: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        vu.update(json.loads(request.content))
+        return httpx.Response(200, text=_SSE, headers={"content-type": "text/event-stream"})
+
+    transport = httpx.MockTransport(handler)
+    http = httpx.AsyncClient(transport=transport, base_url="http://inference:8000")
+    client = InferenceClient("http://inference:8000", "opencacao-8b", 10.0, client=http)
+    _ = [m async for m in client.generer_stream("Question ?")]
+    assert vu.get("cache_prompt") is True
+    await client.close()

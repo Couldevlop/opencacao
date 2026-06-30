@@ -51,3 +51,10 @@ def test_system_prompt_conserve_les_regles_critiques() -> None:
     assert "UNIQUEMENT le cacao" in SYSTEM_PROMPT
     assert "dosages précis" in SYSTEM_PROMPT
     assert "jamais toi-même un numéro" in SYSTEM_PROMPT
+
+
+def test_system_prompt_condense() -> None:
+    # Trim pour réduire le préremplissage : nettement plus court qu'avant (2129 car.),
+    # mais toutes les règles préservées (cf. test_system_prompt_conserve_les_regles_critiques).
+    assert len(SYSTEM_PROMPT) < 1300
+    assert "invente" in SYSTEM_PROMPT
