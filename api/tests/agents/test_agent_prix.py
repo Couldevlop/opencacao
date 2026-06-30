@@ -108,3 +108,16 @@ async def test_prix_evite_les_faux_positifs_de_sous_chaine() -> None:
     # « discours » ne déclenche pas « cours » ; « vendredi » ne déclenche pas « vend ».
     agent = AgentPrix(_InferenceFactice(), OutilPrix(_PrixFactice()))
     assert await agent.peut_traiter(_requete("le discours du président vendredi")) == 0.0
+
+
+def test_formater_cours_pose_le_prix_officiel_comme_autoritaire() -> None:
+    # Souveraineté : le prix officiel doit PRIMER sur les prix historiques du RAG
+    # (bug prod : « 850 FCFA » historique servi au lieu du 1200 officiel). La consigne
+    # doit poser le prix comme autoritaire ET désamorcer les autres montants du contexte.
+    from app.services.agents.agent_prix import _formater_cours
+
+    contexte = _formater_cours({"prix_bord_champ_fcfa_kg": 1200, "campagne": "intermédiaire 2026"})
+    assert "1200" in contexte
+    assert "officiel" in contexte.lower()
+    assert "actuel" in contexte.lower()
+    assert "historique" in contexte.lower()
