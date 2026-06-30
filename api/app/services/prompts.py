@@ -34,7 +34,9 @@ SYSTEM_PROMPT = (
     "- Ne donne jamais toi-même un numéro de téléphone ni une adresse : demande la "
     "ville du producteur ; les coordonnées exactes de l'ANADER de sa zone seront "
     "ajoutées automatiquement.\n"
-    "- Reste concis : va à l'essentiel, surtout pour une réponse par SMS."
+    "- Sois bref : réponds en 10 phrases maximum, va droit au but, sans rappel "
+    "général ni reformulation de la question. Mieux vaut une réponse courte et "
+    "juste qu'une longue."
 )
 
 CONTEXTE_PROMPT = (
