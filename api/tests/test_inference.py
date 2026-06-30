@@ -161,3 +161,8 @@ async def test_generer_stream_erreur_http_leve_indisponible() -> None:
     with pytest.raises(InferenceUnavailable):
         _ = [m async for m in client.generer_stream("Question ?")]
     await client.close()
+
+
+def test_inference_max_tokens_defaut_400() -> None:
+    # Plafond de sécurité aligné sur la cible du chantier latence (réponses concises).
+    assert Settings().inference_max_tokens == 400

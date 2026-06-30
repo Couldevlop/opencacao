@@ -14,9 +14,10 @@ data:
   # déploiement -> invalide les réponses post-traitées par une image antérieure.
   APP_VERSION: "0.6.28"
   RATE_LIMIT_PER_MIN: "20"
-  # Plafond de génération (F7 — efficacité). Réponses « SMS » : 384 suffit et coupe
-  # ~25 % de la latence pire-cas vs 512 sur CPU. Prend effet sans recharger le modèle.
-  INFERENCE_MAX_TOKENS: "384"
+  # Plafond de génération (chantier latence). La consigne « 10 phrases maximum » du
+  # prompt système borne la sortie ; ce plafond sert de filet de sécurité (une réponse
+  # de 10 phrases ≈ 250-330 tokens). Prend effet sans recharger le modèle.
+  INFERENCE_MAX_TOKENS: "400"
   LOG_LEVEL: "INFO"
   ENABLE_DOCS: "false"
   # Derrière l'Ingress Traefik : on fait confiance à X-Forwarded-For.
