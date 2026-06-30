@@ -329,14 +329,20 @@ def test_enrichir_main(monkeypatch) -> None:
 
 def test_contacts_annuaire_illisible(monkeypatch, tmp_path: Path) -> None:
     """Un annuaire YAML absent/illisible renvoie {} (pas d'erreur), sans contact trouvé."""
-    from app.services import contacts
+    from app.services import contacts, localites
 
+    # chercher() délègue désormais à localites ; siege() utilise encore contacts.
+    # On rend donc les DEUX annuaires illisibles pour vérifier la dégradation complète.
     contacts._annuaire.cache_clear()
-    contacts._index_zones.cache_clear()
-    monkeypatch.setattr(contacts, "_CHEMIN", tmp_path / "absent.yaml")
+    localites._annuaire.cache_clear()
+    localites._index.cache_clear()
+    absent = tmp_path / "absent.yaml"
+    monkeypatch.setattr(contacts, "_CHEMIN", absent)
+    monkeypatch.setattr(localites, "_CHEMIN", absent)
     assert contacts._annuaire() == {}
     assert contacts.chercher("Je suis à Bouaké") is None
     assert contacts.siege() is None  # pas de siège dans un annuaire vide
-    # Restaure le cache pour les autres tests (relecture du vrai fichier).
+    # Restaure les caches pour les autres tests (relecture du vrai fichier).
     contacts._annuaire.cache_clear()
-    contacts._index_zones.cache_clear()
+    localites._annuaire.cache_clear()
+    localites._index.cache_clear()
