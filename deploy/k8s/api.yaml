@@ -87,6 +87,9 @@ data:
   # Campagne intermédiaire 2026 : 1200 FCFA/kg (Conseil Café-Cacao, session N°1 du 26/06/2026).
   PRIX_BORD_CHAMP_FCFA_KG: "1200"
   PRIX_CAMPAGNE: "intermédiaire 2026"
+  # Plafond de longueur d'un passage RAG (chantier latence) : coupe le gras des
+  # passages pour réduire les tokens d'entrée. Réglable à chaud.
+  RAG_PASSAGE_MAX_CHARS: "480"
 ---
 apiVersion: apps/v1
 kind: Deployment
