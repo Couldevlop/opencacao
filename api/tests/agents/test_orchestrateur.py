@@ -228,8 +228,9 @@ class _AgentStream:
     description = "x"
     mots_cles = ()
 
-    def __init__(self, fragments: list[str]) -> None:
+    def __init__(self, fragments: list[str], contexte: str | None = None) -> None:
         self._fragments = fragments
+        self._contexte = contexte
 
     async def peut_traiter(self, requete: AgentRequete) -> float:
         return 1.0
@@ -237,7 +238,10 @@ class _AgentStream:
     async def traiter(self, requete: AgentRequete) -> AgentReponse:
         return AgentReponse("".join(self._fragments), [], Confiance.MOYENNE, "rag")
 
-    async def traiter_stream(self, requete: AgentRequete):
+    async def contexte_pour(self, requete: AgentRequete) -> str | None:
+        return self._contexte
+
+    async def traiter_stream(self, requete: AgentRequete, contexte: str | None = None):
         for fragment in self._fragments:
             yield fragment
 
@@ -255,6 +259,20 @@ async def test_traiter_stream_emet_des_phrases_puis_done() -> None:
     texte = "".join(e["text"] for e in tokens)
     assert "saison sèche" in texte
     assert "CNRA" in evenements[-1]["sources"]
+
+
+@pytest.mark.asyncio
+async def test_traiter_stream_ancre_les_sources_sur_le_contexte() -> None:
+    # Souveraineté en streaming : seules les sources ANCRÉES dans le contexte comptent.
+    # Le modèle cite CNRA ET ANADER, mais seul CNRA est dans le contexte injecté.
+    agent = _AgentStream(
+        ["D'après le CNRA et l'ANADER, taillez en saison sèche. Sources : CNRA, ANADER."],
+        contexte="[1] (source : CNRA) Taille du cacaoyer en saison sèche.",
+    )
+    orch = _orchestrateur(agent)
+    evenements = [e async for e in orch.traiter_stream("comment tailler ?", Langue.FR, "ip")]
+    # ANADER cité de mémoire (absent du contexte) est écarté : seul CNRA (ancré) reste.
+    assert evenements[-1]["sources"] == ["CNRA"]
 
 
 @pytest.mark.asyncio

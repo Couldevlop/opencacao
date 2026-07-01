@@ -16,6 +16,10 @@ from app.services import postprocess
 
 _TOKEN = re.compile(r"\w+", re.UNICODE)
 
+# Sentinelle : « contexte non fourni » (à calculer par l'agent). Distincte de None,
+# qui est un contexte valide (aucun extrait).
+_A_CALCULER: object = object()
+
 
 def compter_mots_cles(texte: str, mots_cles: tuple[str, ...]) -> int:
     """Compte les mots-clés présents dans le texte, par MOT ENTIER (pas sous-chaîne).
@@ -69,9 +73,26 @@ class AgentBase:
         """Construit le contexte propre à l'agent puis génère une réponse ancrée."""
         return await self._generer(requete, await self._contexte(requete))
 
-    async def traiter_stream(self, requete: AgentRequete) -> AsyncIterator[str]:
-        """Variante flux : streame les fragments de génération (même contexte)."""
-        contexte = await self._contexte(requete)
+    async def contexte_pour(self, requete: AgentRequete) -> str | None:
+        """Contexte que l'agent injecterait pour cette requête.
+
+        Exposé pour que l'appelant (orchestrateur) puisse ANCRER les sources en
+        streaming — croiser les sources citées avec le contexte réellement injecté —
+        sans recalculer le contexte (donc sans double récupération RAG).
+        """
+        return await self._contexte(requete)
+
+    async def traiter_stream(
+        self, requete: AgentRequete, contexte: str | None | object = _A_CALCULER
+    ) -> AsyncIterator[str]:
+        """Variante flux : streame les fragments de génération (même contexte).
+
+        ``contexte`` peut être pré-calculé par l'appelant (via ``contexte_pour``) et
+        passé ici — il sert alors aussi à ancrer les sources après le stream. Sinon il
+        est calculé ici (comportement autonome).
+        """
+        if contexte is _A_CALCULER:
+            contexte = await self._contexte(requete)
         async for fragment in self._inference.generer_stream(
             requete.question, contexte=contexte, historique=requete.historique
         ):

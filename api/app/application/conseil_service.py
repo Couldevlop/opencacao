@@ -404,7 +404,7 @@ class ConseilService:
             return
 
         texte = "".join(emis)
-        sources = postprocess.extraire_sources(texte)
+        sources = postprocess.extraire_sources(texte, contexte)
         confiance = postprocess.estimer_confiance(sources)
         base = Conseil(texte, confiance, sources, redirection_anader=False)
         if not historique:
