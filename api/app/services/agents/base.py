@@ -82,7 +82,9 @@ class AgentBase:
         texte = await self._inference.generer(
             requete.question, contexte=contexte, historique=requete.historique
         )
-        sources = postprocess.extraire_sources(texte)
+        # Sources ANCRÉES : on croise le texte avec le contexte injecté -> la confiance
+        # ne peut être élevée que si les sources citées sont réellement dans le contexte.
+        sources = postprocess.extraire_sources(texte, contexte)
         return AgentReponse(
             texte=texte,
             sources=sources,
