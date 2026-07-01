@@ -86,10 +86,12 @@ def _index() -> list[tuple[re.Pattern, str, dict]]:
 
 
 def detecter(texte: str) -> str | None:
-    """Nom canonique de la première localité CACAOYÈRE citée, ou ``None``.
+    """Nom canonique de la localité CACAOYÈRE la plus RÉCEMMENT citée, ou ``None``.
 
-    Exclut les villes de ``LOCALITES_NORD`` (non cacaoyères) : leur prévision n'a pas
-    de sens agronomique pour le cacao.
+    Sur un fil de conversation, on privilégie la DERNIÈRE ville citée (le contexte
+    courant du producteur) plutôt que le libellé le plus long. Exclut les villes de
+    ``LOCALITES_NORD`` (non cacaoyères) : leur prévision n'a pas de sens agronomique.
+    À position égale (libellés qui se chevauchent), le libellé le plus long prime.
 
     Args:
         texte: Texte libre (idéalement tout le fil de conversation).
@@ -98,10 +100,18 @@ def detecter(texte: str) -> str | None:
         Le nom canonique (casse d'origine du YAML), ou ``None``.
     """
     norm = _normaliser(texte)
+    meilleur: tuple[int, int] | None = None  # (dernière position, longueur du libellé)
+    resultat: str | None = None
     for motif, canon, _dr in _index():
-        if motif.search(norm) and _normaliser(canon) not in LOCALITES_NORD:
-            return canon
-    return None
+        if _normaliser(canon) in LOCALITES_NORD:
+            continue
+        positions = [m.start() for m in motif.finditer(norm)]
+        if not positions:
+            continue
+        cle = (max(positions), len(canon))
+        if meilleur is None or cle > meilleur:
+            meilleur, resultat = cle, canon
+    return resultat
 
 
 def detecter_nord(texte: str) -> str | None:

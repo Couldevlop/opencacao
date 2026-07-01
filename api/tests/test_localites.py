@@ -64,3 +64,11 @@ def test_yaml_illisible_degrade_proprement(monkeypatch) -> None:
     finally:
         localites._annuaire.cache_clear()
         localites._index.cache_clear()
+
+
+def test_detecter_localite_la_plus_recente() -> None:
+    # Plusieurs villes cacaoyères : on géocode la DERNIÈRE citée (contexte courant),
+    # même si une ville citée plus tôt a un libellé plus long.
+    assert localites.detecter("j'étais à Gagnoa hier, et à Daloa aujourd'hui") == "Daloa"
+    # Cas simple (une seule ville) inchangé.
+    assert localites.detecter("quel temps à Gagnoa ?") == "Gagnoa"
