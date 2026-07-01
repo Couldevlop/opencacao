@@ -126,3 +126,14 @@ async def test_lancer_prechauffage_actif(fake_inference, fake_cache, fake_journa
     assert tache is not None
     await tache  # avec les fakes, le pré-chauffage se termine vite
     assert await fake_cache.get_cached(QUESTIONS_FAQ[0], "fr") is not None
+
+
+def test_faq_sans_doublon_et_non_refusee() -> None:
+    """Les questions FAQ pré-chauffées : pas de doublon, et aucune bloquée par un garde-fou
+    (sinon on pré-chaufferait un refus au lieu d'une vraie réponse)."""
+    from app.application.faq import QUESTIONS_FAQ
+    from app.services import guardrails
+
+    assert len(QUESTIONS_FAQ) == len(set(QUESTIONS_FAQ)), "doublon dans QUESTIONS_FAQ"
+    refusees = [q for q in QUESTIONS_FAQ if guardrails.evaluer(q) is not None]
+    assert refusees == [], f"FAQ refusées par un garde-fou : {refusees}"
