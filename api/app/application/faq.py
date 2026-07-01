@@ -34,6 +34,20 @@ QUESTIONS_FAQ: tuple[str, ...] = (
     "Quelle variété de cacao planter en Côte d'Ivoire ?",
     "Comment reconnaître une carence en azote chez le cacaoyer ?",
     "Comment préparer le sol avant de planter le cacao ?",
+    "Comment fertiliser une cacaoyère sans excès d'engrais ?",
+    "Comment reconnaître une carence en potassium chez le cacaoyer ?",
+    "Comment gérer les mauvaises herbes dans une cacaoyère ?",
+    "Comment protéger les jeunes cacaoyers du plein soleil ?",
+    "Comment lutter naturellement contre la pourriture brune des cabosses ?",
+    "Comment lutter contre les chenilles défoliatrices du cacaoyer ?",
+    "Comment prévenir le swollen shoot dans ma plantation de cacao ?",
+    "Comment écabosser et trier les fèves après la récolte ?",
+    "Comment stocker le cacao dans de bonnes conditions avant la vente ?",
+    "Comment produire un cacao de qualité marchande ?",
+    "Quand et comment recéper un vieux cacaoyer improductif ?",
+    "Qu'est-ce que le règlement européen contre la déforestation (EUDR) pour le cacao ?",
+    "Comment tracer et géolocaliser ma parcelle de cacao pour l'export ?",
+    "Comment s'engager dans une production de cacao durable et certifiée ?",
     # Formulations EXACTES des suggestions de l'écran d'accueil (web/index.html) :
     # le cache est sensible au libellé, on les pré-chauffe telles quelles pour que
     # cliquer une suggestion réponde en ~0,2 s au lieu de ~20 s d'inférence CPU.
