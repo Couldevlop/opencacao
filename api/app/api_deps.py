@@ -78,10 +78,11 @@ def _construire_orchestrateur(
 ) -> Orchestrateur:
     """Composition racine de la plateforme agentique (testable sans FastAPI).
 
-    Assemble le graphe : registre → 4 agents Cœur enregistrés → routeur →
-    orchestrateur. Les outils Météo/Prix sont branchés sur des sources « indisponibles »
-    (résultat vide) tant qu'aucune API réelle n'est câblée : l'agent dégrade alors
-    proprement en conseil générique, et le socle reste déployable sans dépendance.
+    Assemble le graphe : registre → agents Cœur enregistrés (RAG, Météo, Prix,
+    Réglementation, Normes, Reporting) → routeur → orchestrateur. Les outils Météo/Prix
+    sont branchés sur des sources « indisponibles » (résultat vide) tant qu'aucune API
+    réelle n'est câblée : l'agent dégrade alors proprement en conseil générique, et le
+    socle reste déployable sans dépendance.
 
     Args:
         inference: Port d'inférence.
@@ -90,9 +91,11 @@ def _construire_orchestrateur(
         rag: Récupérateur RAG, ou None.
 
     Returns:
-        Un orchestrateur prêt à traiter, avec rag/meteo/prix/reporting enregistrés.
+        Un orchestrateur prêt à traiter, avec rag/meteo/prix/reglementation/normes/
+        reporting enregistrés.
     """
     from app.services.agents.agent_meteo import AgentMeteo
+    from app.services.agents.agent_normes import AgentNormes
     from app.services.agents.agent_prix import AgentPrix
     from app.services.agents.agent_rag import AgentRag
     from app.services.agents.agent_reglementation import AgentReglementation
@@ -111,6 +114,7 @@ def _construire_orchestrateur(
     registre.enregistrer(AgentMeteo(inference, OutilMeteo(meteo)))  # type: ignore[arg-type]
     registre.enregistrer(AgentPrix(inference, OutilPrix(prix), rag=rag))  # type: ignore[arg-type]
     registre.enregistrer(AgentReglementation(inference, rag=rag))  # type: ignore[arg-type]
+    registre.enregistrer(AgentNormes(inference, rag=rag))  # type: ignore[arg-type]
     registre.enregistrer(AgentReporting(inference))  # type: ignore[arg-type]
     routeur = RouteurIntention(registre)
     return Orchestrateur(routeur, journal, cache, agent_defaut="rag")  # type: ignore[arg-type]

@@ -17,12 +17,12 @@ async def test_outils_indisponibles_renvoient_vide() -> None:
     assert await PrixIndisponible().cours() == {}
 
 
-def test_construction_orchestrateur_enregistre_les_quatre_agents() -> None:
+def test_construction_orchestrateur_enregistre_les_agents_coeur() -> None:
     # Ports factices : on ne teste que le câblage (aucun agent n'est appelé).
     orch = _construire_orchestrateur(inference=object(), cache=object(), journal=object(), rag=None)
     assert isinstance(orch, Orchestrateur)
     noms = orch._routeur.registre.noms()  # noqa: SLF001
-    assert set(noms) == {"rag", "meteo", "prix", "reglementation", "reporting"}
+    assert set(noms) == {"rag", "meteo", "prix", "reglementation", "normes", "reporting"}
 
 
 class _State:
