@@ -92,7 +92,9 @@ class MeteoOpenMeteo:
         )
         reponse_prev.raise_for_status()
         sommes = reponse_prev.json().get("daily", {}).get("precipitation_sum") or []
-        if not sommes:
+        # null (donnée manquante côté API) ≠ 0.0 (vrai « pas de pluie ») : on ne fabrique
+        # pas un « temps sec » à partir d'une absence de donnée -> fail-soft vers {}.
+        if not sommes or sommes[0] is None:
             return {}
-        pluie = float(sommes[0] or 0.0)
+        pluie = float(sommes[0])
         return {"resume": _resume_pluie(pluie), "pluie_mm_24h": round(pluie, 1)}

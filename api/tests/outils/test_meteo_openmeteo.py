@@ -56,3 +56,16 @@ async def test_resume_reflete_l_intensite_de_pluie() -> None:
     previsions = await meteo.previsions("Abidjan")
     assert previsions["pluie_mm_24h"] == 0.0
     assert "sec" in previsions["resume"].lower()
+
+
+@pytest.mark.asyncio
+async def test_precipitation_null_retourne_vide_pas_sec() -> None:
+    # null (donnée manquante côté API) ne doit PAS devenir « temps sec » (0.0 réel) :
+    # on renvoie {} (fail-soft) plutôt qu'un faux « pas de pluie » qui fonderait un conseil.
+    def _null(req: httpx.Request) -> httpx.Response:
+        if "search" in req.url.path:
+            return httpx.Response(200, json={"results": [{"latitude": 5.3, "longitude": -4.0}]})
+        return httpx.Response(200, json={"daily": {"precipitation_sum": [None]}})
+
+    meteo = MeteoOpenMeteo(client=_client(_null))
+    assert await meteo.previsions("Daloa") == {}

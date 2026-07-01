@@ -225,3 +225,22 @@ def test_conseil_cafe_cacao_pas_de_faux_positif() -> None:
     """« Café » dans « Conseil du Café-Cacao » ne doit PAS refuser une question cacao."""
     refus = guardrails.evaluer("Quel prix le Conseil du Café-Cacao fixe-t-il pour le cacao ?")
     assert refus is None or refus.categorie is not CategorieRefus.HORS_FILIERE
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Combien de grammes de bouillie bordelaise par litre d'eau ?",
+        "Quelle dose de cuivre pour 10 litres ?",
+    ],
+)
+def test_biopesticides_dosables_refuses(question: str) -> None:
+    """Un intrant (bio inclus) AVEC un dosage déclenche le refus phytosanitaire."""
+    refus = guardrails.evaluer(question)
+    assert refus is not None and refus.categorie is CategorieRefus.PHYTOSANITAIRE
+
+
+def test_mention_cuivre_sans_dose_pas_de_faux_positif() -> None:
+    """Une simple mention (« carence en cuivre »), sans dosage, ne doit PAS refuser."""
+    refus = guardrails.evaluer("Comment corriger une carence en cuivre du cacaoyer ?")
+    assert refus is None or refus.categorie is not CategorieRefus.PHYTOSANITAIRE
