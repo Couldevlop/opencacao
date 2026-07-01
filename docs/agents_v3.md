@@ -210,7 +210,9 @@ C'est l'aboutissement du socle : l'extensibilité prouvée. L'**agent n°5 — R
 3. **L'enregistrer** — **une seule ligne** dans `_construire_orchestrateur` (`api_deps.py`) : `registre.enregistrer(AgentReglementation(inference, rag=rag))`.
 4. **Tester** — `api/tests/agents/test_agent_reglementation.py` (routage + cadrage injecté), en TDD.
 
-**Aucune autre modification.** L'orchestrateur, le registre et le routeur sont restés intacts — preuve concrète d'« ouvert à l'extension, fermé à la modification ». Les agents suivants (Maladie, Satellite, Normes, ERP…) suivront le même moule.
+**Aucune autre modification.** L'orchestrateur, le registre et le routeur sont restés intacts — preuve concrète d'« ouvert à l'extension, fermé à la modification ». Les agents suivants suivront le même moule.
+
+> **Agent n°6 — Normes** (`agent_normes.py`) a été ajouté par la même recette : référentiels de durabilité/qualité du cacao (Rainforest Alliance, Fairtrade, agriculture biologique, ISO, ARS 1000). Frontière nette avec l'agent Réglementation, qui couvre l'accès marché *contraignant* (EUDR) : les mots-clés `certification`/`durabilité` ont été confiés à Normes (retirés de Réglementation) pour un routage sans ambiguïté. Même garde-fou de souveraineté que l'EUDR : sans document RAG, aucun critère/seuil/prime/date inventé → redirection vers l'organisme certificateur, la coopérative ou l'ANADER.
 
 > 📄 Une version Word détaillée de ce cours existe : `docs/Documentation_Socle_Agentique_V3.docx` (régénérable via `python scripts/build_doc_agentique.py`).
 
