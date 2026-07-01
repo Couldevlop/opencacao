@@ -20,18 +20,30 @@ def _sources_connues() -> list[str]:
     return list(data.get("sources_fiables", []))
 
 
-def extraire_sources(reponse: str) -> list[str]:
+def extraire_sources(reponse: str, contexte: str | None = None) -> list[str]:
     """Extrait les sources fiables citées dans le texte de la réponse.
+
+    Souveraineté : si ``contexte`` est fourni, on ne retient que les sources
+    **ancrées** — présentes AUSSI dans le contexte documentaire injecté. Cela évite
+    qu'une source citée « de mémoire » par le modèle, sans appui documentaire, ne
+    gonfle artificiellement la confiance (une réponse non ancrée qui mentionne
+    « CNRA » et « ANADER » ne doit pas être créditée d'une confiance élevée). Sans
+    contexte (None) : extraction textuelle seule (compatibilité des chemins legacy).
 
     Args:
         reponse: Texte généré par le modèle.
+        contexte: Contexte documentaire injecté (passages RAG/consigne), ou None.
 
     Returns:
         Liste, sans doublon et dans l'ordre du référentiel, des sources reconnues
-        mentionnées dans la réponse.
+        (ancrées dans le contexte si celui-ci est fourni).
     """
     texte = reponse.lower()
-    return [source for source in _sources_connues() if source.lower() in texte]
+    trouvees = [source for source in _sources_connues() if source.lower() in texte]
+    if contexte is None:
+        return trouvees
+    ctx = contexte.lower()
+    return [source for source in trouvees if source.lower() in ctx]
 
 
 def estimer_confiance(sources: list[str]) -> Confiance:

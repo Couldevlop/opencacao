@@ -36,3 +36,20 @@ def test_confiance_moyenne_si_une_source() -> None:
 
 def test_confiance_faible_si_aucune_source() -> None:
     assert estimer_confiance([]) is Confiance.FAIBLE
+
+
+def test_extraire_sources_ancrees_seulement_avec_contexte() -> None:
+    """Avec contexte : seules les sources présentes AUSSI dans le contexte sont retenues."""
+    reponse = "D'après le CNRA et l'ANADER, séchez au soleil."
+    contexte = "[1] (source : CNRA) Séchez les fèves au soleil."
+    assert extraire_sources(reponse, contexte) == ["CNRA"]  # ANADER cité mais non ancré
+
+
+def test_extraire_sources_sans_contexte_reste_textuel() -> None:
+    """Sans contexte (None) : comportement legacy (extraction textuelle seule)."""
+    assert "CNRA" in extraire_sources("selon le CNRA", None)
+
+
+def test_extraire_sources_contexte_vide_aucune_ancree() -> None:
+    """Réponse non ancrée (contexte vide) : aucune source ancrée -> confiance faible."""
+    assert extraire_sources("selon le CNRA et l'ANADER", "") == []

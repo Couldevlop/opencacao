@@ -25,6 +25,18 @@ _CADRE_EUDR = (
     "(géolocalisation) et diligence raisonnée pour l'export du cacao vers l'UE."
 )
 
+# Sans document RAG, on interdit d'inventer les détails réglementaires : les dates
+# d'entrée en vigueur de l'EUDR ont connu plusieurs reports, une date mémorisée par le
+# modèle serait probablement périmée (violation de souveraineté sur une donnée officielle).
+_CADRE_EUDR_SANS_DOC = (
+    _CADRE_EUDR + "\n\n"
+    "Aucun document réglementaire détaillé n'est disponible ici. N'avance AUCUNE date "
+    "d'entrée en vigueur, aucun seuil, article ou procédure précis : ces éléments "
+    "évoluent (l'EUDR a connu plusieurs reports). Explique le principe général puis "
+    "oriente le producteur vers le Conseil du Café-Cacao, un exportateur certifié ou "
+    "son agent ANADER pour les détails officiels à jour."
+)
+
 _MOTS_REGLEMENTATION = (
     "eudr",
     "deforestation",
@@ -88,4 +100,4 @@ class AgentReglementation(AgentBase):
     async def _contexte(self, requete: AgentRequete) -> str | None:
         """Préfixe le contexte RAG du cadrage EUDR (ou le cadrage seul)."""
         contexte_rag = await self._rag.contexte_pour(requete.fil_ancre) if self._rag else None
-        return f"{_CADRE_EUDR}\n\n{contexte_rag}" if contexte_rag else _CADRE_EUDR
+        return f"{_CADRE_EUDR}\n\n{contexte_rag}" if contexte_rag else _CADRE_EUDR_SANS_DOC

@@ -59,3 +59,15 @@ async def test_traiter_sans_rag_garde_le_cadre() -> None:
     agent = AgentReglementation(inf, rag=None)
     await agent.traiter(_requete("règlement européen déforestation ?"))
     assert "EUDR" in (inf.contexte_recu or "")
+
+
+@pytest.mark.asyncio
+async def test_sans_rag_consigne_anti_fabrication_eudr() -> None:
+    # Sans doc RAG, ne pas laisser inventer une date/seuil EUDR (reports successifs).
+    inf = _InferenceFactice()
+    agent = AgentReglementation(inf)  # pas de RAG
+    await agent.traiter(_requete("Quand l'EUDR entre-t-il en vigueur ?"))
+    ctx = inf.contexte_recu.lower()
+    assert "eudr" in ctx
+    assert "aucune date" in ctx or "n'avance" in ctx
+    assert "report" in ctx
