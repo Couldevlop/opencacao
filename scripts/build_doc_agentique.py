@@ -317,6 +317,7 @@ Conseil (réponse + sources + confiance + disclaimer ANADER)
             ["Application (pur)", "application/registre,routage,orchestrateur,contexte.py", "Orchestration testable sans réseau."],
             ["Adaptateurs", "services/agents/*", "Agents concrets (RAG, Météo, Prix, Reporting)."],
             ["Adaptateurs", "services/outils/*", "Outils concrets (météo, prix) derrière un port mockable."],
+            ["Adaptateurs", "services/localites.py", "Détection de localités ivoiriennes (zone cacaoyère / savane du Nord / Direction Régionale), partagée par l'agent Météo, l'annuaire contacts et les garde-fous."],
         ],
     )
     para(
@@ -552,23 +553,31 @@ async def _generer(self, requete, contexte: str | None) -> AgentReponse:
             ("Port mockable (MeteoPort) —", "aucun appel réseau en test ; la source est interchangeable. Aucun LLM tiers — données factuelles uniquement (souveraineté)."),
             ("Fail-soft —", "si l'API plante, l'outil renvoie {} au lieu d'exploser ; l'agent dégrade en conseil générique. Un outil qui échoue ne fait jamais tomber l'agent."),
             ("Routage par mots-clés —", "peut_traiter monte avec le nombre de termes climat détectés (0.7 + 0.1 × touches, plafonné à 1.0)."),
+            ("Détecter la localité, jamais la deviner —", "une prévision n'a de sens que localisée. L'agent détecte la commune sur TOUT le fil (historique + dernier tour) via le module partagé localites (liste officielle des 60 zones ANADER, insensible casse/accents). Une ville citée plus tôt dans la conversation reste connue au tour suivant."),
+            ("Trois cas, aucune météo inventée —", "localité cacaoyère → prévisions Open-Meteo ; localité de savane du Nord (Korhogo, Ferké… non cacaoyères) → on explique avec tact qu'elle n'est pas concernée par le cacao et on redirige, sans prévision ; aucune localité → on demande la commune. Plutôt qu'un centroïde pays inutile ou un chiffre fabriqué, une consigne explicite (même pattern de souveraineté que l'agent Prix sans cours)."),
         ],
-        mental="L'outil = les yeux et les mains de l'agent sur le monde réel. L'agent = le cerveau qui décide quoi en faire.",
+        mental="L'outil = les yeux et les mains de l'agent sur le monde réel. L'agent = le cerveau qui décide quoi en faire — et qui sait DE QUEL endroit il parle, ou demande.",
         code_blocks=[
             (
-                "L'agent récupère puis injecte (extrait) :",
+                "L'agent localise, puis injecte des faits OU une consigne (extrait) :",
                 """
-async def traiter(self, requete) -> AgentReponse:
-    localite = _detecter_localite(requete.fil_ancre) or self._geo_defaut
-    previsions = await self._outil.invoquer(localite=localite)  # tool use
-    contexte = _formater_previsions(localite, previsions)
-    return await self._generer(requete, contexte)  # le LLM raisonne sur les faits
+async def _contexte(self, requete) -> str | None:
+    texte = _fil_complet(requete)                  # historique user + dernier tour
+    if (ville := localites.detecter(texte)):        # localité CACAOYÈRE ?
+        prev = await self._outil.invoquer(localite=ville)    # tool use
+        return _formater_previsions(ville, prev)    # le LLM raisonne sur les faits
+    if (nord := localites.detecter_nord(texte)):    # savane du Nord ?
+        return _consigne_nord(nord)                 # pas une zone cacao -> redirection
+    return _CONSIGNE_COMMUNE                         # aucune ville -> demander la commune
 """,
             ),
         ],
         tests=[
             "Score élevé sur une question météo, quasi nul sur une question prix.",
             "Les prévisions récupérées sont bien injectées dans le contexte passé au LLM.",
+            "Une ville citée seulement dans l'historique est quand même détectée (mémoire du fil).",
+            "Une localité de savane du Nord déclenche la redirection « non cacaoyère », sans appel météo.",
+            "Sans localité, l'agent demande la commune et n'invente aucune donnée météo.",
         ],
     )
 
@@ -646,7 +655,7 @@ async def synthetiser(self, requete, contributions: list[AgentReponse]) -> Agent
             ("Feature flag —", "bascule V2↔V3 sans risque ; rollback instantané."),
             ("Composition root —", "tout le câblage en un lieu ; le reste du code n'en sait rien."),
             ("Branchement via get_dialogue_service —", "le router POST passe par la gestion de sessions V2, PAS directement par le handler HTTP : on insère l'orchestrateur à ce niveau pour conserver les sessions conversationnelles."),
-            ("Outils « indisponibles » —", "Météo/Prix sont enregistrés avec un adaptateur neutre ({}) tant qu'aucune API réelle n'est branchée ; l'agent dégrade en conseil générique. Le socle reste 100 % testable et déployable sans dépendance externe."),
+            ("Sources réelles branchées —", "l'agent Météo interroge Open-Meteo (données factuelles, pas un LLM tiers) et l'agent Prix s'appuie sur le prix bord-champ officiel du Conseil Café-Cacao. Le port reste mockable : aucun appel réseau en test, dégradation propre si la source tombe."),
         ],
     )
     quote(
@@ -675,9 +684,22 @@ async def synthetiser(self, requete, contributions: list[AgentReponse]) -> Agent
         doc,
         "AUCUNE autre modification. L'orchestrateur, le registre et le routeur sont restés "
         "intacts — preuve concrète d'« ouvert à l'extension, fermé à la modification ». Les "
-        "agents suivants (Maladie, Satellite, Normes, ERP…) suivront le même moule.",
+        "agents suivants suivront le même moule.",
         italic=True,
         color=GREY,
+    )
+    para(
+        doc,
+        "Agent n°6 — Normes : ajouté par la même recette (agent_normes.py). Il conseille sur "
+        "les référentiels de durabilité et de qualité du cacao — certifications volontaires "
+        "(Rainforest Alliance, Fairtrade, agriculture biologique), normes de qualité (ISO) et "
+        "la norme régionale africaine ARS 1000. Frontière nette avec l'agent Réglementation, "
+        "qui couvre l'accès marché contraignant (EUDR) : les mots-clés certification/durabilité "
+        "ont été confiés à Normes (retirés de Réglementation) pour un routage sans ambiguïté. "
+        "Même garde-fou de souveraineté que l'EUDR : sans document RAG, aucun critère, seuil, "
+        "montant de prime ni date inventé — redirection vers l'organisme certificateur, la "
+        "coopérative ou l'agent ANADER. Les agents avancés restants (Maladie, Satellite, ERP, "
+        "AgroSense…) nécessitent des intégrations externes.",
     )
     doc.add_page_break()
 
@@ -689,18 +711,20 @@ async def synthetiser(self, requete, contributions: list[AgentReponse]) -> Agent
             ("Cycle TDD —", "test rouge (échoue car le code n'existe pas) → code minimal → test vert → lint → commit. Un commit par tâche."),
             ("Pourquoi le rouge d'abord —", "un test qu'on n'a jamais vu échouer ne prouve rien. Le rouge garantit qu'il teste vraiment quelque chose."),
             ("Inférence et réseau mockés —", "aucun appel réel en CI. Les ports (InferencePort, MeteoPort, PrixPort, JournalPort, CachePort) sont remplacés par des doubles."),
-            ("Couverture ≥ 97 % —", "seuil CI (--cov-fail-under). Le socle a porté la suite à 508 tests verts."),
+            ("Couverture ≥ 97 % —", "seuil CI (--cov-fail-under). La suite compte 605 tests verts."),
             ("Lint ruff —", "format + check ; les imports triés ; aucune exception trop large non justifiée."),
         ],
     )
     doc.add_page_break()
 
     # --- Checklist d'activation ---
-    heading(doc, "Checklist d'activation (avant agents_enabled = ON)", level=1)
+    heading(doc, "État d'activation (agents activés en production)", level=1)
     para(
         doc,
-        "Le socle est sûr et dormant (flag OFF, V2 inchangée). La parité fonctionnelle "
-        "progresse ; état au 29/06/2026 :",
+        "La plateforme agentique est désormais ACTIVE en production (agents_enabled = "
+        "ON depuis la v0.6.41 ; détection de localité de l'agent Météo livrée en "
+        "v0.6.43). Le flag reste un interrupteur de repli instantané vers la V2. État "
+        "au 30/06/2026 :",
     )
     para(doc, "Fait (parité V2 dans l'orchestrateur) :", size=11, color=OR)
     bullets(
@@ -711,12 +735,19 @@ async def synthetiser(self, requete, contributions: list[AgentReponse]) -> Agent
             ("Vrai streaming token-par-token —", "Orchestrateur.traiter_stream streame les fragments de l'agent avec garde-fou de sortie phrase par phrase, puis enrichissement + événement final. Mutualisé dans application/flux.py. L'UI web a un affichage progressif identique à la V2."),
         ],
     )
-    para(doc, "Reste avant agents_enabled = ON :", size=11, color=OR)
+    para(doc, "Fait depuis l'activation :", size=11, color=OR)
+    bullets(
+        doc,
+        [
+            ("Sources météo/prix réelles —", "agent Météo branché sur Open-Meteo (géocodage + précipitations) ; agent Prix sur le prix bord-champ officiel du Conseil Café-Cacao, complété par le RAG (mise à marché, historique)."),
+            ("Détection de localité robuste —", "l'agent Météo détecte la commune sur tout le fil (module localites) et distingue zone cacaoyère / savane du Nord / commune absente, sans jamais fabriquer de météo (v0.6.43)."),
+        ],
+    )
+    para(doc, "Reste (évolutions) :", size=11, color=OR)
     bullets(
         doc,
         [
             ("Cache sémantique —", "seul l'exact-match est branché (le sémantique nécessite le port embeddings)."),
-            ("Sources météo/prix réelles —", "remplacer MeteoIndisponible/PrixIndisponible par des adaptateurs httpx (port mockable) avant que les agents Météo/Prix apportent une valeur."),
             ("Composition multi-agents —", "AgentReporting.synthetiser n'est pas encore branché dans l'orchestrateur (dispatch mono-agent). La synthèse fan-out/fan-in est une évolution V3+."),
         ],
     )
