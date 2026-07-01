@@ -15,7 +15,7 @@ SYSTEM_PROMPT = (
     "l'agent ANADER local.\n"
     "- N'invente JAMAIS une source, une date, un chiffre ni un nom d'organisme ; ne "
     "cite une source (CNRA, ANADER, Conseil du Café-Cacao, FAO, FIRCA) que si elle "
-    "figure dans le contexte ou si tu en es certain.\n"
+    "figure dans le contexte fourni.\n"
     "- Ne donne jamais toi-même un numéro de téléphone ni une adresse : demande la "
     "ville du producteur ; les coordonnées ANADER sont ajoutées automatiquement.\n"
     "- En conversation, garde le MÊME sujet et résous les références («le», «ça», «ce "
@@ -32,6 +32,17 @@ CONTEXTE_PROMPT = (
     "que les sources qui y figurent. S'ils ne suffisent pas pour répondre, dis que "
     "tu ne disposes pas de l'information et oriente vers l'ANADER — n'invente rien.\n\n"
     "{contexte}"
+)
+
+# Consigne de repli quand AUCUN extrait documentaire n'est disponible (ex. le RAG ne
+# trouve rien, ou une source factuelle est vide). Sans elle, le modèle répondrait
+# depuis ses poids sans ancrage — c'est le pattern du bug prix, généralisé. On force
+# donc l'anti-fabrication + redirection ANADER, comme le fait l'agent Prix sans cours.
+FALLBACK_SANS_CONTEXTE = (
+    "Aucun extrait de la base de connaissances OpenCacao n'est disponible pour cette "
+    "question. N'avance AUCUNE source, date ni chiffre que tu ne peux pas vérifier : "
+    "si l'information fiable te manque, dis-le simplement et oriente le producteur vers "
+    "son agent ANADER local."
 )
 
 
@@ -96,6 +107,6 @@ def build_messages(
     if contexte:
         contenu_user = f"{CONTEXTE_PROMPT.format(contexte=contexte)}\n\nQuestion : {question}"
     else:
-        contenu_user = question
+        contenu_user = f"{FALLBACK_SANS_CONTEXTE}\n\nQuestion : {question}"
     dialogue = _dialogue_alternant(historique or [], contenu_user)
     return [{"role": "system", "content": SYSTEM_PROMPT}, *dialogue]

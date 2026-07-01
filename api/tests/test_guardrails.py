@@ -205,3 +205,23 @@ def test_verifier_reponse_bloque_un_dosage(reponse: str) -> None:
 def test_verifier_reponse_laisse_passer_le_legitime(reponse: str) -> None:
     """Une réponse agronomique normale (sans dosage phyto) passe."""
     assert guardrails.verifier_reponse(reponse) is None
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Comment tailler mes caféiers ?",
+        "Quel engrais pour le café ?",
+        "Comment cultiver le cajou ?",
+    ],
+)
+def test_cafe_et_cajou_hors_filiere(question: str) -> None:
+    """Café (2e filière ivoirienne) et cajou (alias anacarde) : hors champ cacao -> refus."""
+    refus = guardrails.evaluer(question)
+    assert refus is not None and refus.categorie is CategorieRefus.HORS_FILIERE
+
+
+def test_conseil_cafe_cacao_pas_de_faux_positif() -> None:
+    """« Café » dans « Conseil du Café-Cacao » ne doit PAS refuser une question cacao."""
+    refus = guardrails.evaluer("Quel prix le Conseil du Café-Cacao fixe-t-il pour le cacao ?")
+    assert refus is None or refus.categorie is not CategorieRefus.HORS_FILIERE

@@ -1,0 +1,35 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: quantize-q3
+  namespace: opencacao
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: quantize
+          image: ghcr.io/ggml-org/llama.cpp:full
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              export LD_LIBRARY_PATH=/app
+              cd /models
+              echo "== quantize Q4_K_M -> Q3_K_M (allow-requantize) =="
+              rm -f opencacao-8b-Q3_K_M.gguf
+              /app/llama-quantize --allow-requantize \
+                opencacao-8b-Q4_K_M.gguf opencacao-8b-Q3_K_M.gguf Q3_K_M
+              ls -lh opencacao-8b-Q3_K_M.gguf
+          volumeMounts:
+            - name: modeles
+              mountPath: /models
+          resources:
+            requests: { cpu: "2", memory: "3Gi" }
+            limits: { cpu: "8", memory: "8Gi" }
+      volumes:
+        - name: modeles
+          hostPath:
+            path: /opt/opencacao/models
+            type: Directory

@@ -257,6 +257,13 @@ _TERMES_HORS_FILIERE = (
     "anacardes",
     "anacardier",
     "anacardiers",
+    "cajou",
+    "noix de cajou",
+    # Café : 2e filière ivoirienne, mais distincte du cacao -> redirigée vers l'ANADER.
+    # L'ancrage cacao (_TERMES_FILIERE) protège les mentions du « Conseil du Café-Cacao ».
+    "cafe",
+    "cafeier",
+    "cafeiers",
     "vivrier",
     "vivriere",
     "vivrieres",

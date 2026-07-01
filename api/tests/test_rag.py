@@ -253,7 +253,11 @@ def test_build_messages_sans_contexte() -> None:
 
     messages = build_messages("Quand récolter ?")
     assert len(messages) == 2
-    assert messages[-1] == {"role": "user", "content": "Quand récolter ?"}
+    assert messages[-1]["role"] == "user"
+    # Sans contexte, la question est accompagnée de la consigne anti-fabrication
+    # (souveraineté : n'invente rien, oriente ANADER).
+    assert "Quand récolter ?" in messages[-1]["content"]
+    assert "anader" in messages[-1]["content"].lower()
 
 
 def test_build_messages_avec_contexte() -> None:

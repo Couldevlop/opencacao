@@ -1,0 +1,34 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bench-q3
+  namespace: opencacao
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: bench
+          image: ghcr.io/ggml-org/llama.cpp:full
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              export LD_LIBRARY_PATH=/app
+              cd /models
+              for m in opencacao-8b-Q4_K_M.gguf opencacao-8b-Q3_K_M.gguf; do
+                echo "== $m =="
+                /app/llama-bench -m "$m" -t 12 -p 256 -n 128
+              done
+          volumeMounts:
+            - name: modeles
+              mountPath: /models
+          resources:
+            requests: { cpu: "2", memory: "3Gi" }
+            limits: { cpu: "12", memory: "9Gi" }
+      volumes:
+        - name: modeles
+          hostPath:
+            path: /opt/opencacao/models
+            type: Directory
