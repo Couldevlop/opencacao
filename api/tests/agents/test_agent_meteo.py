@@ -142,3 +142,51 @@ async def test_previsions_vides_loggue_un_warning() -> None:
     assert any(
         e["event"] == "meteo_previsions_vides" and e.get("localite") == "Daloa" for e in logs
     )
+
+
+@pytest.mark.asyncio
+async def test_reengage_meteo_sur_reponse_localite_apres_clarification() -> None:
+    # Multi-tours : après « va-t-il pleuvoir ? » -> « quelle commune ? », répondre juste
+    # « Daloa » doit RE-router vers Météo (sinon la prévision fraîche est perdue au RAG).
+    agent = AgentMeteo(_InferenceFactice(), OutilMeteo(_MeteoFactice()))
+    requete = AgentRequete(
+        "Daloa",
+        Langue.FR,
+        "Daloa",
+        "ip",
+        [
+            {"role": "user", "content": "Va-t-il pleuvoir cette semaine pour traiter ?"},
+            {"role": "assistant", "content": "Dans quelle commune vous trouvez-vous ?"},
+        ],
+    )
+    assert await agent.peut_traiter(requete) >= 0.5
+
+
+@pytest.mark.asyncio
+async def test_pas_de_reengagement_sans_historique_climatique() -> None:
+    # Réponse courte avec localité MAIS aucun contexte climatique dans l'historique : Météo
+    # ne doit PAS s'auto-engager (ce serait du sur-routage).
+    agent = AgentMeteo(_InferenceFactice(), OutilMeteo(_MeteoFactice()))
+    requete = AgentRequete(
+        "Daloa",
+        Langue.FR,
+        "Daloa",
+        "ip",
+        [{"role": "user", "content": "Quelle variété de cacao planter ?"}],
+    )
+    assert await agent.peut_traiter(requete) == 0.0
+
+
+@pytest.mark.asyncio
+async def test_pas_de_reengagement_sur_nouvelle_question_longue() -> None:
+    # Un tour long (vraie nouvelle question) même avec localité + historique climatique ne
+    # ré-engage PAS Météo (ce n'est pas une simple réponse de localité).
+    agent = AgentMeteo(_InferenceFactice(), OutilMeteo(_MeteoFactice()))
+    requete = AgentRequete(
+        "à Daloa comment lutter contre les mirides du cacaoyer ?",
+        Langue.FR,
+        "à Daloa comment lutter contre les mirides du cacaoyer ?",
+        "ip",
+        [{"role": "user", "content": "Va-t-il pleuvoir demain ?"}],
+    )
+    assert await agent.peut_traiter(requete) == 0.0

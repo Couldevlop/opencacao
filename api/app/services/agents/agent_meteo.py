@@ -99,11 +99,18 @@ class AgentMeteo(AgentBase):
         self._outil = outil
 
     async def peut_traiter(self, requete: AgentRequete) -> float:
-        """Score élevé si la question évoque le climat (mot entier)."""
+        """Score élevé si la question évoque le climat (mot entier).
+
+        Suivi multi-tours : une réponse COURTE fournissant une localité, après un tour
+        climatique, ré-engage la météo — sinon la prévision fraîche pour cette ville
+        partirait au RAG (la localité seule n'a pas de mot-clé climat) et serait perdue.
+        """
         touches = compter_mots_cles(requete.fil_ancre, self.mots_cles)
-        if touches == 0:
-            return 0.0
-        return min(0.7 + 0.1 * touches, 1.0)
+        if touches > 0:
+            return min(0.7 + 0.1 * touches, 1.0)
+        if _est_reponse_localite(requete.fil_ancre) and _historique_climatique(requete):
+            return 0.6
+        return 0.0
 
     async def _contexte(self, requete: AgentRequete) -> str | None:
         """Construit le contexte selon la localité détectée sur tout le fil."""
@@ -129,6 +136,23 @@ def _fil_complet(requete: AgentRequete) -> str:
     """
     tours = [t.get("content", "") for t in requete.historique if t.get("role") == "user"]
     return " ".join([*tours, requete.fil_ancre])
+
+
+def _est_reponse_localite(texte: str) -> bool:
+    """Vrai si le texte est une réponse COURTE fournissant une localité connue.
+
+    Cible « à Daloa » / « Daloa » (réponse à « quelle commune ? »), pas une nouvelle
+    question complète : on borne le nombre de mots pour éviter le sur-routage.
+    """
+    if len(texte.split()) > 5:
+        return False
+    return localites.detecter(texte) is not None or localites.detecter_nord(texte) is not None
+
+
+def _historique_climatique(requete: AgentRequete) -> bool:
+    """Vrai si un tour utilisateur antérieur évoquait le climat (intention météo)."""
+    tours = " ".join(t.get("content", "") for t in requete.historique if t.get("role") == "user")
+    return compter_mots_cles(tours, _MOTS_METEO) > 0
 
 
 def _formater_previsions(localite: str, previsions: dict[str, object]) -> str | None:
