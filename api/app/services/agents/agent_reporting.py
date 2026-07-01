@@ -68,11 +68,23 @@ class AgentReporting(AgentBase):
 
 
 def _formater_contributions(contributions: list[AgentReponse]) -> str | None:
-    """Met en forme les contributions en contexte de synthèse, ou None si vide."""
+    """Met en forme les contributions en contexte de synthèse, ou None si vide.
+
+    Cadrage explicite (souveraineté) : ces entrées sont des ANALYSES d'agents (déjà
+    fondées sur les sources officielles), pas des documents sources bruts. On interdit
+    au modèle d'y ajouter une source/date/chiffre non présent — sinon, enveloppées par
+    le CONTEXTE_PROMPT (« extraits de la base officielle »), le modèle pourrait
+    ré-attribuer une paraphrase à une source officielle qu'il n'a pas vue.
+    """
     if not contributions:
         return None
-    lignes = [f"[{c.agent}] {c.texte}" for c in contributions]
-    return "Éléments à synthétiser :\n" + "\n".join(lignes)
+    lignes = [f"[agent {c.agent}] {c.texte}" for c in contributions]
+    return (
+        "Analyses des agents spécialisés OpenCacao à synthétiser en une réponse unique "
+        "et cohérente pour le producteur. Ce sont des analyses d'agents (déjà fondées "
+        "sur les sources officielles), pas de nouveaux documents : n'ajoute AUCUNE "
+        "source, date ni chiffre qui ne figure pas ci-dessous.\n\n" + "\n".join(lignes)
+    )
 
 
 def _agreger_sources(contributions: list[AgentReponse]) -> list[str]:

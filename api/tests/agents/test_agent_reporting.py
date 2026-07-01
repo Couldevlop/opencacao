@@ -50,3 +50,25 @@ async def test_synthetiser_fusionne_les_contributions() -> None:
     assert "meteo" in reponse.sources and "CCC" in reponse.sources
     # Confiance prudente : la plus basse des contributions.
     assert reponse.confiance is Confiance.MOYENNE
+
+
+@pytest.mark.asyncio
+async def test_synthetiser_cadre_les_contributions_comme_analyses() -> None:
+    # Souveraineté : les contributions sont cadrées comme des analyses d'agents (pas des
+    # sources officielles brutes) et le modèle ne doit pas y ajouter de source non fournie.
+    inf = _InferenceFactice()
+    agent = AgentReporting(inf)
+    contributions = [AgentReponse("Pluie demain.", ["meteo"], Confiance.MOYENNE, "meteo")]
+    await agent.synthetiser(_requete(), contributions)
+    ctx = (inf.contexte_recu or "").lower()
+    assert "analyses" in ctx and "agents" in ctx
+    assert "n'ajoute" in ctx and "aucune source" in ctx
+
+
+@pytest.mark.asyncio
+async def test_synthetiser_sans_contribution_degrade_proprement() -> None:
+    # Aucune contribution : pas de plantage, confiance faible (rien à synthétiser).
+    agent = AgentReporting(_InferenceFactice())
+    reponse = await agent.synthetiser(_requete(), [])
+    assert reponse.agent == "reporting"
+    assert reponse.confiance is Confiance.FAIBLE
