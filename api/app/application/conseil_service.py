@@ -223,7 +223,7 @@ class ConseilService:
                 question, langue, self._enrichir_contact(conseil, texte_conv)
             )
 
-        sources = postprocess.extraire_sources(texte)
+        sources = postprocess.extraire_sources(texte, contexte)
         conseil = Conseil(
             reponse=texte,
             confiance=postprocess.estimer_confiance(sources),
@@ -268,7 +268,7 @@ class ConseilService:
         if guardrails.verifier_reponse(texte) is not None:
             return False
 
-        sources = postprocess.extraire_sources(texte)
+        sources = postprocess.extraire_sources(texte, contexte)
         conseil = Conseil(
             reponse=texte,
             confiance=postprocess.estimer_confiance(sources),
