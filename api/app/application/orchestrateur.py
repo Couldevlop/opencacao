@@ -254,8 +254,12 @@ class Orchestrateur:
             raise RateLimitDepasse
 
         # 6. Dispatch en flux + garde-fou de sortie phrase par phrase.
+        # Contexte calculé une fois : passé au stream ET réutilisé pour ANCRER les
+        # sources après coup (souveraineté : confiance non gonflée par une citation
+        # de mémoire non ancrée).
+        contexte = await agent.contexte_pour(requete)
         filtre = flux.FiltreSortie()
-        async for phrase in filtre.diffuser(agent.traiter_stream(requete)):
+        async for phrase in filtre.diffuser(agent.traiter_stream(requete, contexte)):
             yield {"type": "token", "text": phrase}
 
         if filtre.compromis:
@@ -278,7 +282,7 @@ class Orchestrateur:
 
         # 7. Post-traitement : sources, confiance, cache, enrichissement, événement final.
         texte = filtre.texte
-        sources = postprocess.extraire_sources(texte)
+        sources = postprocess.extraire_sources(texte, contexte)
         confiance = postprocess.estimer_confiance(sources)
         base = Conseil(texte, confiance, sources, redirection_anader=False)
         if not historique:
