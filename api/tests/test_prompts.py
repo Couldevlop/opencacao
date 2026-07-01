@@ -9,7 +9,7 @@ def test_tour_unique() -> None:
     """Sans historique : system + user uniquement."""
     msgs = build_messages("Quand récolter ?")
     assert [m["role"] for m in msgs] == ["system", "user"]
-    assert msgs[-1]["content"] == "Quand récolter ?"
+    assert "Quand récolter ?" in msgs[-1]["content"]
 
 
 def test_multitours_insere_l_historique() -> None:
@@ -21,7 +21,7 @@ def test_multitours_insere_l_historique() -> None:
     msgs = build_messages("Et le séchage ?", None, historique)
     assert [m["role"] for m in msgs] == ["system", "user", "assistant", "user"]
     assert msgs[1]["content"] == "Comment récolter ?"
-    assert msgs[-1]["content"] == "Et le séchage ?"
+    assert "Et le séchage ?" in msgs[-1]["content"]
 
 
 def test_historique_filtre_les_roles_invalides() -> None:
@@ -38,7 +38,24 @@ def test_historique_filtre_les_roles_invalides() -> None:
     ]
     msgs = build_messages("question", None, historique)
     assert [m["role"] for m in msgs] == ["system", "user"]
-    assert msgs[-1]["content"] == "question"
+    assert "question" in msgs[-1]["content"]
+
+
+def test_sans_contexte_injecte_consigne_anti_fabrication() -> None:
+    # Souveraineté : sans extrait RAG, le message doit porter une consigne explicite
+    # « n'invente rien, oriente ANADER » (généralise le correctif de l'agent Prix).
+    msgs = build_messages("Quelle densité de plantation ?")
+    contenu = msgs[-1]["content"].lower()
+    assert "anader" in contenu
+    assert "invente" in contenu or "vérifier" in contenu
+    # La question reste présente.
+    assert "densité de plantation" in msgs[-1]["content"]
+
+
+def test_system_prompt_sans_clause_certain() -> None:
+    # Faille de grounding retirée : le modèle ne cite une source que si elle est dans
+    # le contexte fourni — jamais « parce qu'il en est certain » (source de mémoire).
+    assert "ou si tu en es certain" not in SYSTEM_PROMPT
 
 
 def test_system_prompt_consigne_brievete_ferme() -> None:
