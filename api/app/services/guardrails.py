@@ -89,6 +89,15 @@ _TERMES_PHYTO = (
     "produit chimique",
     "produit de traitement",
     "traitement chimique",
+    # Intrants (bio inclus) dosables : sans eux, une question de dose « X g/l de
+    # bouillie bordelaise » passait entre les mailles (aucun terme phyto détecté).
+    # La règle exige toujours un dosage EN PLUS -> pas de faux positif sur une simple
+    # mention (« carence en cuivre »).
+    "bouillie bordelaise",
+    "cuivre",
+    "soufre",
+    "neem",
+    "purin",
 )
 
 _TERMES_DOSAGE = (
