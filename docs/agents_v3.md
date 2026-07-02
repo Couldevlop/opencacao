@@ -176,7 +176,7 @@ Jusqu'ici un seul agent répond (routage *vers un* agent). L'agent Reporting **c
 ### Les décisions
 - **Construit en dernier** : il *dépend* des autres. Il illustre qu'un agent peut consommer le travail d'agents pairs.
 - **Agrégation prudente** : les sources des contributions sont unionnées sans doublon ; la confiance retenue est **la plus basse** des contributions (on ne surestime jamais une synthèse).
-- **Fusion séquentielle simple** : la généralisation *fan-out / fan-in* (exécution parallèle pilotée par l'orchestrateur) est une évolution V3+ explicitement hors socle.
+- **Fusion séquentielle simple** : le *fan-out / fan-in* est désormais **piloté par l'orchestrateur** (voir checklist, livré le 02/07) — contributions bornées à `MAX_CONTRIBUTEURS`, exécutées séquentiellement (l'inférence CPU traite une requête à la fois ; paralléliser ne gagnerait rien). L'exécution parallèle et le streaming incrémental de la synthèse restent des évolutions ultérieures.
 
 ### Modèle mental
 > Le routage choisit QUI parle ; la synthèse fait PARLER ENSEMBLE. C'est la bascule du mono-agent vers le multi-agents.
@@ -230,7 +230,7 @@ Le socle est **sûr et dormant** (flag OFF, V2 inchangée). La parité fonctionn
 **⏳ Reste avant `agents_enabled=ON`**
 - **Cache sémantique** : seul l'exact-match est branché (le sémantique nécessite le port embeddings).
 - **Sources météo/prix réelles** : remplacer `MeteoIndisponible`/`PrixIndisponible` par des adaptateurs httpx (port mockable) avant que les agents Météo/Prix apportent une valeur.
-- **Composition multi-agents** : `AgentReporting.synthetiser` n'est pas encore branché dans l'orchestrateur (dispatch mono-agent). La synthèse multi-agents (fan-out/fan-in) est une évolution V3+.
+- ~~**Composition multi-agents**~~ **LIVRÉ (02/07)** : `AgentReporting.synthetiser` est branché dans l'orchestrateur. Déclencheur = présence d'un agent **synthétiseur** (duck-typing `hasattr(agent, "synthetiser")`) dans le classement de routage ; les autres agents classés produisent des contributions (fan-out, plafonné à `MAX_CONTRIBUTEURS=2` pour borner la latence CPU), le synthétiseur les fusionne (fan-in). Séquentiel (inférence CPU mono-requête). Le **streaming incrémental** de la synthèse (token-par-token multi-agents) reste une évolution ultérieure — pour l'instant la synthèse est émise en bloc.
 
 > Le routage déterministe reste volontairement conservateur : sans signal fort (mot climatique/marché en **mot entier**), on retombe sur le RAG (généraliste ancré). Un routage sémantique (embeddings) est la prochaine étape pour lever cette prudence.
 

@@ -305,3 +305,115 @@ async def test_traiter_stream_clarification_emise_en_bloc() -> None:
     texte = "".join(e["text"] for e in evenements if e["type"] == "token")
     assert "?" in texte  # questions de clarification
     assert "ne devrait pas répondre" not in texte
+
+
+class _AgentSynthetiseur:
+    """Espion : agent de synthèse (expose synthetiser) enregistrant ses contributions."""
+
+    def __init__(self, nom: str = "reporting", score: float = 0.8, texte: str = "synthèse") -> None:
+        self.nom = nom
+        self.description = nom
+        self.mots_cles = (nom,)
+        self._score = score
+        self._texte = texte
+        self.contributions_recues: list[AgentReponse] | None = None
+
+    async def peut_traiter(self, requete: AgentRequete) -> float:
+        return self._score
+
+    async def traiter(self, requete: AgentRequete) -> AgentReponse:
+        # Ne doit PAS être appelé en composition (le synthétiseur fusionne, il ne répond pas seul).
+        return AgentReponse("mono " + self._texte, [], Confiance.MOYENNE, self.nom)
+
+    async def synthetiser(
+        self, requete: AgentRequete, contributions: list[AgentReponse]
+    ) -> AgentReponse:
+        self.contributions_recues = contributions
+        sources: list[str] = []
+        for contribution in contributions:
+            for source in contribution.sources:
+                if source not in sources:
+                    sources.append(source)
+        return AgentReponse(self._texte, sources, Confiance.MOYENNE, self.nom)
+
+
+@pytest.mark.asyncio
+async def test_composition_multi_agents_declenchee() -> None:
+    # Un synthétiseur présent dans le classement → fan-out vers les autres, puis synthèse.
+    rag = _AgentEspion("rag", 0.4, "analyse RAG")
+    meteo = _AgentEspion("meteo", 0.9, "analyse météo")
+    reporting = _AgentSynthetiseur("reporting", 0.8, "synthèse décisionnelle")
+    orch = _orchestrateur(rag, meteo, reporting)
+    conseil = await orch.traiter("comment tailler le cacaoyer ?", Langue.FR, "ip")
+    assert conseil.reponse == "synthèse décisionnelle"
+    noms = [c.agent for c in reporting.contributions_recues or []]
+    assert "meteo" in noms and "rag" in noms
+    assert "reporting" not in noms  # le synthétiseur n'est pas sa propre contribution
+    assert meteo.recue is not None and rag.recue is not None  # contributeurs sollicités
+    assert conseil.sources == ["CNRA"]  # sources agrégées des contributions
+
+
+@pytest.mark.asyncio
+async def test_composition_plafonne_les_contributeurs() -> None:
+    rag = _AgentEspion("rag", 0.4, "a")
+    meteo = _AgentEspion("meteo", 0.9, "b")
+    prix = _AgentEspion("prix", 0.85, "c")
+    reglement = _AgentEspion("reglementation", 0.8, "d")
+    reporting = _AgentSynthetiseur("reporting", 0.7, "synthèse")
+    orch = _orchestrateur(rag, meteo, prix, reglement, reporting)
+    await orch.traiter("comment tailler le cacaoyer ?", Langue.FR, "ip")
+    contributions = reporting.contributions_recues or []
+    assert len(contributions) == 2  # plafond MAX_CONTRIBUTEURS
+    assert {c.agent for c in contributions} == {"meteo", "prix"}  # les deux mieux classés
+
+
+@pytest.mark.asyncio
+async def test_composition_repli_si_synthetiseur_seul() -> None:
+    # Aucun autre agent classé → l'agent de repli fournit l'unique contribution.
+    reporting = _AgentSynthetiseur("reporting", 0.8, "synthèse")
+    rag = _AgentEspion("rag", 0.0, "repli RAG")  # score 0 → hors classement
+    orch = _orchestrateur(rag, reporting, defaut="rag")
+    conseil = await orch.traiter("comment tailler le cacaoyer ?", Langue.FR, "ip")
+    assert conseil.reponse == "synthèse"
+    assert [c.agent for c in reporting.contributions_recues or []] == ["rag"]
+    assert rag.recue is not None
+
+
+@pytest.mark.asyncio
+async def test_composition_garde_fou_sortie(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Le garde-fou de SORTIE s'applique au texte SYNTHÉTISÉ (défense en profondeur).
+    from app.services import guardrails
+
+    monkeypatch.setattr(guardrails, "verifier_reponse", lambda texte: object())
+    rag = _AgentEspion("rag", 0.4, "analyse")
+    reporting = _AgentSynthetiseur("reporting", 0.8, "synthèse compromise")
+    orch = _orchestrateur(rag, reporting)
+    conseil = await orch.traiter("comment tailler le cacaoyer ?", Langue.FR, "ip")
+    assert conseil.redirection_anader is True
+    assert guardrails.REFUS_PHYTO in conseil.reponse
+    assert "synthèse compromise" not in conseil.reponse
+
+
+@pytest.mark.asyncio
+async def test_composition_mono_agent_preserve() -> None:
+    # Aucun synthétiseur → dispatch mono-agent inchangé.
+    rag = _AgentEspion("rag", 0.4, "analyse RAG")
+    meteo = _AgentEspion("meteo", 0.9, "analyse météo")
+    orch = _orchestrateur(rag, meteo)
+    conseil = await orch.traiter("comment tailler le cacaoyer ?", Langue.FR, "ip")
+    assert conseil.reponse == "analyse météo"
+    assert rag.recue is None  # RAG non sollicité (mono-agent)
+
+
+@pytest.mark.asyncio
+async def test_traiter_stream_composition_emet_synthese() -> None:
+    rag = _AgentEspion("rag", 0.4, "analyse RAG")
+    reporting = _AgentSynthetiseur("reporting", 0.8, "synthèse décisionnelle")
+    orch = _orchestrateur(rag, reporting)
+    evenements = [
+        e async for e in orch.traiter_stream("comment tailler le cacaoyer ?", Langue.FR, "ip")
+    ]
+    assert evenements[-1]["type"] == "done"
+    texte = "".join(e["text"] for e in evenements if e["type"] == "token")
+    assert "synthèse décisionnelle" in texte
+    assert [c.agent for c in reporting.contributions_recues or []] == ["rag"]
