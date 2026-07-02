@@ -6,6 +6,8 @@ agents (RAG, Météo, Prix) en un rapport décisionnel cohérent.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
 from app.domain.agents import AgentReponse, AgentRequete
 from app.domain.ports import InferencePort
 from app.models.domain import Confiance
@@ -65,6 +67,34 @@ class AgentReporting(AgentBase):
             confiance=_confiance_min(contributions) or base.confiance,
             agent=self.nom,
         )
+
+    async def synthetiser_stream(
+        self, requete: AgentRequete, contributions: list[AgentReponse]
+    ) -> AsyncIterator[str]:
+        """Streame la synthèse fragment par fragment (chemin flux SSE).
+
+        Variante streaming de :meth:`synthetiser` : le texte est diffusé au fil de
+        l'inférence (l'orchestrateur émet des événements de progression pendant le
+        fan-out puis relaie ces fragments), tandis que les sources et la confiance —
+        qui dérivent des contributions, pas du texte généré — sont fournies par
+        :meth:`agreger`. Cela évite le time-out edge Cloudflare : le premier octet
+        part vite et le flux reste vivant.
+        """
+        contexte = _formater_contributions(contributions)
+        async for fragment in self._inference.generer_stream(
+            requete.question, contexte=contexte, historique=requete.historique
+        ):
+            yield fragment
+
+    @staticmethod
+    def agreger(contributions: list[AgentReponse]) -> tuple[list[str], Confiance]:
+        """Métadonnées de synthèse (sources unionnées, confiance la plus basse).
+
+        Dérivées des contributions seules (aucune génération) : utilisable en flux
+        pour construire la réponse finale sans re-générer. La prudence est conservée —
+        union des sources sans doublon, confiance minimale des contributions.
+        """
+        return _agreger_sources(contributions), _confiance_min(contributions) or Confiance.MOYENNE
 
 
 def _formater_contributions(contributions: list[AgentReponse]) -> str | None:
