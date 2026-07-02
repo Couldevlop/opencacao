@@ -89,7 +89,7 @@ def test_conseil_service_sans_cache_semantique(monkeypatch) -> None:
     """Flag OFF : le service est construit sans service d'embeddings (exact-match seul)."""
     _patch_settings(monkeypatch, semantic_cache_enabled=False)
     service = api_deps.get_conseil_service(_FakeAppRequest(_state()))
-    assert service._embeddings is None
+    assert service._semantique._embeddings is None
 
 
 def test_conseil_service_avec_cache_semantique(monkeypatch) -> None:
@@ -100,5 +100,5 @@ def test_conseil_service_avec_cache_semantique(monkeypatch) -> None:
     )
     _patch_settings(monkeypatch, semantic_cache_enabled=True, semantic_cache_threshold=0.9)
     service = api_deps.get_conseil_service(_FakeAppRequest(state))
-    assert service._embeddings is emb
-    assert service._seuil_semantique == 0.9
+    assert service._semantique._embeddings is emb
+    assert service._semantique._seuil == 0.9

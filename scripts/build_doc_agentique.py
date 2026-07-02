@@ -615,7 +615,7 @@ async def _contexte(self, requete) -> str | None:
         decisions=[
             ("Construit en dernier —", "il dépend des autres : il illustre qu'un agent peut consommer le travail d'agents pairs."),
             ("Agrégation prudente —", "les sources des contributions sont unionnées sans doublon ; la confiance retenue est la plus basse (prudence)."),
-            ("Fusion séquentielle simple —", "la généralisation fan-out/fan-in (exécution parallèle pilotée par l'orchestrateur) est une évolution V3+ explicitement hors socle."),
+            ("Fan-out / fan-in branché (02/07) —", "l'orchestrateur pilote désormais la composition : un agent synthétiseur présent au classement déclenche le fan-out (contributions plafonnées à MAX_CONTRIBUTEURS=2) puis le fan-in. Séquentiel (inférence CPU mono-requête). Réservé au flux /chat/stream avec premier octet immédiat (voir checklist). L'exécution parallèle reste une évolution ultérieure."),
         ],
         mental="Le routage choisit QUI parle ; la synthèse fait PARLER ENSEMBLE. C'est la bascule du mono-agent vers le multi-agents.",
         code_blocks=[
@@ -743,12 +743,12 @@ async def synthetiser(self, requete, contributions: list[AgentReponse]) -> Agent
             ("Détection de localité robuste —", "l'agent Météo détecte la commune sur tout le fil (module localites) et distingue zone cacaoyère / savane du Nord / commune absente, sans jamais fabriquer de météo (v0.6.43)."),
         ],
     )
-    para(doc, "Reste (évolutions) :", size=11, color=OR)
+    para(doc, "Fait depuis (02/07) :", size=11, color=OR)
     bullets(
         doc,
         [
-            ("Cache sémantique —", "seul l'exact-match est branché (le sémantique nécessite le port embeddings)."),
-            ("Composition multi-agents —", "AgentReporting.synthetiser n'est pas encore branché dans l'orchestrateur (dispatch mono-agent). La synthèse fan-out/fan-in est une évolution V3+."),
+            ("Composition multi-agents —", "AgentReporting.synthetiser branché dans l'orchestrateur. Déclencheur : présence d'un synthétiseur (hasattr synthetiser_stream) au classement → fan-out (plafonné) + fan-in. Réservé au flux /chat/stream : une composition = ~3 générations CPU (~3 min) dépasserait le time-out edge Cloudflare (~100 s) → 524 sur une réponse synchrone (vécu et corrigé). Le flux émet un événement « progress » immédiat (premier octet < 1 s, ignoré par le front) + heartbeat par contribution, puis streame la synthèse token par token (synthetiser_stream + agreger). En synchrone /chat, repli mono-agent."),
+            ("Cache sémantique dans l'orchestrateur —", "branché (parité V2) : après un miss exact (tour unique), on vectorise la question et on sert un voisin proche (cosinus >= seuil) validé par un garde-fou lexical. Logique extraite dans application/cache_semantique.py (CacheSemantique), PARTAGÉE par ConseilService (V2) et l'orchestrateur (V3) — une seule source de vérité. Inerte si le service d'embeddings est absent."),
         ],
     )
     quote(

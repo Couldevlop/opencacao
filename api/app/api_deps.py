@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import Depends, Request
 
 from app.application.auth_service import AuthService
+from app.application.cache_semantique import CacheSemantique
 from app.application.conseil_agentique import ConseilAgentique
 from app.application.conseil_service import ConseilService
 from app.application.dialogue_session import DialogueSessionService
@@ -75,6 +76,7 @@ def _construire_orchestrateur(
     cache: object,
     journal: object,
     rag: object,
+    cache_semantique: CacheSemantique | None = None,
 ) -> Orchestrateur:
     """Composition racine de la plateforme agentique (testable sans FastAPI).
 
@@ -89,6 +91,7 @@ def _construire_orchestrateur(
         cache: Port de cache/rate-limit.
         journal: Port de journalisation.
         rag: Récupérateur RAG, ou None.
+        cache_semantique: Couche de cache sémantique (paraphrases), ou None → exact seul.
 
     Returns:
         Un orchestrateur prêt à traiter, avec rag/meteo/prix/reglementation/normes/
@@ -117,14 +120,37 @@ def _construire_orchestrateur(
     registre.enregistrer(AgentNormes(inference, rag=rag))  # type: ignore[arg-type]
     registre.enregistrer(AgentReporting(inference))  # type: ignore[arg-type]
     routeur = RouteurIntention(registre)
-    return Orchestrateur(routeur, journal, cache, agent_defaut="rag")  # type: ignore[arg-type]
+    return Orchestrateur(
+        routeur,
+        journal,  # type: ignore[arg-type]
+        cache,  # type: ignore[arg-type]
+        agent_defaut="rag",
+        cache_semantique=cache_semantique,
+    )
 
 
 def get_orchestrateur(request: Request) -> Orchestrateur:
-    """Construit l'orchestrateur depuis les ports en état d'application."""
+    """Construit l'orchestrateur depuis les ports en état d'application.
+
+    Le cache sémantique (parité V2) n'est branché que si activé en configuration ET si
+    le service d'embeddings est disponible (partagé avec le RAG) ; sinon, une couche
+    inerte laisse l'orchestrateur sur le cache exact-match seul.
+    """
+    settings = get_settings()
+    cache = request.app.state.cache
+    embeddings = (
+        getattr(request.app.state, "embeddings", None) if settings.semantic_cache_enabled else None
+    )
+    cache_semantique = CacheSemantique(
+        cache,
+        embeddings,
+        seuil=settings.semantic_cache_threshold,
+        seuil_lexical=settings.semantic_cache_lexical_min,
+    )
     return _construire_orchestrateur(
         inference=request.app.state.inference,
-        cache=request.app.state.cache,
+        cache=cache,
+        cache_semantique=cache_semantique,
         journal=request.app.state.journal,
         rag=getattr(request.app.state, "rag", None),
     )
