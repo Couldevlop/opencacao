@@ -748,13 +748,7 @@ async def synthetiser(self, requete, contributions: list[AgentReponse]) -> Agent
         doc,
         [
             ("Composition multi-agents —", "AgentReporting.synthetiser branché dans l'orchestrateur. Déclencheur : présence d'un synthétiseur (hasattr synthetiser_stream) au classement → fan-out (plafonné) + fan-in. Réservé au flux /chat/stream : une composition = ~3 générations CPU (~3 min) dépasserait le time-out edge Cloudflare (~100 s) → 524 sur une réponse synchrone (vécu et corrigé). Le flux émet un événement « progress » immédiat (premier octet < 1 s, ignoré par le front) + heartbeat par contribution, puis streame la synthèse token par token (synthetiser_stream + agreger). En synchrone /chat, repli mono-agent."),
-        ],
-    )
-    para(doc, "Reste (évolutions) :", size=11, color=OR)
-    bullets(
-        doc,
-        [
-            ("Cache sémantique dans l'orchestrateur —", "seul l'exact-match est branché côté V3 (le sémantique nécessite le port embeddings)."),
+            ("Cache sémantique dans l'orchestrateur —", "branché (parité V2) : après un miss exact (tour unique), on vectorise la question et on sert un voisin proche (cosinus >= seuil) validé par un garde-fou lexical. Logique extraite dans application/cache_semantique.py (CacheSemantique), PARTAGÉE par ConseilService (V2) et l'orchestrateur (V3) — une seule source de vérité. Inerte si le service d'embeddings est absent."),
         ],
     )
     quote(

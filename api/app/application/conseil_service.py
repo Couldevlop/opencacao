@@ -12,6 +12,7 @@ from collections.abc import AsyncIterator
 from dataclasses import replace
 
 from app.application import conseil_commun
+from app.application.cache_semantique import CacheSemantique
 from app.application.contexte import fil_ancre as _fil_ancre
 from app.application.contexte import texte_conversation as _texte_conversation
 from app.core.logging import get_logger
@@ -21,7 +22,7 @@ from app.domain.ports import CachePort, EmbeddingsPort, InferencePort, JournalPo
 from app.models.chat import DISCLAIMER
 from app.models.domain import Confiance, Langue
 from app.services import clarification, guardrails, postprocess
-from app.services.rag import RagRecuperateur, couverture_lexicale
+from app.services.rag import RagRecuperateur
 
 logger = get_logger(__name__)
 
@@ -61,45 +62,11 @@ class ConseilService:
         self._cache = cache
         self._journal = journal
         self._rag = rag
-        self._embeddings = embeddings
-        self._seuil_semantique = semantic_cache_threshold
-        self._seuil_lexical = semantic_cache_lexical_min
-
-    async def _vecteur_question(
-        self, question: str, historique: list[dict[str, str]]
-    ) -> list[float] | None:
-        """Vectorise la question pour le cache sémantique (tour unique uniquement).
-
-        Retourne None si la couche sémantique est désactivée, si on est en
-        multi-tours (le cache ne sert pas en dialogue) ou si l'embedding échoue.
-        """
-        if self._embeddings is None or historique:
-            return None
-        vecteurs = await self._embeddings.embed([question])
-        if not vecteurs:
-            return None
-        return vecteurs[0]
-
-    async def _hit_semantique(
-        self, question: str, langue: str, embedding: list[float] | None
-    ) -> dict | None:
-        """Réponse cachée sémantiquement proche ET lexicalement compatible, ou None.
-
-        Deux conditions : similarité cosinus >= seuil (assurée par ``get_semantic``)
-        ET garde-fou lexical — la question entrante doit reprendre les mots-clés de la
-        question cachée. Ce dernier bloque un voisin sémantique au qualificatif
-        divergent (« cacaoyer adulte » vs « cacaoyer jeune »), dont la réponse diffère.
-        """
-        if embedding is None:
-            return None
-        trouve = await self._cache.get_semantic(langue, embedding, self._seuil_semantique)
-        if trouve is None:
-            return None
-        payload, question_cachee = trouve
-        if couverture_lexicale(question_cachee, question) < self._seuil_lexical:
-            logger.info("cache_semantique_rejet_lexical")
-            return None
-        return json.loads(payload)
+        # Couche sémantique mutualisée avec l'orchestrateur V3 (une seule politique de
+        # cache par similarité). Inerte si ``embeddings`` est None (exact-match seul).
+        self._semantique = CacheSemantique(
+            cache, embeddings, semantic_cache_threshold, semantic_cache_lexical_min
+        )
 
     @staticmethod
     def _conseil_depuis_paquet(donnees: dict) -> Conseil:
@@ -195,8 +162,8 @@ class ConseilService:
                 return await self._journaliser(
                     question, langue, self._enrichir_contact(conseil, texte_conv)
                 )
-            embedding = await self._vecteur_question(question, historique)
-            paquet = await self._hit_semantique(question, langue.value, embedding)
+            embedding = await self._semantique.vecteur(question, historique)
+            paquet = await self._semantique.hit(question, langue.value, embedding)
             if paquet is not None:
                 logger.info("cache_semantique_hit")
                 conseil = self._conseil_depuis_paquet(paquet)
@@ -233,7 +200,7 @@ class ConseilService:
         if not historique:
             await self._cache.set_cached(question, langue.value, _serialiser(conseil))
             if embedding is not None:
-                await self._cache.index_semantic(question, langue.value, embedding)
+                await self._semantique.indexer(question, langue.value, embedding)
         return await self._journaliser(
             question, langue, self._enrichir_contact(conseil, texte_conv)
         )
@@ -347,8 +314,8 @@ class ConseilService:
                 ):
                     yield ev
                 return
-            embedding = await self._vecteur_question(question, historique)
-            paquet = await self._hit_semantique(question, langue.value, embedding)
+            embedding = await self._semantique.vecteur(question, historique)
+            paquet = await self._semantique.hit(question, langue.value, embedding)
             if paquet is not None:
                 logger.info("cache_semantique_hit")
                 async for ev in self._diffuser_cache(paquet, texte_conv, question, langue):
@@ -410,7 +377,7 @@ class ConseilService:
         if not historique:
             await self._cache.set_cached(question, langue.value, _serialiser(base))
             if embedding is not None:
-                await self._cache.index_semantic(question, langue.value, embedding)
+                await self._semantique.indexer(question, langue.value, embedding)
         conseil = self._enrichir_contact(base, texte_conv)
         if conseil.reponse != texte:  # contact ajouté : on le diffuse aussi en flux
             yield {"type": "token", "text": conseil.reponse[len(texte) :]}

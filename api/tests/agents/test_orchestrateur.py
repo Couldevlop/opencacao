@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
+from app.application.cache_semantique import CacheSemantique
 from app.application.orchestrateur import Orchestrateur
 from app.application.registre import RegistreAgents
 from app.application.routage import RouteurIntention
@@ -41,17 +44,24 @@ class _JournalFactice:
 
 
 class _CacheFactice:
-    def __init__(self, limite: bool = False) -> None:
+    def __init__(self, limite: bool = False, semantic: tuple[str, str] | None = None) -> None:
         self._limite = limite
+        self._semantic = semantic
+        self.indexes: list[tuple[str, str, list[float]]] = []
+        self.set: list[tuple[str, str, str]] = []
 
     async def get_cached(self, q: str, lg: str) -> str | None:
         return None
 
-    async def set_cached(self, q: str, lg: str, payload: str) -> None: ...
-    async def get_semantic(self, lg, emb, th):
-        return None
+    async def set_cached(self, q: str, lg: str, payload: str) -> None:
+        self.set.append((q, lg, payload))
 
-    async def index_semantic(self, q, lg, emb) -> None: ...
+    async def get_semantic(self, lg, emb, th):
+        return self._semantic
+
+    async def index_semantic(self, q, lg, emb) -> None:
+        self.indexes.append((q, lg, emb))
+
     async def hit_rate_limit(self, ip: str) -> bool:
         return self._limite
 
@@ -59,7 +69,20 @@ class _CacheFactice:
         return True
 
 
-def _orchestrateur(*agents, journal=None, cache=None, defaut="rag") -> Orchestrateur:
+class _EmbeddingsFactice:
+    async def embed(self, textes: list[str]) -> list[list[float]] | None:
+        return [[1.0, 0.0] for _ in textes]
+
+
+def _semantique(cache: _CacheFactice, *, actif: bool = True) -> CacheSemantique:
+    # Garde-fou lexical permissif (0.0) : on teste le branchement, pas le seuil lexical
+    # (couvert dans test_cache_semantique.py).
+    return CacheSemantique(
+        cache, _EmbeddingsFactice() if actif else None, seuil=0.9, seuil_lexical=0.0
+    )
+
+
+def _orchestrateur(*agents, journal=None, cache=None, defaut="rag", cache_semantique=None):
     registre = RegistreAgents()
     for a in agents:
         registre.enregistrer(a)
@@ -69,6 +92,7 @@ def _orchestrateur(*agents, journal=None, cache=None, defaut="rag") -> Orchestra
         journal or _JournalFactice(),
         cache or _CacheFactice(),
         agent_defaut=defaut,
+        cache_semantique=cache_semantique,
     )
 
 
@@ -446,3 +470,68 @@ async def test_sync_ne_compose_pas_repli_mono_agent() -> None:
     conseil = await orch.traiter("comment tailler le cacaoyer ?", Langue.FR, "ip")
     assert conseil.reponse == "analyse météo"  # agent le mieux classé, pas de synthèse
     assert reporting.contributions_recues is None  # synthetiser_stream jamais appelé
+
+
+def _paquet_cache(reponse: str) -> str:
+    return json.dumps(
+        {
+            "reponse": reponse,
+            "confiance": "moyenne",
+            "sources": ["CNRA"],
+            "redirection_anader": False,
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_cache_semantique_hit_sert_une_paraphrase() -> None:
+    # Miss exact mais voisin sémantique compatible → servi SANS solliciter d'agent.
+    cache = _CacheFactice(semantic=(_paquet_cache("Taillez en saison sèche."), "comment tailler"))
+    rag = _AgentEspion("rag", 1.0, "ne devrait pas répondre")
+    orch = _orchestrateur(rag, cache=cache, cache_semantique=_semantique(cache))
+    conseil = await orch.traiter("comment élaguer le cacaoyer ?", Langue.FR, "ip")
+    assert conseil.reponse == "Taillez en saison sèche."
+    assert rag.recue is None  # aucune inférence
+
+
+@pytest.mark.asyncio
+async def test_cache_semantique_indexe_apres_generation() -> None:
+    cache = _CacheFactice()  # aucun hit
+    rag = _AgentEspion("rag", 1.0, "conseil taille")
+    orch = _orchestrateur(rag, cache=cache, cache_semantique=_semantique(cache))
+    await orch.traiter("comment tailler le cacaoyer ?", Langue.FR, "ip")
+    assert len(cache.indexes) == 1  # embedding indexé pour de futures paraphrases
+    assert cache.indexes[0][2] == [1.0, 0.0]
+
+
+@pytest.mark.asyncio
+async def test_cache_semantique_ignore_en_multi_tours() -> None:
+    cache = _CacheFactice(semantic=(_paquet_cache("cachée"), "q"))
+    rag = _AgentEspion("rag", 1.0, "conseil frais")
+    orch = _orchestrateur(rag, cache=cache, cache_semantique=_semantique(cache))
+    hist = [{"role": "user", "content": "bonjour"}]
+    conseil = await orch.traiter("et la taille du cacaoyer ?", Langue.FR, "ip", historique=hist)
+    assert conseil.reponse == "conseil frais"  # pas de hit sémantique en multi-tours
+    assert cache.indexes == []  # ni indexation
+
+
+@pytest.mark.asyncio
+async def test_cache_semantique_inerte_sans_embeddings() -> None:
+    # cache_semantique inerte (embeddings None) → jamais de hit ni d'index sémantique.
+    cache = _CacheFactice(semantic=(_paquet_cache("cachée"), "q"))
+    rag = _AgentEspion("rag", 1.0, "conseil frais")
+    orch = _orchestrateur(rag, cache=cache, cache_semantique=_semantique(cache, actif=False))
+    conseil = await orch.traiter("comment tailler le cacaoyer ?", Langue.FR, "ip")
+    assert conseil.reponse == "conseil frais"  # exact seul : le voisin sémantique est ignoré
+    assert cache.indexes == []
+
+
+@pytest.mark.asyncio
+async def test_cache_semantique_stream_sert_une_paraphrase() -> None:
+    cache = _CacheFactice(semantic=(_paquet_cache("Taillez en saison sèche."), "comment tailler"))
+    agent = _AgentStream(["ne devrait pas être généré"])
+    orch = _orchestrateur(agent, cache=cache, cache_semantique=_semantique(cache))
+    evenements = await _flux(orch, "comment élaguer le cacaoyer ?")
+    texte = "".join(e["text"] for e in evenements if e["type"] == "token")
+    assert "saison sèche" in texte
+    assert "généré" not in texte

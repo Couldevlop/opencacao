@@ -15,6 +15,7 @@ from collections.abc import AsyncIterator
 from dataclasses import replace
 
 from app.application import conseil_commun, flux
+from app.application.cache_semantique import CacheSemantique
 from app.application.contexte import fil_ancre, texte_conversation
 from app.application.routage import RouteurIntention
 from app.core.logging import get_logger
@@ -49,6 +50,7 @@ class Orchestrateur:
         journal: JournalPort,
         cache: CachePort,
         agent_defaut: str = "rag",
+        cache_semantique: CacheSemantique | None = None,
     ) -> None:
         """Initialise l'orchestrateur.
 
@@ -57,11 +59,14 @@ class Orchestrateur:
             journal: Port de journalisation des interactions.
             cache: Port de cache/rate-limit (rate-limit avant inférence réelle).
             agent_defaut: Nom de l'agent de repli si aucun routage n'aboutit.
+            cache_semantique: Couche de cache sémantique (paraphrases), ou None → une
+                instance inerte (exact-match seul, comme avant l'ajout de la couche).
         """
         self._routeur = routeur
         self._journal = journal
         self._cache = cache
         self._agent_defaut = agent_defaut
+        self._semantique = cache_semantique or CacheSemantique(cache, embeddings=None)
 
     async def traiter(
         self,
@@ -106,15 +111,26 @@ class Orchestrateur:
             conseil = Conseil(clarif, Confiance.MOYENNE, [], redirection_anader=False)
             return await self._journaliser(question, langue, conseil)
 
-        # 3. Cache exact de réponses (tour unique) : réponse instantanée, parité V2.
-        #    Le cache stocke le conseil NON enrichi ; l'enrichissement contact, qui
-        #    dépend de la conversation, est appliqué à chaque requête.
+        # 3. Cache de réponses (tour unique) : réponse instantanée, parité V2. Exact
+        #    d'abord (le moins cher, sans embedding), puis SÉMANTIQUE (paraphrases). Le
+        #    cache stocke le conseil NON enrichi ; l'enrichissement contact, qui dépend de
+        #    la conversation, est appliqué à chaque requête. L'embedding calculé ici est
+        #    réutilisé à l'écriture (pas de double vectorisation).
+        embedding: list[float] | None = None
         if not historique:
             cached = await self._cache.get_cached(question, langue.value)
             if cached is not None:
                 logger.info("cache_hit")
                 conseil = conseil_commun.enrichir_contact(
                     conseil_commun.depuis_paquet(json.loads(cached)), texte_conv
+                )
+                return await self._journaliser(question, langue, conseil)
+            embedding = await self._semantique.vecteur(question, historique)
+            paquet = await self._semantique.hit(question, langue.value, embedding)
+            if paquet is not None:
+                logger.info("cache_semantique_hit")
+                conseil = conseil_commun.enrichir_contact(
+                    conseil_commun.depuis_paquet(paquet), texte_conv
                 )
                 return await self._journaliser(question, langue, conseil)
 
@@ -167,9 +183,10 @@ class Orchestrateur:
             sources=reponse.sources,
             redirection_anader=reponse.redirection_anader,
         )
-        # 8. Cache (tour unique) puis enrichissement contact + journalisation.
+        # 8. Cache exact + index sémantique (tour unique), enrichissement, journalisation.
         if not historique:
             await self._cache.set_cached(question, langue.value, conseil_commun.serialiser(conseil))
+            await self._semantique.indexer(question, langue.value, embedding)
         return await self._journaliser(
             question, langue, conseil_commun.enrichir_contact(conseil, texte_conv)
         )
@@ -225,12 +242,22 @@ class Orchestrateur:
             )
             return
 
-        # 3. Cache exact (tour unique) : réponse cachée émise d'un bloc.
+        # 3. Cache (tour unique) : exact puis SÉMANTIQUE. Réponse cachée émise d'un bloc.
+        #    L'embedding est réutilisé à l'écriture (pas de double vectorisation).
+        embedding: list[float] | None = None
         if not historique:
             cached = await self._cache.get_cached(question, langue.value)
+            paquet = None
             if cached is not None:
                 logger.info("cache_hit")
-                base = conseil_commun.depuis_paquet(json.loads(cached))
+                paquet = json.loads(cached)
+            else:
+                embedding = await self._semantique.vecteur(question, historique)
+                paquet = await self._semantique.hit(question, langue.value, embedding)
+                if paquet is not None:
+                    logger.info("cache_semantique_hit")
+            if paquet is not None:
+                base = conseil_commun.depuis_paquet(paquet)
                 conseil = conseil_commun.enrichir_contact(base, texte_conv)
                 for ev in flux.evenements_token(base.reponse, conseil.reponse):
                     yield ev
@@ -321,6 +348,7 @@ class Orchestrateur:
                 await self._cache.set_cached(
                     question, langue.value, conseil_commun.serialiser(base)
                 )
+                await self._semantique.indexer(question, langue.value, embedding)
             conseil = conseil_commun.enrichir_contact(base, texte_conv)
             if conseil.reponse != texte:  # contact ajouté : on le diffuse aussi
                 yield {"type": "token", "text": conseil.reponse[len(texte) :]}
@@ -369,6 +397,7 @@ class Orchestrateur:
         base = Conseil(texte, confiance, sources, redirection_anader=False)
         if not historique:
             await self._cache.set_cached(question, langue.value, conseil_commun.serialiser(base))
+            await self._semantique.indexer(question, langue.value, embedding)
         conseil = conseil_commun.enrichir_contact(base, texte_conv)
         if conseil.reponse != texte:  # contact ajouté : on le diffuse aussi en flux
             yield {"type": "token", "text": conseil.reponse[len(texte) :]}
