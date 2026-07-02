@@ -100,6 +100,30 @@ Inférence/RAG mockés, aucun réseau. Objectif : suite verte, couverture ≥ 97
 
 ## Hors périmètre (YAGNI)
 
-- Pas de `synthetiser_stream` (vrai streaming incrémental de la synthèse) — plus tard.
 - Pas de parallélisme des contributions (inutile sur inférence CPU mono-requête).
 - Pas de planification multi-étapes (plan-act-observe) — le socle reste « plat ».
+
+## Addendum (02/07) — correctif streaming anti-524 (post-déploiement v0.6.58)
+
+**Problème constaté en prod.** La première version émettait la synthèse **en bloc**
+(après toutes les générations) et laissait la composition s'exécuter sur le endpoint
+**synchrone** `/v1/chat`. Résultat mesuré : une requête « bilan » enchaîne ~3 générations
+CPU (~3 min) → **Cloudflare coupe à ~100 s → HTTP 524** (l'utilisateur reçoit une erreur).
+Rollback prod v0.6.58 → v0.6.57.
+
+**Correctif (livré).**
+1. **`/v1/chat` synchrone** : la composition est **désactivée** — on retombe en mono-agent
+   (le endpoint synchrone ne peut pas éviter le 524, il rend tout le corps d'un coup).
+2. **`/chat/stream`** : composition avec **premier octet immédiat**. L'orchestrateur émet
+   un événement `{"type":"progress"}` **avant** le fan-out (→ pas de 524), un heartbeat
+   `progress` après **chaque** contribution (→ pas de time-out idle), puis **streame** la
+   synthèse token par token via **`AgentReporting.synthetiser_stream`** (nouveau), filtrée
+   par le garde-fou de sortie phrase par phrase. Sources/confiance dérivent des
+   contributions via **`AgentReporting.agreger`** (aucune re-génération).
+3. **Front** : le parseur SSE ignore les types d'événements inconnus (`token`/`done`/`error`
+   seuls traités) → les `progress` gardent le flux vivant **sans polluer** la réponse
+   affichée. Aucun changement front requis (une amélioration UX — afficher la progression
+   comme statut éphémère — reste possible plus tard).
+
+**Détection du synthétiseur** : `hasattr(agent, "synthetiser_stream")` (la méthode réellement
+appelée en flux), pas `synthetiser`.

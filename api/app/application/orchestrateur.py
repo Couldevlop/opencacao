@@ -32,6 +32,13 @@ logger = get_logger(__name__)
 # composer = N générations séquentielles + 1 synthèse. Plafond 2 → au plus 3 générations.
 MAX_CONTRIBUTEURS = 2
 
+# Message de progression émis en TÊTE de composition : garantit un PREMIER OCTET
+# immédiat alors que le fan-out CPU dure ~1-2 min → évite le time-out edge Cloudflare
+# (524, mesuré sur réponse synchrone). Émis en type d'événement « progress » : le front
+# ignore les types inconnus (ni token ni done) → ces octets gardent le flux vivant SANS
+# polluer la réponse affichée. Un heartbeat est ré-émis après chaque contribution.
+_PROGRES_COMPOSITION = "Je consulte les agents spécialisés…"
+
 
 class Orchestrateur:
     """Pilote le traitement d'une requête par les agents spécialisés."""
@@ -119,15 +126,17 @@ class Orchestrateur:
             historique=historique,
         )
 
-        # 4. Routage d'intention : classement complet (sert au repli ET à la composition).
-        classement = await self._routeur.classer(requete)
-        synthetiseur = self._synthetiseur(classement)
-        agent = classement[0][0] if classement else self._agent_de_repli()
-        cible = synthetiseur or agent
-        logger.info(
-            "dispatch", agent=cible.nom if cible else None, composition=synthetiseur is not None
-        )
-        if cible is None:
+        # 4. Routage d'intention → agent (repli sur l'agent par défaut).
+        #    La composition multi-agents (synthèse) ne s'active QUE sur le flux
+        #    (traiter_stream) : elle enchaîne plusieurs générations CPU (~3 min) qui
+        #    dépasseraient le time-out edge Cloudflare (~100 s) sur une réponse
+        #    SYNCHRONE → 524. Ici, un seul agent répond (le mieux classé), même si un
+        #    synthétiseur figure au classement.
+        agent = await self._routeur.meilleur(requete)
+        if agent is None:
+            agent = self._agent_de_repli()
+        logger.info("dispatch", agent=agent.nom if agent else None)
+        if agent is None:
             conseil = Conseil(
                 "Service momentanément indisponible.",
                 Confiance.FAIBLE,
@@ -137,15 +146,11 @@ class Orchestrateur:
             return await self._journaliser(question, langue, conseil)
 
         # 5. Rate-limit UNIQUEMENT avant l'inférence réelle (équité : refus/cache gratuits).
-        #    Une requête = une unité de quota, même si la composition déclenche N générations.
         if await self._cache.hit_rate_limit(client_ip):
             raise RateLimitDepasse
 
-        # 6. Dispatch : composition multi-agents si un synthétiseur est routé, sinon mono-agent.
-        if synthetiseur is not None:
-            reponse = await self._composer(requete, classement, synthetiseur)
-        else:
-            reponse = await agent.traiter(requete)
+        # 6. Dispatch vers l'agent.
+        reponse = await agent.traiter(requete)
 
         # 7. Garde-fou de SORTIE (défense en profondeur).
         if guardrails.verifier_reponse(reponse.texte) is not None:
@@ -268,41 +273,64 @@ class Orchestrateur:
         if await self._cache.hit_rate_limit(client_ip):
             raise RateLimitDepasse
 
-        # 6a. Composition multi-agents : la synthèse a besoin de TOUTES les contributions
-        #     avant de produire → calculée puis émise EN BLOC (pas de token-par-token
-        #     multi-agents dans cette version ; le streaming incrémental de la synthèse
-        #     serait une évolution ultérieure). Garde-fou de sortie appliqué au texte final.
+        # 6a. Composition multi-agents (flux) : fan-out avec PROGRESSION, puis synthèse
+        #     streamée. Le premier octet (« progress ») part immédiatement → pas de 524
+        #     Cloudflare même si le fan-out CPU dure ~1-2 min ; un heartbeat suit chaque
+        #     contribution. La synthèse est ensuite streamée token par token, filtrée par
+        #     le garde-fou de sortie phrase par phrase.
         if synthetiseur is not None:
-            reponse = await self._composer(requete, classement, synthetiseur)
-            if guardrails.verifier_reponse(reponse.texte) is not None:
+            yield {"type": "progress", "text": _PROGRES_COMPOSITION}
+            contributions: list[AgentReponse] = []
+            for contributeur in self._contributeurs(classement, synthetiseur):
+                contributions.append(await contributeur.traiter(requete))
+                yield {"type": "progress", "text": f"[{contributeur.nom}]"}
+            logger.info(
+                "composition",
+                synthetiseur=synthetiseur.nom,
+                contributeurs=[c.agent for c in contributions],
+            )
+
+            filtre = flux.FiltreSortie()
+            async for phrase in filtre.diffuser(
+                synthetiseur.synthetiser_stream(requete, contributions)  # type: ignore[attr-defined]
+            ):
+                yield {"type": "token", "text": phrase}
+
+            if filtre.compromis:
                 logger.warning("garde_fou_sortie_declenche", agent=synthetiseur.nom)
-                texte_base = guardrails.REFUS_PHYTO
                 conseil = conseil_commun.enrichir_contact(
                     Conseil(guardrails.REFUS_PHYTO, Confiance.ELEVEE, [], redirection_anader=True),
                     texte_conv,
                 )
-            else:
-                texte_base = reponse.texte
-                base = Conseil(
-                    reponse.texte,
-                    reponse.confiance,
-                    reponse.sources,
-                    redirection_anader=reponse.redirection_anader,
+                yield {"type": "token", "text": " " + conseil.reponse}
+                yield await flux.evenement_final(
+                    self._journal,
+                    question,
+                    langue,
+                    conseil.reponse,
+                    conseil.sources,
+                    conseil.confiance,
+                    redirection=conseil.redirection_anader,
                 )
-                if not historique:
-                    await self._cache.set_cached(
-                        question, langue.value, conseil_commun.serialiser(base)
-                    )
-                conseil = conseil_commun.enrichir_contact(base, texte_conv)
-            for ev in flux.evenements_token(texte_base, conseil.reponse):
-                yield ev
+                return
+
+            texte = filtre.texte
+            sources, confiance = synthetiseur.agreger(contributions)  # type: ignore[attr-defined]
+            base = Conseil(texte, confiance, sources, redirection_anader=False)
+            if not historique:
+                await self._cache.set_cached(
+                    question, langue.value, conseil_commun.serialiser(base)
+                )
+            conseil = conseil_commun.enrichir_contact(base, texte_conv)
+            if conseil.reponse != texte:  # contact ajouté : on le diffuse aussi
+                yield {"type": "token", "text": conseil.reponse[len(texte) :]}
             yield await flux.evenement_final(
                 self._journal,
                 question,
                 langue,
                 conseil.reponse,
                 conseil.sources,
-                conseil.confiance,
+                confiance,
                 redirection=conseil.redirection_anader,
             )
             return
@@ -360,44 +388,35 @@ class Orchestrateur:
 
     @staticmethod
     def _synthetiseur(classement: list[tuple[AgentPort, float]]) -> AgentPort | None:
-        """Premier agent SYNTHÉTISEUR (expose ``synthetiser``) présent dans le classement.
+        """Premier agent SYNTHÉTISEUR de flux présent dans le classement.
 
-        Duck-typing plutôt qu'un nom en dur : tout futur agent de synthèse déclenche la
-        composition sans modifier l'orchestrateur. On teste la PRÉSENCE dans le classement,
-        pas la tête : « bilan météo et prix » fait souvent gagner un spécialiste au score,
-        mais le mot de synthèse suffit à vouloir composer.
+        Détecté par duck-typing sur ``synthetiser_stream`` — la méthode réellement
+        appelée par la composition en flux — plutôt qu'un nom en dur : tout futur agent
+        de synthèse streamable déclenche la composition sans modifier l'orchestrateur.
+        On teste la PRÉSENCE dans le classement, pas la tête : « bilan météo et prix »
+        fait souvent gagner un spécialiste au score, mais le mot de synthèse suffit à
+        vouloir composer.
         """
         for agent, _ in classement:
-            if hasattr(agent, "synthetiser"):
+            if hasattr(agent, "synthetiser_stream"):
                 return agent
         return None
 
-    async def _composer(
-        self,
-        requete: AgentRequete,
-        classement: list[tuple[AgentPort, float]],
-        synthetiseur: AgentPort,
-    ) -> AgentReponse:
-        """Fan-out vers les agents contributeurs (bornés), puis fan-in par le synthétiseur.
+    def _contributeurs(
+        self, classement: list[tuple[AgentPort, float]], synthetiseur: AgentPort
+    ) -> list[AgentPort]:
+        """Agents contributeurs d'une synthèse (fan-out), bornés pour la latence.
 
-        Les contributeurs sont les autres agents du classement (hors synthétiseur), triés
-        par score et plafonnés à :data:`MAX_CONTRIBUTEURS`. Si aucun n'est classé, on prend
-        l'agent de repli — le synthétiseur a toujours au moins une analyse à fusionner.
-        Séquentiel : le serveur d'inférence CPU traite une requête à la fois (paralléliser
-        ne ferait que sérialiser côté inférence).
+        Les autres agents du classement (hors synthétiseur), triés par score et
+        plafonnés à :data:`MAX_CONTRIBUTEURS`. Si aucun n'est classé, on prend l'agent
+        de repli — le synthétiseur a toujours au moins une analyse à fusionner.
         """
         contributeurs = [agent for agent, _ in classement if agent is not synthetiseur]
         contributeurs = contributeurs[:MAX_CONTRIBUTEURS]
         if not contributeurs:
             repli = self._agent_de_repli()
             contributeurs = [repli] if repli is not None else []
-        contributions = [await agent.traiter(requete) for agent in contributeurs]
-        logger.info(
-            "composition",
-            synthetiseur=synthetiseur.nom,
-            contributeurs=[c.agent for c in contributions],
-        )
-        return await synthetiseur.synthetiser(requete, contributions)  # type: ignore[attr-defined]
+        return contributeurs
 
     async def _journaliser(self, question: str, langue: Langue, conseil: Conseil) -> Conseil:
         """Journalise l'interaction et renvoie le conseil enrichi de son id."""

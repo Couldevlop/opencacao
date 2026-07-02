@@ -72,3 +72,49 @@ async def test_synthetiser_sans_contribution_degrade_proprement() -> None:
     reponse = await agent.synthetiser(_requete(), [])
     assert reponse.agent == "reporting"
     assert reponse.confiance is Confiance.FAIBLE
+
+
+class _InferenceStream:
+    def __init__(self, fragments: list[str]) -> None:
+        self._fragments = fragments
+        self.contexte_recu: str | None = None
+
+    async def generer(self, *a, **k) -> str:
+        return ""
+
+    async def generer_stream(self, question, *, contexte=None, historique=None, **kw):
+        self.contexte_recu = contexte
+        for fragment in self._fragments:
+            yield fragment
+
+    async def ready(self) -> bool:
+        return True
+
+
+@pytest.mark.asyncio
+async def test_synthetiser_stream_diffuse_les_fragments_et_cadre() -> None:
+    # Variante flux : la synthèse est streamée, les contributions injectées au contexte.
+    inf = _InferenceStream(["Synthèse : ", "conditions favorables."])
+    agent = AgentReporting(inf)
+    contributions = [AgentReponse("Pluie demain.", ["meteo"], Confiance.MOYENNE, "meteo")]
+    fragments = [f async for f in agent.synthetiser_stream(_requete(), contributions)]
+    assert "".join(fragments) == "Synthèse : conditions favorables."
+    assert "Pluie demain." in (inf.contexte_recu or "")
+
+
+def test_agreger_union_sources_et_confiance_min() -> None:
+    # Sources unionnées sans doublon (ordre préservé), confiance la plus basse.
+    contributions = [
+        AgentReponse("a", ["meteo", "CNRA"], Confiance.ELEVEE, "meteo"),
+        AgentReponse("b", ["CNRA", "CCC"], Confiance.FAIBLE, "prix"),
+    ]
+    sources, confiance = AgentReporting.agreger(contributions)
+    assert sources == ["meteo", "CNRA", "CCC"]
+    assert confiance is Confiance.FAIBLE
+
+
+def test_agreger_sans_contribution_confiance_moyenne() -> None:
+    # Jamais None : défaut prudent MOYENNE (utilisé si le repli n'a produit aucune source).
+    sources, confiance = AgentReporting.agreger([])
+    assert sources == []
+    assert confiance is Confiance.MOYENNE
