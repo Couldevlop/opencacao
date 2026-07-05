@@ -898,7 +898,7 @@ async def synthetiser(self, requete, contributions: list[AgentReponse]) -> Agent
             ),
             (
                 "Couverture ≥ 97 % —",
-                "seuil CI (--cov-fail-under). La suite compte 635 tests verts.",
+                "seuil CI (--cov-fail-under). La suite compte 661 tests verts.",
             ),
             (
                 "Lint ruff —",
