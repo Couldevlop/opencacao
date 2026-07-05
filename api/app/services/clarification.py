@@ -92,6 +92,12 @@ _PLANTATION = (
     "mettre en place une plantation",
     "ecartement",
     "densite de plantation",
+    "planter",
+    "semer",
+    "pepiniere",
+    "creer un champ",
+    "demarrer un champ",
+    "champ de cacao",
 )
 
 _BULLETS = {
@@ -206,7 +212,12 @@ def analyser(question: str, historique: list[dict[str, str]] | None) -> str | No
 
     bullets = list(_BULLETS[theme])
     # N'ajoute la question de localité que si la ville n'est pas déjà donnée.
+    # Pour une plantation à créer, la zone conditionne variétés et calendrier :
+    # la localité passe en tête.
     if contacts.chercher(question) is None:
-        bullets.append(_LOCALITE)
+        if theme == "plantation":
+            bullets.insert(0, _LOCALITE)
+        else:
+            bullets.append(_LOCALITE)
     corps = "\n".join(f"• {b}" for b in bullets)
     return f"{_INTRO[theme]}\n{corps}\n{_PIED}"

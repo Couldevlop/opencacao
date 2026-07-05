@@ -55,6 +55,40 @@ def test_traitement_et_rendement_clarifies() -> None:
     )
 
 
+def test_planter_des_cacaoyers_declenche_le_dialogue() -> None:
+    """« Je veux planter des cacaoyers » déclenche le dialogue consultatif (localité incluse)."""
+    msg = clarification.analyser("Je veux planter des cacaoyers", historique=None)
+    assert msg is not None
+    assert "ville ou région" in msg.lower()
+
+
+def test_formulations_naturelles_de_plantation_clarifiees() -> None:
+    """Les formulations courantes des producteurs déclenchent le thème plantation."""
+    for question in (
+        "Comment semer le cacao ?",
+        "Je veux créer un champ de cacao",
+        "Où installer ma pépinière de cacaoyers ?",
+        "Je vais démarrer un champ de cacao",
+    ):
+        assert clarification.analyser(question, historique=None) is not None, question
+
+
+def test_plantation_demande_la_localite_en_premier() -> None:
+    """Pour le thème plantation, la localité est la première question posée."""
+    msg = clarification.analyser("Je veux planter des cacaoyers", historique=None)
+    assert msg is not None
+    puces = [ligne for ligne in msg.splitlines() if ligne.startswith("•")]
+    assert "ville ou région" in puces[0].lower()
+
+
+def test_plantation_avec_ville_ne_redemande_pas_la_localite() -> None:
+    """Ville déjà donnée : les questions surface/sol restent, sans redemander la localité."""
+    msg = clarification.analyser("Je veux planter des cacaoyers à Daloa", historique=None)
+    assert msg is not None
+    assert "ville ou région" not in msg.lower()
+    assert "surface" in msg.lower()
+
+
 def test_question_informationnelle_repond_directement() -> None:
     """Prévenir/reconnaître une maladie nommée = question précise -> réponse directe."""
     assert (
