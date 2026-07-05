@@ -145,7 +145,8 @@ def test_chat_garde_fou_avec_contact_local(client) -> None:
 
 def test_chat_multitours_ignore_le_cache(client, fake_inference) -> None:
     """Une requête multi-tours ne lit pas le cache (réponse dépendante du contexte)."""
-    body = {"question": "Comment préparer une pépinière de cacaoyer demain ?", "canal": "web"}
+    # Question factuelle : ne déclenche pas la clarification, atteint l'inférence.
+    body = {"question": "Combien de temps dure le séchage du cacao ?", "canal": "web"}
     client.post("/v1/chat", json=body)
     client.post("/v1/chat", json={**body, "historique": [{"role": "user", "content": "bonjour"}]})
     assert len(fake_inference.appels) == 2  # le 2e (multi-tours) ne vient pas du cache
@@ -153,7 +154,8 @@ def test_chat_multitours_ignore_le_cache(client, fake_inference) -> None:
 
 def test_chat_utilise_le_cache(client, fake_inference) -> None:
     """La deuxième requête identique est servie par le cache (pas de 2e inférence)."""
-    body = {"question": "Comment préparer une pépinière de cacaoyer ?", "canal": "web"}
+    # Question factuelle : ne déclenche pas la clarification, atteint l'inférence.
+    body = {"question": "Combien de temps dure la fermentation du cacao ?", "canal": "web"}
     client.post("/v1/chat", json=body)
     client.post("/v1/chat", json=body)
     assert len(fake_inference.appels) == 1
