@@ -21,9 +21,49 @@ def test_ne_redemande_pas_la_ville_si_donnee() -> None:
 
 
 def test_pas_de_clarification_en_cours_de_dialogue() -> None:
-    """Dès qu'un historique existe, on répond (pas de nouvelle salve de questions)."""
+    """La réponse à une salve de clarification reçoit une réponse (pas de re-salve)."""
     historique = [{"role": "user", "content": "Mes feuilles jaunissent"}]
     assert clarification.analyser("Sur les feuilles, à Daloa", historique) is None
+
+
+def _echange(question: str, reponse: str) -> list[dict[str, str]]:
+    return [{"role": "user", "content": question}, {"role": "assistant", "content": reponse}]
+
+
+def test_nouveau_sujet_en_cours_de_conversation_declenche() -> None:
+    """Un thème NOUVEAU en pleine conversation redéclenche le dialogue consultatif.
+
+    Vécu navigateur (05/07) : la conversation restaurée n'a jamais un historique vide,
+    la règle « premier tour uniquement » éteignait la clarification pour toujours.
+    """
+    historique = _echange("Quel est le prix du cacao ?", "Le prix bord-champ est 1200 FCFA/kg.")
+    msg = clarification.analyser("Les feuilles de mes cacaoyers jaunissent", historique)
+    assert msg is not None
+    assert "partie" in msg.lower()
+
+
+def test_pas_de_re_salve_apres_une_clarification() -> None:
+    """Anti-boucle : si la dernière réponse de l'assistant était une clarification, on répond."""
+    historique = _echange(
+        "Je veux planter des cacaoyers",
+        "Pour bien démarrer votre plantation :\n• Dans quelle ville ou région vous trouvez-vous ?"
+        "\nRépondez-moi et je vous conseillerai au mieux.",
+    )
+    assert clarification.analyser("Je veux planter des cacaoyers bio", historique) is None
+
+
+def test_ville_donnee_plus_tot_dans_la_conversation_pas_redemandee() -> None:
+    """La localité citée plus tôt dans le fil n'est pas redemandée par une salve ultérieure."""
+    historique = _echange("Quel temps à Daloa cette semaine ?", "Pluie modérée attendue à Daloa.")
+    msg = clarification.analyser("Les feuilles de mes cacaoyers jaunissent", historique)
+    assert msg is not None
+    assert "ville ou région" not in msg.lower()
+
+
+def test_contact_en_cours_de_conversation_avec_ville_connue() -> None:
+    """Une demande de contact en cours de dialogue réutilise la ville déjà donnée."""
+    historique = _echange("Quel temps à Korhogo ?", "Korhogo est en zone de savane.")
+    assert clarification.analyser("Je veux le numéro de l'ANADER", historique) is None
 
 
 def test_question_factuelle_repond_directement() -> None:

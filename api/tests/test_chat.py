@@ -287,15 +287,22 @@ async def test_stream_bloque_un_dosage_en_sortie(fake_cache, fake_journal) -> No
             return True
 
     service = ConseilService(inference=_FluxAvecDosage(), cache=fake_cache, journal=fake_journal)
-    # historique fourni : on est au tour de réponse (la clarification est passée),
+    # Tour de réponse : la salve de clarification vient d'être posée (anti-boucle),
     # c'est là que le garde-fou de SORTIE doit intercepter un dosage généré.
     evts = [
         e
         async for e in service.conseiller_stream(
-            "Comment traiter la pourriture brune ?",
+            "Sur les cabosses, à Daloa, depuis une semaine",
             Langue.FR,
             "1.2.3.4",
-            [{"role": "user", "content": "bonjour"}],
+            [
+                {"role": "user", "content": "Comment traiter la pourriture brune ?"},
+                {
+                    "role": "assistant",
+                    "content": "Avant de vous orienter, dites-moi :\n• Quel problème précis ?"
+                    "\nRépondez-moi et je vous conseillerai au mieux.",
+                },
+            ],
         )
     ]
     tokens = "".join(e["text"] for e in evts if e["type"] == "token")

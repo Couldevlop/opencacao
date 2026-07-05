@@ -7,8 +7,12 @@ ciblées. La réponse réfléchie n'est produite qu'au tour suivant, une fois le
 contexte recueilli.
 
 Déterministe (pas de dépendance au modèle) : le comportement consultatif est donc
-fiable, même avec un petit modèle CPU. Une seule salve de clarification par
-conversation (dès que l'historique existe, on répond), pour ne jamais boucler.
+fiable, même avec un petit modèle CPU. Anti-boucle : jamais deux salves de suite —
+si la dernière réponse de l'assistant était déjà une clarification, on répond. Un
+thème NOUVEAU en cours de conversation redéclenche en revanche le dialogue (décision
+Waopron 06/07 : dans le navigateur, la conversation restaurée n'a jamais un
+historique vide — la règle « premier tour uniquement » éteignait la clarification
+pour toujours). La localité déjà citée dans le fil n'est pas redemandée.
 """
 
 from __future__ import annotations
@@ -178,24 +182,48 @@ def _detecter(texte: str) -> str | None:
     return None
 
 
+def _derniere_reponse_est_clarification(historique: list[dict[str, str]]) -> bool:
+    """Vrai si la dernière réponse de l'assistant était une salve de clarification.
+
+    Reconnue par ses marqueurs déterministes (pied commun des salves à thème, ou
+    question de localité du parcours contact). C'est l'anti-boucle : le producteur
+    qui vient de recevoir des questions obtient une réponse, jamais une re-salve.
+    """
+    for tour in reversed(historique):
+        if tour.get("role") == "assistant":
+            texte = tour.get("content", "")
+            return _PIED in texte or "dites-moi dans quelle ville ou région" in texte
+    return False
+
+
+def _fil_utilisateur(question: str, historique: list[dict[str, str]]) -> str:
+    """Concatène les tours utilisateur et la question (la ville citée plus tôt compte)."""
+    tours = [t.get("content", "") for t in historique if t.get("role") == "user"]
+    return " ".join([*tours, question])
+
+
 def analyser(question: str, historique: list[dict[str, str]] | None) -> str | None:
     """Retourne des questions complémentaires à poser, ou None pour répondre directement.
 
     Args:
-        question: Question du producteur (1er message).
-        historique: Tours précédents. Non vide = on est déjà en dialogue, on répond.
+        question: Dernière question du producteur.
+        historique: Tours précédents. Si la dernière réponse de l'assistant était une
+            clarification, on répond (anti-boucle) ; sinon un thème nouveau peut
+            déclencher une salve, même en cours de conversation.
 
     Returns:
         Le message de clarification (questions posées par le système), ou None.
     """
-    if historique:  # déjà en discussion : le contexte a été demandé, on répond
-        return None
+    historique = historique or []
+    if _derniere_reponse_est_clarification(historique):
+        return None  # le contexte vient d'être demandé : on répond
 
     texte = _normaliser(question)
+    fil = _fil_utilisateur(question, historique)
 
-    # Demande de contact sans ville : on demande la localité (réponse instantanée,
-    # sans modèle), pour donner ensuite le bon contact ANADER.
-    if contacts.intention_contact(question) and contacts.chercher(question) is None:
+    # Demande de contact sans ville NULLE PART dans le fil : on demande la localité
+    # (réponse instantanée, sans modèle), pour donner ensuite le bon contact ANADER.
+    if contacts.intention_contact(question) and contacts.chercher(fil) is None:
         return (
             "Avec plaisir. Pour vous donner le contact de l'ANADER de votre zone, "
             "dites-moi dans quelle ville ou région vous vous trouvez."
@@ -211,10 +239,10 @@ def analyser(question: str, historique: list[dict[str, str]] | None) -> str | No
         return None  # question claire/factuelle -> réponse directe
 
     bullets = list(_BULLETS[theme])
-    # N'ajoute la question de localité que si la ville n'est pas déjà donnée.
-    # Pour une plantation à créer, la zone conditionne variétés et calendrier :
-    # la localité passe en tête.
-    if contacts.chercher(question) is None:
+    # N'ajoute la question de localité que si la ville n'est donnée nulle part dans
+    # le fil. Pour une plantation à créer, la zone conditionne variétés et
+    # calendrier : la localité passe en tête.
+    if contacts.chercher(fil) is None:
         if theme == "plantation":
             bullets.insert(0, _LOCALITE)
         else:
