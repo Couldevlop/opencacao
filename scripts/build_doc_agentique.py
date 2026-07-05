@@ -147,9 +147,17 @@ def footer(doc):
     sec = doc.sections[0]
     p = sec.footer.paragraphs[0]
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _set_font(p.add_run("OpenLab Consulting — OpenCacao · Socle agentique V3 · "), size=8, color=GREY)
+    _set_font(
+        p.add_run("OpenLab Consulting — OpenCacao · Socle agentique V3 · "),
+        size=8,
+        color=GREY,
+    )
     run = p.add_run()
-    fld1, instr, fld2 = OxmlElement("w:fldChar"), OxmlElement("w:instrText"), OxmlElement("w:fldChar")
+    fld1, instr, fld2 = (
+        OxmlElement("w:fldChar"),
+        OxmlElement("w:instrText"),
+        OxmlElement("w:fldChar"),
+    )
     fld1.set(qn("w:fldCharType"), "begin")
     instr.set(qn("xml:space"), "preserve")
     instr.text = "PAGE"
@@ -175,7 +183,9 @@ def cover(doc):
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     _set_font(
-        p.add_run("Orchestrateur souverain · registre extensible · agents spécialisés · tool use"),
+        p.add_run(
+            "Orchestrateur souverain · registre extensible · agents spécialisés · tool use"
+        ),
         size=11,
         italic=True,
         color=GREY,
@@ -189,14 +199,26 @@ def cover(doc):
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     _set_font(
-        p.add_run("OpenCacao-8B — IA souveraine pour la Côte d'Ivoire\nOpenLab Consulting"),
+        p.add_run(
+            "OpenCacao-8B — IA souveraine pour la Côte d'Ivoire\nOpenLab Consulting"
+        ),
         size=11,
         color=DARK,
     )
     doc.add_page_break()
 
 
-def chapter(doc, num, titre, concept, decisions, mental, code_blocks=None, tests=None, extra=None):
+def chapter(
+    doc,
+    num,
+    titre,
+    concept,
+    decisions,
+    mental,
+    code_blocks=None,
+    tests=None,
+    extra=None,
+):
     """Chapitre standard : Concept → Décisions → Modèle mental → Code & tests."""
     heading(doc, f"{num}. {titre}", level=1)
     heading(doc, "Le concept", level=3)
@@ -241,7 +263,10 @@ def build():
         doc,
         [
             ("Le concept —", "le pattern agentique en jeu, en langage clair."),
-            ("Les décisions de conception —", "pourquoi on a tranché ainsi (l'expertise est là)."),
+            (
+                "Les décisions de conception —",
+                "pourquoi on a tranché ainsi (l'expertise est là).",
+            ),
             ("Le modèle mental —", "la phrase à retenir."),
             ("Code & tests —", "le code réel et ce que les tests garantissent."),
         ],
@@ -313,11 +338,31 @@ Conseil (réponse + sources + confiance + disclaimer ANADER)
         doc,
         ["Couche", "Fichiers", "Rôle"],
         [
-            ["Domaine (pur)", "domain/agents.py", "Contrat : AgentRequete/Reponse/Port/Outil. Aucune dépendance framework."],
-            ["Application (pur)", "application/registre,routage,orchestrateur,contexte.py", "Orchestration testable sans réseau."],
-            ["Adaptateurs", "services/agents/*", "Agents concrets (RAG, Météo, Prix, Reporting)."],
-            ["Adaptateurs", "services/outils/*", "Outils concrets (météo, prix) derrière un port mockable."],
-            ["Adaptateurs", "services/localites.py", "Détection de localités ivoiriennes (zone cacaoyère / savane du Nord / Direction Régionale), partagée par l'agent Météo, l'annuaire contacts et les garde-fous."],
+            [
+                "Domaine (pur)",
+                "domain/agents.py",
+                "Contrat : AgentRequete/Reponse/Port/Outil. Aucune dépendance framework.",
+            ],
+            [
+                "Application (pur)",
+                "application/registre,routage,orchestrateur,contexte.py",
+                "Orchestration testable sans réseau.",
+            ],
+            [
+                "Adaptateurs",
+                "services/agents/*",
+                "Agents concrets (RAG, Météo, Prix, Reporting).",
+            ],
+            [
+                "Adaptateurs",
+                "services/outils/*",
+                "Outils concrets (météo, prix) derrière un port mockable.",
+            ],
+            [
+                "Adaptateurs",
+                "services/localites.py",
+                "Détection de localités ivoiriennes (zone cacaoyère / savane du Nord / Direction Régionale), partagée par l'agent Météo, l'annuaire contacts et les garde-fous.",
+            ],
         ],
     )
     para(
@@ -342,10 +387,22 @@ Conseil (réponse + sources + confiance + disclaimer ANADER)
             "à l'agentique.",
         ],
         decisions=[
-            ("dataclass(frozen=True) —", "requêtes/réponses immuables. Un agent ne peut pas modifier par surprise une donnée qu'un autre lira. Pilier de fiabilité en async."),
-            ("Protocol (typage structurel) —", "un agent est conforme parce qu'il a les bonnes méthodes, pas par héritage. On ne piège pas les futurs agents dans une classe mère."),
-            ("peut_traiter() -> float (0..1) —", "chaque agent s'auto-évalue. Il se décrit ; le routeur décide. Déterministe (mots-clés) : explicable, testable, souverain."),
-            ("invoquer(**kwargs) —", "absorbe la variabilité des outils (météo prend localite, prix ne prend rien). Un bon contrat anticipe la diversité des implémentations."),
+            (
+                "dataclass(frozen=True) —",
+                "requêtes/réponses immuables. Un agent ne peut pas modifier par surprise une donnée qu'un autre lira. Pilier de fiabilité en async.",
+            ),
+            (
+                "Protocol (typage structurel) —",
+                "un agent est conforme parce qu'il a les bonnes méthodes, pas par héritage. On ne piège pas les futurs agents dans une classe mère.",
+            ),
+            (
+                "peut_traiter() -> float (0..1) —",
+                "chaque agent s'auto-évalue. Il se décrit ; le routeur décide. Déterministe (mots-clés) : explicable, testable, souverain.",
+            ),
+            (
+                "invoquer(**kwargs) —",
+                "absorbe la variabilité des outils (météo prend localite, prix ne prend rien). Un bon contrat anticipe la diversité des implémentations.",
+            ),
         ],
         mental="Le contrat est la constitution de la plateforme. Tout en dépend ; lui ne dépend de rien. Ajouter l'agent n°11 = classe conforme + enregistrement. Zéro refactor.",
         code_blocks=[
@@ -387,9 +444,18 @@ class AgentPort(Protocol):
             "l'extension, fermée à la modification » (le « O » de SOLID).",
         ],
         decisions=[
-            ("Refus des doublons (ValueError) —", "deux agents nommés « meteo » = l'un écrase l'autre silencieusement = bug. On l'interdit."),
-            ("Énumération stable (tous/noms) —", "le routeur balaie les agents enregistrés."),
-            ("Observabilité —", "chaque enregistrement est journalisé (structlog), utile en prod pour savoir quels agents sont montés."),
+            (
+                "Refus des doublons (ValueError) —",
+                "deux agents nommés « meteo » = l'un écrase l'autre silencieusement = bug. On l'interdit.",
+            ),
+            (
+                "Énumération stable (tous/noms) —",
+                "le routeur balaie les agents enregistrés.",
+            ),
+            (
+                "Observabilité —",
+                "chaque enregistrement est journalisé (structlog), utile en prod pour savoir quels agents sont montés.",
+            ),
         ],
         mental="Le registre est la prise électrique du framework. Brancher un agent suffit à le rendre routable ; rien d'autre ne bouge.",
         code_blocks=[
@@ -423,8 +489,14 @@ class RegistreAgents:
             "(un tour).",
         ],
         decisions=[
-            ("Déterministe d'abord —", "aucun appel LLM pour router : explicable, testable, souverain. L'interface ne changera pas si on bascule plus tard vers un routage sémantique (embeddings)."),
-            ("Un classement, pas un seul gagnant —", "certaines requêtes mobilisent plusieurs agents. Le routeur renvoie une liste ordonnée ; l'orchestrateur décide combien activer."),
+            (
+                "Déterministe d'abord —",
+                "aucun appel LLM pour router : explicable, testable, souverain. L'interface ne changera pas si on bascule plus tard vers un routage sémantique (embeddings).",
+            ),
+            (
+                "Un classement, pas un seul gagnant —",
+                "certaines requêtes mobilisent plusieurs agents. Le routeur renvoie une liste ordonnée ; l'orchestrateur décide combien activer.",
+            ),
         ],
         mental="Le routeur note, il ne décide pas seul. La décision finale (1 ou N agents, repli) appartient à l'orchestrateur.",
         code_blocks=[
@@ -460,12 +532,34 @@ async def classer(self, requete) -> list[tuple[AgentPort, float]]:
             "enrichissement contact). L'ordre des étapes encode la sécurité et l'équité.",
         ],
         decisions=[
-            ("Garde-fous CENTRALISÉS, pas par agent —", "point d'application unique de la politique. Le filtre « cacao uniquement » ne peut pas être oublié sur un futur agent. Souveraineté structurelle."),
-            ("Concerns transverses centralisés —", "clarification consultative (avant dispatch), cache exact (tour unique) et enrichissement contact ANADER (sur chaque réponse) sont dans l'orchestrateur, pas dans les agents — exactement comme les garde-fous. Mutualisés avec la V2 via application/conseil_commun.py."),
-            ("Défense en profondeur (entrée ET sortie) —", "l'entrée bloque la demande interdite (sur le fil ancré → pas de contournement multi-tours) ; la sortie inspecte ce que l'agent a réellement généré. On ne fait jamais confiance à la sortie d'un LLM sans la vérifier."),
-            ("Rate-limit après routage/cache, avant l'inférence —", "un refus, une clarification ou un hit de cache ne coûtent pas de génération CPU (~38 s) → ils ne consomment pas le quota. On ne facture que le travail coûteux. Équité."),
-            ("Repli systématique —", "routeur indécis → agent RAG par défaut. « Je ne sais pas router » ≠ « je ne réponds pas »."),
-            ("Renvoie l'entité Conseil existante —", "tout l'aval V2 (router HTTP, DTO, disclaimer, streaming) marche sans changement. C'est ce qui permet le flag agents_enabled."),
+            (
+                "Garde-fous CENTRALISÉS, pas par agent —",
+                "point d'application unique de la politique. Le filtre « cacao uniquement » ne peut pas être oublié sur un futur agent. Souveraineté structurelle.",
+            ),
+            (
+                "Concerns transverses centralisés —",
+                "clarification consultative (avant dispatch), cache exact (tour unique) et enrichissement contact ANADER (sur chaque réponse) sont dans l'orchestrateur, pas dans les agents — exactement comme les garde-fous. Mutualisés avec la V2 via application/conseil_commun.py.",
+            ),
+            (
+                "Clarification consultative : engager le dialogue plutôt que répondre à l'aveugle —",
+                "au 1er tour, si une bonne réponse dépend d'un contexte manquant, le système pose LUI-MÊME les questions (partie atteinte, surface, localité…) et ne répond qu'au tour suivant. Détection déterministe par thèmes (symptôme, traitement, rendement, fertilisation, plantation), motifs normalisés sans accents, UNE seule salve par conversation (dès qu'un historique existe, on répond). Pour une plantation à créer (« je veux planter des cacaoyers », semer, pépinière, créer/démarrer un champ), la localité est demandée EN PREMIER : variétés et calendrier dépendent d'abord de la zone. Déterministe = instantané (aucune inférence dépensée) et fiable même avec un petit modèle CPU (v0.6.61).",
+            ),
+            (
+                "Défense en profondeur (entrée ET sortie) —",
+                "l'entrée bloque la demande interdite (sur le fil ancré → pas de contournement multi-tours) ; la sortie inspecte ce que l'agent a réellement généré. On ne fait jamais confiance à la sortie d'un LLM sans la vérifier.",
+            ),
+            (
+                "Rate-limit après routage/cache, avant l'inférence —",
+                "un refus, une clarification ou un hit de cache ne coûtent pas de génération CPU (~38 s) → ils ne consomment pas le quota. On ne facture que le travail coûteux. Équité.",
+            ),
+            (
+                "Repli systématique —",
+                "routeur indécis → agent RAG par défaut. « Je ne sais pas router » ≠ « je ne réponds pas ».",
+            ),
+            (
+                "Renvoie l'entité Conseil existante —",
+                "tout l'aval V2 (router HTTP, DTO, disclaimer, streaming) marche sans changement. C'est ce qui permet le flag agents_enabled.",
+            ),
         ],
         mental="L'orchestrateur est un routeur + garde + journaliseur. La boucle « décider → agir → vérifier » se généralise en cycles (plan-act-observe) dans les systèmes avancés ; notre version plate a la même structure.",
         code_blocks=[
@@ -512,8 +606,14 @@ return await journaliser(enrichir_contact(conseil, texte_conv))
             "que sa spécificité (quel contexte injecter, comment scorer).",
         ],
         decisions=[
-            ("AgentBase est optionnelle —", "le contrat reste un Protocol ; la base est un confort (DRY). On sépare ce qu'on DOIT respecter (contrat) de ce qu'on PEUT réutiliser (commodité)."),
-            ("RAG = agent par défaut —", "généraliste ancré sur sources officielles → toujours un bon repli. Son peut_traiter renvoie un plancher modéré (0.4) : éligible partout, facile à battre par un spécialiste."),
+            (
+                "AgentBase est optionnelle —",
+                "le contrat reste un Protocol ; la base est un confort (DRY). On sépare ce qu'on DOIT respecter (contrat) de ce qu'on PEUT réutiliser (commodité).",
+            ),
+            (
+                "RAG = agent par défaut —",
+                "généraliste ancré sur sources officielles → toujours un bon repli. Son peut_traiter renvoie un plancher modéré (0.4) : éligible partout, facile à battre par un spécialiste.",
+            ),
         ],
         mental="Un agent concret = le contexte qu'il sait fabriquer + le score qu'il s'attribue. Le reste est mutualisé.",
         code_blocks=[
@@ -549,12 +649,30 @@ async def _generer(self, requete, contexte: str | None) -> AgentReponse:
             "frameworks, mais explicite et déterministe.",
         ],
         decisions=[
-            ("Séparer l'OUTIL de l'AGENT —", "l'outil récupère la donnée (I/O, mockable, réutilisable) ; l'agent raisonne dessus (logique, sans réseau direct). On teste chacun isolément."),
-            ("Port mockable (MeteoPort) —", "aucun appel réseau en test ; la source est interchangeable. Aucun LLM tiers — données factuelles uniquement (souveraineté)."),
-            ("Fail-soft —", "si l'API plante, l'outil renvoie {} au lieu d'exploser ; l'agent dégrade en conseil générique. Un outil qui échoue ne fait jamais tomber l'agent."),
-            ("Routage par mots-clés —", "peut_traiter monte avec le nombre de termes climat détectés (0.7 + 0.1 × touches, plafonné à 1.0)."),
-            ("Détecter la localité, jamais la deviner —", "une prévision n'a de sens que localisée. L'agent détecte la commune sur TOUT le fil (historique + dernier tour) via le module partagé localites (liste officielle des 60 zones ANADER, insensible casse/accents). Une ville citée plus tôt dans la conversation reste connue au tour suivant."),
-            ("Trois cas, aucune météo inventée —", "localité cacaoyère → prévisions Open-Meteo ; localité de savane du Nord (Korhogo, Ferké… non cacaoyères) → on explique avec tact qu'elle n'est pas concernée par le cacao et on redirige, sans prévision ; aucune localité → on demande la commune. Plutôt qu'un centroïde pays inutile ou un chiffre fabriqué, une consigne explicite (même pattern de souveraineté que l'agent Prix sans cours)."),
+            (
+                "Séparer l'OUTIL de l'AGENT —",
+                "l'outil récupère la donnée (I/O, mockable, réutilisable) ; l'agent raisonne dessus (logique, sans réseau direct). On teste chacun isolément.",
+            ),
+            (
+                "Port mockable (MeteoPort) —",
+                "aucun appel réseau en test ; la source est interchangeable. Aucun LLM tiers — données factuelles uniquement (souveraineté).",
+            ),
+            (
+                "Fail-soft —",
+                "si l'API plante, l'outil renvoie {} au lieu d'exploser ; l'agent dégrade en conseil générique. Un outil qui échoue ne fait jamais tomber l'agent.",
+            ),
+            (
+                "Routage par mots-clés —",
+                "peut_traiter monte avec le nombre de termes climat détectés (0.7 + 0.1 × touches, plafonné à 1.0).",
+            ),
+            (
+                "Détecter la localité, jamais la deviner —",
+                "une prévision n'a de sens que localisée. L'agent détecte la commune sur TOUT le fil (historique + dernier tour) via le module partagé localites (liste officielle des 60 zones ANADER, insensible casse/accents). Une ville citée plus tôt dans la conversation reste connue au tour suivant.",
+            ),
+            (
+                "Trois cas, aucune météo inventée —",
+                "localité cacaoyère → prévisions Open-Meteo ; localité de savane du Nord (Korhogo, Ferké… non cacaoyères) → on explique avec tact qu'elle n'est pas concernée par le cacao et on redirige, sans prévision ; aucune localité → on demande la commune. Plutôt qu'un centroïde pays inutile ou un chiffre fabriqué, une consigne explicite (même pattern de souveraineté que l'agent Prix sans cours).",
+            ),
         ],
         mental="L'outil = les yeux et les mains de l'agent sur le monde réel. L'agent = le cerveau qui décide quoi en faire — et qui sait DE QUEL endroit il parle, ou demande.",
         code_blocks=[
@@ -591,8 +709,14 @@ async def _contexte(self, requete) -> str | None:
             "pédagogique : prouver que le framework tient.",
         ],
         decisions=[
-            ("Coût marginal faible et constant —", "le test d'un bon socle : ajouter l'agent n°5..n°11 = recopier le moule en changeant le domaine."),
-            ("invoquer(**kwargs) absorbe la différence —", "OutilMeteo prend localite, OutilPrix ne prend rien (prix national). Le contrat choisi en Task 1 paie ici."),
+            (
+                "Coût marginal faible et constant —",
+                "le test d'un bon socle : ajouter l'agent n°5..n°11 = recopier le moule en changeant le domaine.",
+            ),
+            (
+                "invoquer(**kwargs) absorbe la différence —",
+                "OutilMeteo prend localite, OutilPrix ne prend rien (prix national). Le contrat choisi en Task 1 paie ici.",
+            ),
         ],
         mental="Quand un 2e agent « tool use » se construit en recopiant le 1er, le framework est prouvé. Le reste de la roadmap (10+ agents) est mécanique.",
         tests=[
@@ -613,9 +737,18 @@ async def _contexte(self, requete) -> str | None:
             "superviseur ».",
         ],
         decisions=[
-            ("Construit en dernier —", "il dépend des autres : il illustre qu'un agent peut consommer le travail d'agents pairs."),
-            ("Agrégation prudente —", "les sources des contributions sont unionnées sans doublon ; la confiance retenue est la plus basse (prudence)."),
-            ("Fan-out / fan-in branché (02/07) —", "l'orchestrateur pilote désormais la composition : un agent synthétiseur présent au classement déclenche le fan-out (contributions plafonnées à MAX_CONTRIBUTEURS=2) puis le fan-in. Séquentiel (inférence CPU mono-requête). Réservé au flux /chat/stream avec premier octet immédiat (voir checklist). L'exécution parallèle reste une évolution ultérieure."),
+            (
+                "Construit en dernier —",
+                "il dépend des autres : il illustre qu'un agent peut consommer le travail d'agents pairs.",
+            ),
+            (
+                "Agrégation prudente —",
+                "les sources des contributions sont unionnées sans doublon ; la confiance retenue est la plus basse (prudence).",
+            ),
+            (
+                "Fan-out / fan-in branché (02/07) —",
+                "l'orchestrateur pilote désormais la composition : un agent synthétiseur présent au classement déclenche le fan-out (contributions plafonnées à MAX_CONTRIBUTEURS=2) puis le fan-in. Séquentiel (inférence CPU mono-requête). Réservé au flux /chat/stream avec premier octet immédiat (voir checklist). L'exécution parallèle reste une évolution ultérieure.",
+            ),
         ],
         mental="Le routage choisit QUI parle ; la synthèse fait PARLER ENSEMBLE. C'est la bascule du mono-agent vers le multi-agents.",
         code_blocks=[
@@ -653,9 +786,18 @@ async def synthetiser(self, requete, contributions: list[AgentReponse]) -> Agent
         doc,
         [
             ("Feature flag —", "bascule V2↔V3 sans risque ; rollback instantané."),
-            ("Composition root —", "tout le câblage en un lieu ; le reste du code n'en sait rien."),
-            ("Branchement via get_dialogue_service —", "le router POST passe par la gestion de sessions V2, PAS directement par le handler HTTP : on insère l'orchestrateur à ce niveau pour conserver les sessions conversationnelles."),
-            ("Sources réelles branchées —", "l'agent Météo interroge Open-Meteo (données factuelles, pas un LLM tiers) et l'agent Prix s'appuie sur le prix bord-champ officiel du Conseil Café-Cacao. Le port reste mockable : aucun appel réseau en test, dégradation propre si la source tombe."),
+            (
+                "Composition root —",
+                "tout le câblage en un lieu ; le reste du code n'en sait rien.",
+            ),
+            (
+                "Branchement via get_dialogue_service —",
+                "le router POST passe par la gestion de sessions V2, PAS directement par le handler HTTP : on insère l'orchestrateur à ce niveau pour conserver les sessions conversationnelles.",
+            ),
+            (
+                "Sources réelles branchées —",
+                "l'agent Météo interroge Open-Meteo (données factuelles, pas un LLM tiers) et l'agent Prix s'appuie sur le prix bord-champ officiel du Conseil Café-Cacao. Le port reste mockable : aucun appel réseau en test, dégradation propre si la source tombe.",
+            ),
         ],
     )
     quote(
@@ -665,7 +807,11 @@ async def synthetiser(self, requete, contributions: list[AgentReponse]) -> Agent
     doc.add_page_break()
 
     # --- Recette ---
-    heading(doc, "Recette — Ajouter un agent en 4 étapes (appliquée à l'agent EUDR)", level=1)
+    heading(
+        doc,
+        "Recette — Ajouter un agent en 4 étapes (appliquée à l'agent EUDR)",
+        level=1,
+    )
     para(
         doc,
         "C'est l'aboutissement du socle : l'extensibilité prouvée. L'agent n°5 — "
@@ -674,10 +820,22 @@ async def synthetiser(self, requete, contributions: list[AgentReponse]) -> Agent
     numbered(
         doc,
         [
-            ("Écrire l'agent —", "services/agents/agent_reglementation.py héritant d'AgentBase : nom=\"reglementation\", mots_cles (eudr, déforestation, traçabilité, export…), peut_traiter() (routage par mot entier), traiter() (préfixe un cadrage EUDR au contexte RAG)."),
-            ("(Si besoin) un outil —", "non nécessaire ici : l'agent réutilise le récupérateur RAG. Pour un agent à données externes, on ajouterait services/outils/<x>.py + un port mockable (moule meteo.py/prix.py)."),
-            ("L'enregistrer —", "UNE SEULE ligne dans _construire_orchestrateur (api_deps) : registre.enregistrer(AgentReglementation(inference, rag=rag))."),
-            ("Tester —", "api/tests/agents/test_agent_reglementation.py (routage + cadrage injecté), en TDD."),
+            (
+                "Écrire l'agent —",
+                'services/agents/agent_reglementation.py héritant d\'AgentBase : nom="reglementation", mots_cles (eudr, déforestation, traçabilité, export…), peut_traiter() (routage par mot entier), traiter() (préfixe un cadrage EUDR au contexte RAG).',
+            ),
+            (
+                "(Si besoin) un outil —",
+                "non nécessaire ici : l'agent réutilise le récupérateur RAG. Pour un agent à données externes, on ajouterait services/outils/<x>.py + un port mockable (moule meteo.py/prix.py).",
+            ),
+            (
+                "L'enregistrer —",
+                "UNE SEULE ligne dans _construire_orchestrateur (api_deps) : registre.enregistrer(AgentReglementation(inference, rag=rag)).",
+            ),
+            (
+                "Tester —",
+                "api/tests/agents/test_agent_reglementation.py (routage + cadrage injecté), en TDD.",
+            ),
         ],
     )
     para(
@@ -708,11 +866,26 @@ async def synthetiser(self, requete, contributions: list[AgentReponse]) -> Agent
     bullets(
         doc,
         [
-            ("Cycle TDD —", "test rouge (échoue car le code n'existe pas) → code minimal → test vert → lint → commit. Un commit par tâche."),
-            ("Pourquoi le rouge d'abord —", "un test qu'on n'a jamais vu échouer ne prouve rien. Le rouge garantit qu'il teste vraiment quelque chose."),
-            ("Inférence et réseau mockés —", "aucun appel réel en CI. Les ports (InferencePort, MeteoPort, PrixPort, JournalPort, CachePort) sont remplacés par des doubles."),
-            ("Couverture ≥ 97 % —", "seuil CI (--cov-fail-under). La suite compte 605 tests verts."),
-            ("Lint ruff —", "format + check ; les imports triés ; aucune exception trop large non justifiée."),
+            (
+                "Cycle TDD —",
+                "test rouge (échoue car le code n'existe pas) → code minimal → test vert → lint → commit. Un commit par tâche.",
+            ),
+            (
+                "Pourquoi le rouge d'abord —",
+                "un test qu'on n'a jamais vu échouer ne prouve rien. Le rouge garantit qu'il teste vraiment quelque chose.",
+            ),
+            (
+                "Inférence et réseau mockés —",
+                "aucun appel réel en CI. Les ports (InferencePort, MeteoPort, PrixPort, JournalPort, CachePort) sont remplacés par des doubles.",
+            ),
+            (
+                "Couverture ≥ 97 % —",
+                "seuil CI (--cov-fail-under). La suite compte 635 tests verts.",
+            ),
+            (
+                "Lint ruff —",
+                "format + check ; les imports triés ; aucune exception trop large non justifiée.",
+            ),
         ],
     )
     doc.add_page_break()
@@ -724,31 +897,62 @@ async def synthetiser(self, requete, contributions: list[AgentReponse]) -> Agent
         "La plateforme agentique est désormais ACTIVE en production (agents_enabled = "
         "ON depuis la v0.6.41 ; détection de localité de l'agent Météo livrée en "
         "v0.6.43). Le flag reste un interrupteur de repli instantané vers la V2. État "
-        "au 30/06/2026 :",
+        "au 05/07/2026 :",
     )
     para(doc, "Fait (parité V2 dans l'orchestrateur) :", size=11, color=OR)
     bullets(
         doc,
         [
-            ("Enrichissement contact ANADER + clarification —", "l'orchestrateur applique clarification.analyser (avant dispatch) et conseil_commun.enrichir_contact (sur chaque réponse), comme la V2. Mutualisé dans application/conseil_commun.py."),
-            ("Cache exact de réponses —", "get_cached/set_cached branchés (tour unique), sérialisation partagée avec la V2 -> le pré-chauffage redevient utile, latence préservée."),
-            ("Vrai streaming token-par-token —", "Orchestrateur.traiter_stream streame les fragments de l'agent avec garde-fou de sortie phrase par phrase, puis enrichissement + événement final. Mutualisé dans application/flux.py. L'UI web a un affichage progressif identique à la V2."),
+            (
+                "Enrichissement contact ANADER + clarification —",
+                "l'orchestrateur applique clarification.analyser (avant dispatch) et conseil_commun.enrichir_contact (sur chaque réponse), comme la V2. Mutualisé dans application/conseil_commun.py.",
+            ),
+            (
+                "Cache exact de réponses —",
+                "get_cached/set_cached branchés (tour unique), sérialisation partagée avec la V2 -> le pré-chauffage redevient utile, latence préservée.",
+            ),
+            (
+                "Vrai streaming token-par-token —",
+                "Orchestrateur.traiter_stream streame les fragments de l'agent avec garde-fou de sortie phrase par phrase, puis enrichissement + événement final. Mutualisé dans application/flux.py. L'UI web a un affichage progressif identique à la V2.",
+            ),
         ],
     )
     para(doc, "Fait depuis l'activation :", size=11, color=OR)
     bullets(
         doc,
         [
-            ("Sources météo/prix réelles —", "agent Météo branché sur Open-Meteo (géocodage + précipitations) ; agent Prix sur le prix bord-champ officiel du Conseil Café-Cacao, complété par le RAG (mise à marché, historique)."),
-            ("Détection de localité robuste —", "l'agent Météo détecte la commune sur tout le fil (module localites) et distingue zone cacaoyère / savane du Nord / commune absente, sans jamais fabriquer de météo (v0.6.43)."),
+            (
+                "Sources météo/prix réelles —",
+                "agent Météo branché sur Open-Meteo (géocodage + précipitations) ; agent Prix sur le prix bord-champ officiel du Conseil Café-Cacao, complété par le RAG (mise à marché, historique).",
+            ),
+            (
+                "Détection de localité robuste —",
+                "l'agent Météo détecte la commune sur tout le fil (module localites) et distingue zone cacaoyère / savane du Nord / commune absente, sans jamais fabriquer de météo (v0.6.43).",
+            ),
         ],
     )
     para(doc, "Fait depuis (02/07) :", size=11, color=OR)
     bullets(
         doc,
         [
-            ("Composition multi-agents —", "AgentReporting.synthetiser branché dans l'orchestrateur. Déclencheur : présence d'un synthétiseur (hasattr synthetiser_stream) au classement → fan-out (plafonné) + fan-in. Réservé au flux /chat/stream : une composition = ~3 générations CPU (~3 min) dépasserait le time-out edge Cloudflare (~100 s) → 524 sur une réponse synchrone (vécu et corrigé). Le flux émet un événement « progress » immédiat (premier octet < 1 s, ignoré par le front) + heartbeat par contribution, puis streame la synthèse token par token (synthetiser_stream + agreger). En synchrone /chat, repli mono-agent."),
-            ("Cache sémantique dans l'orchestrateur —", "branché (parité V2) : après un miss exact (tour unique), on vectorise la question et on sert un voisin proche (cosinus >= seuil) validé par un garde-fou lexical. Logique extraite dans application/cache_semantique.py (CacheSemantique), PARTAGÉE par ConseilService (V2) et l'orchestrateur (V3) — une seule source de vérité. Inerte si le service d'embeddings est absent."),
+            (
+                "Composition multi-agents —",
+                "AgentReporting.synthetiser branché dans l'orchestrateur. Déclencheur : présence d'un synthétiseur (hasattr synthetiser_stream) au classement → fan-out (plafonné) + fan-in. Réservé au flux /chat/stream : une composition = ~3 générations CPU (~3 min) dépasserait le time-out edge Cloudflare (~100 s) → 524 sur une réponse synchrone (vécu et corrigé). Le flux émet un événement « progress » immédiat (premier octet < 1 s, ignoré par le front) + heartbeat par contribution, puis streame la synthèse token par token (synthetiser_stream + agreger). En synchrone /chat, repli mono-agent.",
+            ),
+            (
+                "Cache sémantique dans l'orchestrateur —",
+                "branché (parité V2) : après un miss exact (tour unique), on vectorise la question et on sert un voisin proche (cosinus >= seuil) validé par un garde-fou lexical. Logique extraite dans application/cache_semantique.py (CacheSemantique), PARTAGÉE par ConseilService (V2) et l'orchestrateur (V3) — une seule source de vérité. Inerte si le service d'embeddings est absent.",
+            ),
+        ],
+    )
+    para(doc, "Fait depuis (05/07) :", size=11, color=OR)
+    bullets(
+        doc,
+        [
+            (
+                "Dialogue consultatif élargi au projet de plantation —",
+                "« je veux planter des cacaoyers » (et planter, semer, pépinière, créer/démarrer un champ) déclenche désormais la salve de clarification au lieu d'une réponse à l'aveugle, avec la LOCALITÉ en première question (variétés et calendrier dépendent d'abord de la zone). Vérifié de bout en bout en production (v0.6.61) : au tour 2, « Je suis à Soubré, sol argileux » fait remonter par le RAG l'étude pédologique ANADER de la zone (Krohon/Koda : couches indurées dès 60 cm, ombrière de 2 m) — la réponse est ancrée sur des documents sources, pas fabriquée.",
+            ),
         ],
     )
     quote(
@@ -762,10 +966,22 @@ async def synthetiser(self, requete, contributions: list[AgentReponse]) -> Agent
     bullets(
         doc,
         [
-            ("Périmètre cacao UNIQUEMENT —", "vivrier, anacarde, médical, dosages phytosanitaires précis → redirection ANADER. Décision Waopron, juin 2026."),
-            ("Garde-fous dans l'orchestrateur —", "centralisés, jamais réimplémentés par agent. S'appliquent identiquement à tous les agents, actuels et futurs."),
-            ("Aucun service externe en production —", "OpenAI/Anthropic/Cohere proscrits dans le pipeline. Les outils appellent des sources de données, pas des LLM tiers, toujours derrière un port mockable."),
-            ("Disclaimer ANADER systématique —", "porté par l'entité Conseil sur chaque réponse modèle."),
+            (
+                "Périmètre cacao UNIQUEMENT —",
+                "vivrier, anacarde, médical, dosages phytosanitaires précis → redirection ANADER. Décision Waopron, juin 2026.",
+            ),
+            (
+                "Garde-fous dans l'orchestrateur —",
+                "centralisés, jamais réimplémentés par agent. S'appliquent identiquement à tous les agents, actuels et futurs.",
+            ),
+            (
+                "Aucun service externe en production —",
+                "OpenAI/Anthropic/Cohere proscrits dans le pipeline. Les outils appellent des sources de données, pas des LLM tiers, toujours derrière un port mockable.",
+            ),
+            (
+                "Disclaimer ANADER systématique —",
+                "porté par l'entité Conseil sur chaque réponse modèle.",
+            ),
             ("Jamais de dosage généré —", "même en exemple de test."),
         ],
     )
@@ -777,19 +993,59 @@ async def synthetiser(self, requete, contributions: list[AgentReponse]) -> Agent
         doc,
         ["Terme", "Définition"],
         [
-            ["Agent", "Capacité bornée derrière une interface stable (peut_traiter + traiter)."],
-            ["Outil (tool)", "Fonction nommée à entrée/sortie sérialisables qu'un agent invoque pour agir."],
-            ["Tool use", "Mécanisme par lequel un agent appelle un outil pour ramener des données fraîches puis raisonne dessus."],
-            ["Grounding", "Ancrage de la génération sur des faits injectés en contexte plutôt que sur la mémoire du modèle."],
-            ["Routage d'intention", "Choix du/des agent(s) pertinent(s) pour une requête (ici par score déterministe)."],
-            ["Orchestrateur", "Plan de contrôle : décide qui agit, applique garde-fous, dispatche, journalise."],
+            [
+                "Agent",
+                "Capacité bornée derrière une interface stable (peut_traiter + traiter).",
+            ],
+            [
+                "Outil (tool)",
+                "Fonction nommée à entrée/sortie sérialisables qu'un agent invoque pour agir.",
+            ],
+            [
+                "Tool use",
+                "Mécanisme par lequel un agent appelle un outil pour ramener des données fraîches puis raisonne dessus.",
+            ],
+            [
+                "Grounding",
+                "Ancrage de la génération sur des faits injectés en contexte plutôt que sur la mémoire du modèle.",
+            ],
+            [
+                "Routage d'intention",
+                "Choix du/des agent(s) pertinent(s) pour une requête (ici par score déterministe).",
+            ],
+            [
+                "Clarification consultative (slot filling)",
+                "Collecte du contexte manquant (localité, surface, symptôme…) par des questions posées AVANT de répondre ; la réponse n'est produite qu'une fois les « cases » remplies.",
+            ],
+            [
+                "Orchestrateur",
+                "Plan de contrôle : décide qui agit, applique garde-fous, dispatche, journalise.",
+            ],
             ["Registre", "Annuaire d'agents ; point d'extension du framework."],
-            ["Composition root", "Lieu unique où le graphe d'objets est assemblé (câblage des dépendances)."],
-            ["Feature flag", "Interrupteur de configuration activant une capacité sans redéploiement de code."],
-            ["Fail-soft", "Dégradation propre : un composant qui échoue ne fait pas tomber l'ensemble."],
-            ["Défense en profondeur", "Plusieurs contrôles indépendants (entrée + sortie) plutôt qu'un seul."],
-            ["Template Method", "Pattern où une base définit le squelette d'un algorithme, les sous-classes la spécificité."],
-            ["Plan-act-observe", "Boucle agentique multi-étapes (planifier, agir, observer) — généralisation de l'orchestrateur plat."],
+            [
+                "Composition root",
+                "Lieu unique où le graphe d'objets est assemblé (câblage des dépendances).",
+            ],
+            [
+                "Feature flag",
+                "Interrupteur de configuration activant une capacité sans redéploiement de code.",
+            ],
+            [
+                "Fail-soft",
+                "Dégradation propre : un composant qui échoue ne fait pas tomber l'ensemble.",
+            ],
+            [
+                "Défense en profondeur",
+                "Plusieurs contrôles indépendants (entrée + sortie) plutôt qu'un seul.",
+            ],
+            [
+                "Template Method",
+                "Pattern où une base définit le squelette d'un algorithme, les sous-classes la spécificité.",
+            ],
+            [
+                "Plan-act-observe",
+                "Boucle agentique multi-étapes (planifier, agir, observer) — généralisation de l'orchestrateur plat.",
+            ],
         ],
     )
 
