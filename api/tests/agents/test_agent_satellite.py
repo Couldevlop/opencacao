@@ -82,6 +82,24 @@ async def test_score_eleve_sur_question_deforestation() -> None:
 
 
 @pytest.mark.asyncio
+async def test_mot_faible_seul_ne_route_pas_vers_satellite() -> None:
+    """« parcelle » seul (sans mot fort) ne doit pas détourner une question
+    phytosanitaire vers un appel GFW hors sujet — revue finale 05/07."""
+    agent, _ = _agent()
+    assert (
+        await agent.peut_traiter(_requete("Comment traiter les chenilles sur ma parcelle ?")) == 0.0
+    )
+
+
+@pytest.mark.asyncio
+async def test_mot_fort_et_faible_cumulent_le_score() -> None:
+    agent, _ = _agent()
+    assert (
+        await agent.peut_traiter(_requete("Y a-t-il de la déforestation sur ma parcelle ?")) >= 0.8
+    )
+
+
+@pytest.mark.asyncio
 async def test_gps_dans_le_fil_prioritaire_sur_la_localite() -> None:
     agent, inf = _agent({"alertes_depuis_2021": 0, "dates_recentes": [], "tampon_km": 1})
     await agent.traiter(_requete("déforestation autour de 5.72, -6.68 près de Soubré ?"))
@@ -131,6 +149,30 @@ async def test_source_indisponible_consigne_explicite() -> None:
     agent, inf = _agent({})  # outil renvoie {}
     await agent.traiter(_requete("déforestation à Soubré ?"))
     assert "indisponible" in (inf.contexte_recu or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_gps_virgule_decimale_francaise_reconnue() -> None:
+    agent, inf = _agent({"alertes_depuis_2021": 0, "dates_recentes": [], "tampon_km": 1})
+    await agent.traiter(_requete("déforestation autour de 5,72, -6,68 près de Soubré ?"))
+    source = agent._outil._source  # type: ignore[attr-defined]
+    assert source.appels[0]["lat"] == pytest.approx(5.72)
+    assert source.appels[0]["lon"] == pytest.approx(-6.68)
+
+
+@pytest.mark.asyncio
+async def test_alertes_anciennes_sans_date_recente_ne_laisse_pas_de_trou() -> None:
+    """Garde : alertes anciennes (dates_recentes vide) ne doit pas produire une
+    phrase tronquée « Dernières dates d'alerte : . » qui inviterait le LLM à
+    inventer une date — revue finale 05/07."""
+    agent, inf = _agent({"alertes_depuis_2021": 5, "dates_recentes": [], "tampon_km": 1})
+    await agent.traiter(_requete("déforestation à Soubré ?"))
+    contexte = inf.contexte_recu or ""
+    assert "Dernières dates d'alerte : ." not in contexte
+    assert "5" in contexte
+    assert "aucune alerte récente" in contexte.lower()
+    assert "avant l'an dernier" in contexte.lower()
+    assert "n'invente" in contexte.lower()
 
 
 # ===== FRONTIÈRE AVEC L'AGENT RÉGLEMENTATION =====

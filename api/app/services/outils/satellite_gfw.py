@@ -17,10 +17,6 @@ import datetime as dt
 
 import httpx
 
-from app.core.logging import get_logger
-
-logger = get_logger(__name__)
-
 _API_URL = "https://data-api.globalforestwatch.org/dataset/gfw_integrated_alerts/latest/query/json"
 _GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 _TAMPON_DEG = 0.009  # ≈ 1 km

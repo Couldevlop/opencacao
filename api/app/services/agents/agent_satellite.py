@@ -24,12 +24,20 @@ from app.services.rag import RagRecuperateur
 # migrent de l'agent Réglementation (frontière nette, comme certification -> Normes) ;
 # « eudr », « traçabilité », « conformité » restent réglementaires. PAS « alerte »
 # seul (happerait « alerte pluie », domaine météo). Routage par MOT ENTIER.
-_MOTS_SATELLITE = (
+#
+# « parcelle »/« forêt » seuls sont des mots FAIBLES : ils ne comptent que si un mot
+# FORT (déforestation/satellite/géolocalisation) est aussi présent dans le fil.
+# Sinon « parcelle » seul détournait des questions hors sujet (ex. « traiter les
+# chenilles sur ma parcelle ») du RAG phytosanitaire vers un appel GFW inutile —
+# revue finale 05/07.
+_MOTS_FORTS = (
     "deforestation",
     "déforestation",
+    "satellite",
     "geolocalisation",
     "géolocalisation",
-    "satellite",
+)
+_MOTS_FAIBLES = (
     "parcelle",
     "parcelles",
     "foret",
@@ -37,6 +45,7 @@ _MOTS_SATELLITE = (
     "forets",
     "forêts",
 )
+_MOTS_SATELLITE = _MOTS_FORTS + _MOTS_FAIBLES
 
 # Coordonnées décimales « lat, lon » bornées Côte d'Ivoire (lat 4..11, lon -9..-2).
 _COORDONNEES = re.compile(r"(-?\d{1,2}[.,]\d+)\s*[,;]\s*(-?\d{1,2}[.,]\d+)")
@@ -90,11 +99,13 @@ class AgentSatellite(AgentBase):
         self._rag = rag
 
     async def peut_traiter(self, requete: AgentRequete) -> float:
-        """Score élevé si la question évoque la déforestation/parcelle (mot entier)."""
-        touches = compter_mots_cles(requete.fil_ancre, self.mots_cles)
-        if touches == 0:
+        """Score élevé si un mot FORT est présent ; les mots faibles ne font que
+        renforcer un mot fort déjà détecté (voir commentaire sur ``_MOTS_FAIBLES``)."""
+        forts = compter_mots_cles(requete.fil_ancre, _MOTS_FORTS)
+        if forts == 0:
             return 0.0
-        return min(0.7 + 0.1 * touches, 1.0)
+        faibles = compter_mots_cles(requete.fil_ancre, _MOTS_FAIBLES)
+        return min(0.7 + 0.1 * (forts + faibles), 1.0)
 
     async def _contexte(self, requete: AgentRequete) -> str | None:
         """Faits satellitaires (ou consigne) + contexte réglementaire RAG."""
@@ -143,11 +154,25 @@ def _formater_alertes(resultat: dict[str, object]) -> str:
             f"détectée depuis 2021 dans la zone (~{resultat.get('tampon_km', 1)} km "
             f"autour du point fourni). {_RESERVE}"
         )
-    dates = ", ".join(str(d) for d in resultat.get("dates_recentes", []))  # type: ignore[union-attr]
+    dates_recentes = resultat.get("dates_recentes", [])  # type: ignore[union-attr]
+    tampon = resultat.get("tampon_km", 1)
+    if not dates_recentes:
+        # Alertes anciennes uniquement (aucune dans la fenêtre « dates récentes ») :
+        # ne JAMAIS clore sur « Dernières dates d'alerte : . », une chaîne tronquée
+        # qui invite le LLM à inventer une date — revue finale 05/07.
+        return (
+            f"Constat satellitaire (Global Forest Watch) : {total} alertes de "
+            "déforestation détectées depuis 2021 dans la zone "
+            f"(~{tampon} km autour du point fourni). Aucune alerte récente n'est "
+            "datée ; les alertes détectées datent d'avant l'an dernier. N'invente "
+            "AUCUNE date. Explique les implications au regard du règlement EUDR "
+            f"(déforestation zéro après le 31/12/2020). {_RESERVE}"
+        )
+    dates = ", ".join(str(d) for d in dates_recentes)
     return (
         f"Constat satellitaire (Global Forest Watch) : {total} alertes de "
         "déforestation détectées depuis 2021 dans la zone "
-        f"(~{resultat.get('tampon_km', 1)} km autour du point fourni). Dernières "
+        f"(~{tampon} km autour du point fourni). Dernières "
         f"dates d'alerte : {dates}. Explique les implications au regard du règlement "
         f"EUDR (déforestation zéro après le 31/12/2020). {_RESERVE}"
     )

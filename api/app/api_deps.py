@@ -81,10 +81,12 @@ def _construire_orchestrateur(
     """Composition racine de la plateforme agentique (testable sans FastAPI).
 
     Assemble le graphe : registre → agents Cœur enregistrés (RAG, Météo, Prix,
-    Réglementation, Normes, Reporting) → routeur → orchestrateur. Les outils Météo/Prix
-    sont branchés sur des sources « indisponibles » (résultat vide) tant qu'aucune API
-    réelle n'est câblée : l'agent dégrade alors proprement en conseil générique, et le
-    socle reste déployable sans dépendance.
+    Réglementation, Normes, Satellite, Reporting) → routeur → orchestrateur. Les
+    outils Météo/Prix sont branchés sur des sources réelles (Open-Meteo, prix
+    officiel de campagne) ; Satellite s'appuie sur Global Forest Watch si une clé
+    API est configurée, sinon sur une source neutre (résultat vide) : l'agent
+    dégrade alors proprement en consigne d'indisponibilité, et le socle reste
+    déployable sans dépendance.
 
     Args:
         inference: Port d'inférence.
