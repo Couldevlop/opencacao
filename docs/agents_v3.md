@@ -218,18 +218,19 @@ C'est l'aboutissement du socle : l'extensibilité prouvée. L'**agent n°5 — R
 
 ---
 
-## Checklist d'activation (AVANT de passer `agents_enabled=ON`)
+## Checklist d'activation — **TOUT EST LIVRÉ, agents ACTIFS en production**
 
-Le socle est **sûr et dormant** (flag OFF, V2 inchangée). La parité fonctionnelle progresse ; état au 29/06/2026 :
+La plateforme est **active en production** (`AGENTS_ENABLED=ON` depuis la v0.6.41 du 30/06/2026) ; le flag reste un interrupteur de repli instantané vers la V2. Revue complète des 6 agents vérifiée en prod le 05/07/2026 (v0.6.63). État :
 
 **✅ Fait (parité V2 dans l'orchestrateur)**
 - **Enrichissement contact ANADER + clarification consultative** : l'orchestrateur applique désormais `clarification.analyser` (avant dispatch) et `conseil_commun.enrichir_contact` (sur chaque réponse), comme la V2. Mutualisé dans `application/conseil_commun.py`.
 - **Cache exact de réponses** : `get_cached`/`set_cached` branchés (tour unique), sérialisation partagée avec la V2 → le pré-chauffage redevient utile et la latence est préservée.
 - **Vrai streaming token-par-token** : `Orchestrateur.traiter_stream` streame les fragments de l'agent avec **garde-fou de sortie phrase par phrase** (aucun dosage diffusé), puis enrichissement + événement final. Mutualisé dans `application/flux.py` (`FiltreSortie`, `evenement_final`). L'adaptateur `conseiller_stream` y délègue → l'UI web a un affichage progressif identique à la V2. `AgentBase` expose `traiter_stream` (chaque agent ne définit que `_contexte`).
 
-**⏳ Reste avant `agents_enabled=ON`**
+**✅ Complété depuis l'activation (items historiquement listés « avant ON »)**
 - ~~**Cache sémantique**~~ **LIVRÉ (02/07)** : branché dans l'orchestrateur (parité V2). Après un miss exact (tour unique), l'orchestrateur vectorise la question et sert un voisin sémantiquement proche (cosinus ≥ seuil) validé par un **garde-fou lexical**. Logique extraite dans **`application/cache_semantique.py`** (`CacheSemantique`), **partagée** par `ConseilService` (V2) et l'orchestrateur (V3) — une seule source de vérité. Inerte si le service d'embeddings est absent (exact-match seul).
-- **Sources météo/prix réelles** : remplacer `MeteoIndisponible`/`PrixIndisponible` par des adaptateurs httpx (port mockable) avant que les agents Météo/Prix apportent une valeur.
+  - **Correctif 05/07 (v0.6.63, vécu prod)** : le **routage précède désormais le cache sémantique**, et une **intention de synthèse** (synthétiseur au classement) ne consulte ni n'alimente l'index sémantique. Sans cela, « bilan météo+prix » était servi par la seule réponse météo cachée (le seuil lexical prod abaissé à 0.3 laissait passer ce voisin inter-intentions) et la composition était court-circuitée. Le seuil 0.3 est conservé : le rappel des vraies paraphrases est intact.
+- ~~**Sources météo/prix réelles**~~ **LIVRÉ (30/06, v0.6.41)** : `outils/meteo_openmeteo.py` (Open-Meteo — géocodage + précipitations 24 h) et `outils/prix_campagne.py` (prix bord-champ officiel du Conseil du Café-Cacao, configuré par campagne). Ports mockables conservés (aucun appel réseau en test) ; `MeteoIndisponible`/`PrixIndisponible` restent les replis fail-soft.
 - ~~**Composition multi-agents**~~ **LIVRÉ (02/07)** : `AgentReporting.synthetiser` est branché dans l'orchestrateur. Déclencheur = présence d'un agent **synthétiseur** (duck-typing `hasattr(agent, "synthetiser_stream")`) dans le classement de routage ; les autres agents classés produisent des contributions (fan-out, plafonné à `MAX_CONTRIBUTEURS=2`), le synthétiseur les fusionne (fan-in). Séquentiel (inférence CPU mono-requête).
   - **Réservé au flux `/chat/stream`.** Une composition = jusqu'à 3 générations CPU (~3 min) → dépasse le time-out edge Cloudflare (~100 s) sur une réponse **synchrone** → **524** (vécu en prod). Correctif : (1) sur `/v1/chat` synchrone, on **retombe en mono-agent** (pas de composition) ; (2) sur `/chat/stream`, un événement `progress` est émis **immédiatement** (premier octet < 1 s → pas de 524), un heartbeat suit **chaque** contribution, puis la synthèse est **streamée token par token** (`AgentReporting.synthetiser_stream` ; sources/confiance via `agreger`). Le front ignore les types d'événements inconnus → `progress` garde le flux vivant sans polluer la réponse.
 
