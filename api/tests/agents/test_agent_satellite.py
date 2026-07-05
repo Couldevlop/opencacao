@@ -150,3 +150,13 @@ async def test_frontiere_eudr_reste_reglementaire() -> None:
     reglementation = AgentReglementation(_InferenceFactice())
     question = _requete("que demande la réglementation EUDR pour exporter ?")
     assert await reglementation.peut_traiter(question) > await satellite.peut_traiter(question)
+
+
+@pytest.mark.asyncio
+async def test_deforestation_seule_ne_score_plus_reglementation() -> None:
+    """Verrouille le retrait : « déforestation » seul ne route plus vers Réglementation."""
+    reglementation = AgentReglementation(_InferenceFactice())
+    question = _requete("il y a de la déforestation près de chez moi, c'est grave ?")
+    assert await reglementation.peut_traiter(question) == 0.0
+    satellite, _ = _agent()
+    assert await satellite.peut_traiter(question) >= 0.7
