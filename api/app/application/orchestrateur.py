@@ -2,8 +2,9 @@
 
 Enchaîne, autour du dispatch, les concerns transverses (parité avec ConseilService
 V2) : garde-fous d'entrée → clarification consultative → cache exact → routage →
-rate-limit → dispatch → garde-fou de sortie → enrichissement contact ANADER →
-journalisation. Les garde-fous, la clarification et l'enrichissement ne sont jamais
+cache sémantique (hors intention de synthèse) → rate-limit → dispatch → garde-fou
+de sortie → enrichissement contact ANADER → journalisation. Les garde-fous, la
+clarification et l'enrichissement ne sont jamais
 réimplémentés par agent : centralisés ici, ils s'appliquent à tous les agents —
 actuels comme à venir (Maladie, Satellite, Réglementation EUDR…).
 """
@@ -111,26 +112,15 @@ class Orchestrateur:
             conseil = Conseil(clarif, Confiance.MOYENNE, [], redirection_anader=False)
             return await self._journaliser(question, langue, conseil)
 
-        # 3. Cache de réponses (tour unique) : réponse instantanée, parité V2. Exact
-        #    d'abord (le moins cher, sans embedding), puis SÉMANTIQUE (paraphrases). Le
-        #    cache stocke le conseil NON enrichi ; l'enrichissement contact, qui dépend de
-        #    la conversation, est appliqué à chaque requête. L'embedding calculé ici est
-        #    réutilisé à l'écriture (pas de double vectorisation).
-        embedding: list[float] | None = None
+        # 3. Cache EXACT (tour unique) : réponse instantanée, parité V2. Le cache stocke
+        #    le conseil NON enrichi ; l'enrichissement contact, qui dépend de la
+        #    conversation, est appliqué à chaque requête.
         if not historique:
             cached = await self._cache.get_cached(question, langue.value)
             if cached is not None:
                 logger.info("cache_hit")
                 conseil = conseil_commun.enrichir_contact(
                     conseil_commun.depuis_paquet(json.loads(cached)), texte_conv
-                )
-                return await self._journaliser(question, langue, conseil)
-            embedding = await self._semantique.vecteur(question, historique)
-            paquet = await self._semantique.hit(question, langue.value, embedding)
-            if paquet is not None:
-                logger.info("cache_semantique_hit")
-                conseil = conseil_commun.enrichir_contact(
-                    conseil_commun.depuis_paquet(paquet), texte_conv
                 )
                 return await self._journaliser(question, langue, conseil)
 
@@ -142,15 +132,34 @@ class Orchestrateur:
             historique=historique,
         )
 
-        # 4. Routage d'intention → agent (repli sur l'agent par défaut).
+        # 4. Routage d'intention AVANT le cache sémantique : le classement révèle une
+        #    intention de SYNTHÈSE, qu'un voisin mono-agent caché ne doit jamais servir
+        #    (vécu prod : « bilan météo+prix » servi par la seule réponse météo cachée).
+        classement = await self._routeur.classer(requete)
+        synthetiseur = self._synthetiseur(classement)
+
+        # 5. Cache SÉMANTIQUE (tour unique, hors intention de synthèse) : sert une
+        #    paraphrase cachée. L'embedding calculé ici est réutilisé à l'écriture
+        #    (pas de double vectorisation) ; une intention de synthèse ne consulte ni
+        #    n'alimente l'index (embedding laissé à None).
+        embedding: list[float] | None = None
+        if not historique and synthetiseur is None:
+            embedding = await self._semantique.vecteur(question, historique)
+            paquet = await self._semantique.hit(question, langue.value, embedding)
+            if paquet is not None:
+                logger.info("cache_semantique_hit")
+                conseil = conseil_commun.enrichir_contact(
+                    conseil_commun.depuis_paquet(paquet), texte_conv
+                )
+                return await self._journaliser(question, langue, conseil)
+
+        # 6. Dispatch mono-agent (le mieux classé, repli sur l'agent par défaut).
         #    La composition multi-agents (synthèse) ne s'active QUE sur le flux
         #    (traiter_stream) : elle enchaîne plusieurs générations CPU (~3 min) qui
         #    dépasseraient le time-out edge Cloudflare (~100 s) sur une réponse
-        #    SYNCHRONE → 524. Ici, un seul agent répond (le mieux classé), même si un
-        #    synthétiseur figure au classement.
-        agent = await self._routeur.meilleur(requete)
-        if agent is None:
-            agent = self._agent_de_repli()
+        #    SYNCHRONE → 524. Ici, un seul agent répond, même si un synthétiseur
+        #    figure au classement.
+        agent = classement[0][0] if classement else self._agent_de_repli()
         logger.info("dispatch", agent=agent.nom if agent else None)
         if agent is None:
             conseil = Conseil(
@@ -161,14 +170,14 @@ class Orchestrateur:
             )
             return await self._journaliser(question, langue, conseil)
 
-        # 5. Rate-limit UNIQUEMENT avant l'inférence réelle (équité : refus/cache gratuits).
+        # 7. Rate-limit UNIQUEMENT avant l'inférence réelle (équité : refus/cache gratuits).
         if await self._cache.hit_rate_limit(client_ip):
             raise RateLimitDepasse
 
-        # 6. Dispatch vers l'agent.
+        # 8. Dispatch vers l'agent.
         reponse = await agent.traiter(requete)
 
-        # 7. Garde-fou de SORTIE (défense en profondeur).
+        # 9. Garde-fou de SORTIE (défense en profondeur).
         if guardrails.verifier_reponse(reponse.texte) is not None:
             logger.warning("garde_fou_sortie_declenche", agent=agent.nom)
             conseil = conseil_commun.enrichir_contact(
@@ -183,7 +192,7 @@ class Orchestrateur:
             sources=reponse.sources,
             redirection_anader=reponse.redirection_anader,
         )
-        # 8. Cache exact + index sémantique (tour unique), enrichissement, journalisation.
+        # 10. Cache exact + index sémantique (tour unique), enrichissement, journalisation.
         if not historique:
             await self._cache.set_cached(question, langue.value, conseil_commun.serialiser(conseil))
             await self._semantique.indexer(question, langue.value, embedding)
@@ -242,35 +251,13 @@ class Orchestrateur:
             )
             return
 
-        # 3. Cache (tour unique) : exact puis SÉMANTIQUE. Réponse cachée émise d'un bloc.
-        #    L'embedding est réutilisé à l'écriture (pas de double vectorisation).
-        embedding: list[float] | None = None
+        # 3. Cache EXACT (tour unique) : réponse cachée émise d'un bloc.
+        paquet: dict | None = None
         if not historique:
             cached = await self._cache.get_cached(question, langue.value)
-            paquet = None
             if cached is not None:
                 logger.info("cache_hit")
                 paquet = json.loads(cached)
-            else:
-                embedding = await self._semantique.vecteur(question, historique)
-                paquet = await self._semantique.hit(question, langue.value, embedding)
-                if paquet is not None:
-                    logger.info("cache_semantique_hit")
-            if paquet is not None:
-                base = conseil_commun.depuis_paquet(paquet)
-                conseil = conseil_commun.enrichir_contact(base, texte_conv)
-                for ev in flux.evenements_token(base.reponse, conseil.reponse):
-                    yield ev
-                yield await flux.evenement_final(
-                    self._journal,
-                    question,
-                    langue,
-                    conseil.reponse,
-                    conseil.sources,
-                    conseil.confiance,
-                    redirection=conseil.redirection_anader,
-                )
-                return
 
         requete = AgentRequete(
             question=question,
@@ -280,9 +267,42 @@ class Orchestrateur:
             historique=historique,
         )
 
-        # 4. Routage : classement complet (repli RAG + détection d'un synthétiseur).
-        classement = await self._routeur.classer(requete)
-        synthetiseur = self._synthetiseur(classement)
+        # 4. Routage AVANT le cache sémantique : le classement révèle une intention de
+        #    SYNTHÈSE (synthétiseur présent), qu'un voisin mono-agent caché ne doit
+        #    jamais servir (vécu prod : « bilan météo+prix » servi par la seule réponse
+        #    météo cachée, composition court-circuitée). Inutile sur hit exact.
+        classement: list = []
+        synthetiseur = None
+        embedding: list[float] | None = None
+        if paquet is None:
+            classement = await self._routeur.classer(requete)
+            synthetiseur = self._synthetiseur(classement)
+
+            # 5. Cache SÉMANTIQUE (tour unique, hors intention de synthèse). L'embedding
+            #    est réutilisé à l'écriture ; une intention de synthèse ne consulte ni
+            #    n'alimente l'index (embedding laissé à None).
+            if not historique and synthetiseur is None:
+                embedding = await self._semantique.vecteur(question, historique)
+                paquet = await self._semantique.hit(question, langue.value, embedding)
+                if paquet is not None:
+                    logger.info("cache_semantique_hit")
+
+        if paquet is not None:
+            base = conseil_commun.depuis_paquet(paquet)
+            conseil = conseil_commun.enrichir_contact(base, texte_conv)
+            for ev in flux.evenements_token(base.reponse, conseil.reponse):
+                yield ev
+            yield await flux.evenement_final(
+                self._journal,
+                question,
+                langue,
+                conseil.reponse,
+                conseil.sources,
+                conseil.confiance,
+                redirection=conseil.redirection_anader,
+            )
+            return
+
         agent = classement[0][0] if classement else self._agent_de_repli()
         cible = synthetiseur or agent
         logger.info(
@@ -296,11 +316,11 @@ class Orchestrateur:
             )
             return
 
-        # 5. Rate-limit avant l'inférence réelle.
+        # 6. Rate-limit avant l'inférence réelle.
         if await self._cache.hit_rate_limit(client_ip):
             raise RateLimitDepasse
 
-        # 6a. Composition multi-agents (flux) : fan-out avec PROGRESSION, puis synthèse
+        # 7a. Composition multi-agents (flux) : fan-out avec PROGRESSION, puis synthèse
         #     streamée. Le premier octet (« progress ») part immédiatement → pas de 524
         #     Cloudflare même si le fan-out CPU dure ~1-2 min ; un heartbeat suit chaque
         #     contribution. La synthèse est ensuite streamée token par token, filtrée par
@@ -363,7 +383,7 @@ class Orchestrateur:
             )
             return
 
-        # 6b. Mono-agent : vrai streaming token-par-token + garde-fou de sortie phrase par phrase.
+        # 7b. Mono-agent : vrai streaming token-par-token + garde-fou de sortie phrase par phrase.
         # Contexte calculé une fois : passé au stream ET réutilisé pour ANCRER les
         # sources après coup (souveraineté : confiance non gonflée par une citation
         # de mémoire non ancrée).
@@ -390,7 +410,7 @@ class Orchestrateur:
             )
             return
 
-        # 7. Post-traitement : sources, confiance, cache, enrichissement, événement final.
+        # 8. Post-traitement : sources, confiance, cache, enrichissement, événement final.
         texte = filtre.texte
         sources = postprocess.extraire_sources(texte, contexte)
         confiance = postprocess.estimer_confiance(sources)

@@ -527,6 +527,49 @@ async def test_cache_semantique_inerte_sans_embeddings() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cache_semantique_ignore_si_intention_synthese_stream() -> None:
+    # Vécu prod (05/07) : « bilan météo+prix » servi par la seule réponse météo cachée,
+    # composition court-circuitée. Une intention de synthèse (synthétiseur au classement)
+    # ne consulte PAS le cache sémantique : un voisin mono-agent ne couvre pas un bilan.
+    cache = _CacheFactice(semantic=(_paquet_cache("analyse météo cachée"), "météo à Daloa"))
+    rag = _AgentEspion("rag", 0.4, "analyse RAG")
+    meteo = _AgentEspion("meteo", 0.9, "analyse météo")
+    reporting = _AgentSynthetiseur("reporting", 0.8, ["synthèse complète."])
+    orch = _orchestrateur(rag, meteo, reporting, cache=cache, cache_semantique=_semantique(cache))
+    evenements = await _flux(orch, "comment tailler le cacaoyer ?")
+    texte = "".join(e["text"] for e in evenements if e["type"] == "token")
+    assert "synthèse complète" in texte  # la composition s'exécute bien
+    assert "cachée" not in texte  # le voisin mono-agent n'est pas servi
+    assert reporting.contributions_recues is not None
+
+
+@pytest.mark.asyncio
+async def test_cache_semantique_ignore_si_intention_synthese_sync() -> None:
+    # Même règle en synchrone : pas de composition (anti-524), mais pas non plus de
+    # voisin mono-agent caché — dispatch vers l'agent le mieux classé.
+    cache = _CacheFactice(semantic=(_paquet_cache("analyse météo cachée"), "météo à Daloa"))
+    rag = _AgentEspion("rag", 0.4, "analyse RAG")
+    meteo = _AgentEspion("meteo", 0.9, "analyse météo")
+    reporting = _AgentSynthetiseur("reporting", 0.8)
+    orch = _orchestrateur(rag, meteo, reporting, cache=cache, cache_semantique=_semantique(cache))
+    conseil = await orch.traiter("comment tailler le cacaoyer ?", Langue.FR, "ip")
+    assert conseil.reponse == "analyse météo"
+    assert meteo.recue is not None
+
+
+@pytest.mark.asyncio
+async def test_intention_synthese_non_indexee_semantiquement() -> None:
+    # Une intention de synthèse n'alimente pas l'index sémantique : sa réponse (composée
+    # ou mono) ne doit jamais être servie comme voisin d'une future question mono-agent.
+    cache = _CacheFactice()
+    rag = _AgentEspion("rag", 0.4, "analyse RAG")
+    reporting = _AgentSynthetiseur("reporting", 0.8)
+    orch = _orchestrateur(rag, reporting, cache=cache, cache_semantique=_semantique(cache))
+    await _flux(orch, "comment tailler le cacaoyer ?")
+    assert cache.indexes == []
+
+
+@pytest.mark.asyncio
 async def test_cache_semantique_stream_sert_une_paraphrase() -> None:
     cache = _CacheFactice(semantic=(_paquet_cache("Taillez en saison sèche."), "comment tailler"))
     agent = _AgentStream(["ne devrait pas être généré"])

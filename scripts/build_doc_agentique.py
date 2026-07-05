@@ -941,7 +941,7 @@ async def synthetiser(self, requete, contributions: list[AgentReponse]) -> Agent
             ),
             (
                 "Cache sémantique dans l'orchestrateur —",
-                "branché (parité V2) : après un miss exact (tour unique), on vectorise la question et on sert un voisin proche (cosinus >= seuil) validé par un garde-fou lexical. Logique extraite dans application/cache_semantique.py (CacheSemantique), PARTAGÉE par ConseilService (V2) et l'orchestrateur (V3) — une seule source de vérité. Inerte si le service d'embeddings est absent.",
+                "branché (parité V2) : après un miss exact (tour unique), on vectorise la question et on sert un voisin proche (cosinus >= seuil) validé par un garde-fou lexical. Logique extraite dans application/cache_semantique.py (CacheSemantique), PARTAGÉE par ConseilService (V2) et l'orchestrateur (V3) — une seule source de vérité. Inerte si le service d'embeddings est absent. Correctif 05/07 (vécu prod) : le ROUTAGE précède désormais la couche sémantique, et une intention de SYNTHÈSE (synthétiseur au classement) ne consulte ni n'alimente le cache sémantique — un « bilan météo+prix » ne peut plus être servi par la seule réponse météo cachée d'un voisin mono-agent (le seuil lexical abaissé à 0.3 laissait passer ce faux positif inter-intentions).",
             ),
         ],
     )
