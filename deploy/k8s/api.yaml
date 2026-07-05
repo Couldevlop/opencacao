@@ -121,6 +121,15 @@ spec:
             - secretRef:
                 name: opencacao-auth
                 optional: true
+            # Clé Global Forest Watch (agent Satellite A8). optional : sans le Secret,
+            # l'agent répond une consigne « vérification satellitaire indisponible »
+            # (source neutre), aucun statut inventé. ⚠ La clé expire après UN AN
+            # (créée le 05/07/2026 -> renouveler avant le 30/06/2027). Créé hors Git :
+            #   kubectl -n opencacao create secret generic opencacao-gfw \
+            #     --from-literal=GFW_API_KEY=<clé>
+            - secretRef:
+                name: opencacao-gfw
+                optional: true
           volumeMounts:
             - name: dataset
               mountPath: /data

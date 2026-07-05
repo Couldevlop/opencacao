@@ -50,7 +50,12 @@ réglementaire RAG — sans jamais certifier une conformité.
 4. **Routage & frontière** : `mots_cles` Satellite = `deforestation/déforestation`,
    `geolocalisation/géolocalisation`, `satellite`, `parcelle`, `foret/forêt`
    (mot entier, via `compter_mots_cles` ; PAS `alerte` seul — happerait
-   « alerte pluie », domaine météo). Ces deux premiers sont RETIRÉS
+   « alerte pluie », domaine météo). **Amendement 06/07 (revue finale, décision
+   Waopron)** : co-occurrence requise — les mots FAIBLES (`parcelle`, `forêt`)
+   ne comptent que si un mot FORT (`déforestation`, `satellite`,
+   `géolocalisation`) est présent ; sans mot fort, score 0. Sinon « traiter les
+   chenilles sur ma parcelle » (agronomie pure) était détourné du RAG vers un
+   appel GFW hors sujet. Ces deux premiers sont RETIRÉS
    de `agent_reglementation.py` (même chirurgie que Normes) ; `eudr`,
    `traçabilité`, `conformité`, `réglementation` restent à l'agent Réglementation.
    Satellite enregistré APRÈS Réglementation (égalité de score → EUDR gagne).
