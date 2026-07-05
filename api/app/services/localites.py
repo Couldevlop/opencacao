@@ -15,6 +15,7 @@ connaissance « cacaoyère ou non » repose sur la deny-list curée ``LOCALITES_
 
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 from functools import lru_cache
@@ -27,6 +28,7 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 _CHEMIN = Path(__file__).resolve().parent.parent / "data" / "contacts_zones.yaml"
+_CHEMIN_COORDONNEES = Path(__file__).resolve().parent.parent / "data" / "coordonnees_localites.json"
 
 # Villes de savane du Nord, non cacaoyères (climat trop sec / saison des pluies trop
 # courte). Deny-list curée — décision métier Waopron, NON élargie. Clé normalisée
@@ -121,6 +123,27 @@ def detecter_nord(texte: str) -> str | None:
         if re.search(rf"\b{re.escape(cle)}\b", norm):
             return nom
     return None
+
+
+@lru_cache(maxsize=1)
+def _coordonnees_table() -> dict[str, tuple[float, float]]:
+    """Table statique ``{clé normalisée: (lat, lon)}``. ``{}`` si absente/illisible."""
+    try:
+        brut = json.loads(_CHEMIN_COORDONNEES.read_text(encoding="utf-8"))
+        return {cle: (float(v[0]), float(v[1])) for cle, v in brut.items()}
+    except (OSError, ValueError) as exc:
+        logger.warning("coordonnees_localites_illisibles", error=str(exc))
+        return {}
+
+
+def coordonnees(nom: str) -> tuple[float, float] | None:
+    """Coordonnées ``(lat, lon)`` d'une localité connue, ou ``None``.
+
+    Table générée par ``scripts/gen_coordonnees_localites.py`` (résultats
+    IVOIRIENS uniquement — le géocodage live prenait le premier résultat
+    mondial). Évite un appel HTTP de géocodage par question météo/satellite.
+    """
+    return _coordonnees_table().get(_normaliser(nom))
 
 
 def chercher_zone(texte: str) -> tuple[dict, str] | None:

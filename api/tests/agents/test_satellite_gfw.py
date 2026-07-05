@@ -55,13 +55,35 @@ async def test_zero_alerte_ne_fait_pas_de_seconde_requete() -> None:
 
 
 @pytest.mark.asyncio
-async def test_localite_geocodee_puis_interrogee() -> None:
+async def test_localite_hors_table_geocodee_puis_interrogee() -> None:
+    # Repli : une localité absente de la table statique passe par le géocodage HTTP.
     gfw = SatelliteGfw(
         cle="cle-test",
         client=_client(
             [{"data": [{"count": 0}]}],
             geocode={"results": [{"latitude": 5.78, "longitude": -6.59}]},
         ),
+        api_url=_API,
+        geocoding_url=_GEO,
+    )
+    resultat = await gfw.alertes(localite="Villagedeloin")
+    assert resultat["alertes_depuis_2021"] == 0
+
+
+@pytest.mark.asyncio
+async def test_localite_de_la_table_statique_sans_geocodage() -> None:
+    # Soubré est dans la table statique : aucun appel au géocodage (hôte geo.test).
+    def _sans_geocodage(requete: httpx.Request) -> httpx.Response:
+        if requete.url.host == "geo.test":
+            raise AssertionError("géocodage inattendu pour une localité de la table statique")
+        if "/latest/" in str(requete.url):
+            cible = str(requete.url).replace("/latest/", "/v20260703/")
+            return httpx.Response(307, headers={"location": cible})
+        return httpx.Response(200, json={"data": [{"count": 0}]})
+
+    gfw = SatelliteGfw(
+        cle="cle-test",
+        client=httpx.AsyncClient(transport=httpx.MockTransport(_sans_geocodage)),
         api_url=_API,
         geocoding_url=_GEO,
     )

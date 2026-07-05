@@ -17,6 +17,8 @@ import datetime as dt
 
 import httpx
 
+from app.services import localites
+
 _API_URL = "https://data-api.globalforestwatch.org/dataset/gfw_integrated_alerts/latest/query/json"
 _GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 _TAMPON_DEG = 0.009  # ≈ 1 km
@@ -87,11 +89,13 @@ class SatelliteGfw:
     async def _alertes(
         self, client: httpx.AsyncClient, localite: str, lat: float | None, lon: float | None
     ) -> dict[str, object]:
-        """Géocode si nécessaire puis interroge le dataset d'alertes."""
+        """Localise (table statique, sinon géocodage) puis interroge le dataset d'alertes."""
         if lat is None or lon is None:
             if not localite.strip():
                 return {}
-            point = await self._geocoder(client, localite)
+            # Table statique d'abord (localités ivoiriennes connues) : évite un
+            # appel HTTP ; le géocodage live reste le repli pour un nom hors table.
+            point = localites.coordonnees(localite) or await self._geocoder(client, localite)
             if point is None:
                 return {}
             lat, lon = point
