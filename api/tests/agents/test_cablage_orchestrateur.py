@@ -22,7 +22,29 @@ def test_construction_orchestrateur_enregistre_les_agents_coeur() -> None:
     orch = _construire_orchestrateur(inference=object(), cache=object(), journal=object(), rag=None)
     assert isinstance(orch, Orchestrateur)
     noms = orch._routeur.registre.noms()  # noqa: SLF001
-    assert set(noms) == {"rag", "meteo", "prix", "reglementation", "normes", "reporting"}
+    assert set(noms) == {
+        "rag",
+        "meteo",
+        "prix",
+        "reglementation",
+        "normes",
+        "satellite",
+        "reporting",
+    }
+
+
+def test_satellite_enregistre_sans_gfw_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sans GFW_API_KEY, l'app démarre quand même : la source dégrade en indisponible."""
+    monkeypatch.delenv("GFW_API_KEY", raising=False)
+    get_settings.cache_clear()
+    try:
+        orch = _construire_orchestrateur(
+            inference=object(), cache=object(), journal=object(), rag=None
+        )
+        noms = orch._routeur.registre.noms()  # noqa: SLF001
+        assert "satellite" in noms
+    finally:
+        get_settings.cache_clear()
 
 
 class _State:

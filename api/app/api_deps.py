@@ -95,7 +95,7 @@ def _construire_orchestrateur(
 
     Returns:
         Un orchestrateur prêt à traiter, avec rag/meteo/prix/reglementation/normes/
-        reporting enregistrés.
+        satellite/reporting enregistrés.
     """
     from app.services.agents.agent_meteo import AgentMeteo
     from app.services.agents.agent_normes import AgentNormes
@@ -103,14 +103,23 @@ def _construire_orchestrateur(
     from app.services.agents.agent_rag import AgentRag
     from app.services.agents.agent_reglementation import AgentReglementation
     from app.services.agents.agent_reporting import AgentReporting
+    from app.services.agents.agent_satellite import AgentSatellite
+    from app.services.outils.indisponible import SatelliteIndisponible
     from app.services.outils.meteo import OutilMeteo
     from app.services.outils.meteo_openmeteo import MeteoOpenMeteo
     from app.services.outils.prix import OutilPrix
     from app.services.outils.prix_campagne import PrixCampagne
+    from app.services.outils.satellite import OutilSatellite
+    from app.services.outils.satellite_gfw import SatelliteGfw
 
     settings = get_settings()
     meteo = MeteoOpenMeteo(timeout_s=settings.meteo_timeout_s)
     prix = PrixCampagne(settings.prix_bord_champ_fcfa_kg, settings.prix_campagne)
+    satellite = (
+        SatelliteGfw(settings.gfw_api_key, timeout_s=settings.gfw_timeout_s)
+        if settings.gfw_api_key
+        else SatelliteIndisponible()
+    )
 
     registre = RegistreAgents()
     registre.enregistrer(AgentRag(inference, rag=rag))  # type: ignore[arg-type]
@@ -118,6 +127,7 @@ def _construire_orchestrateur(
     registre.enregistrer(AgentPrix(inference, OutilPrix(prix), rag=rag))  # type: ignore[arg-type]
     registre.enregistrer(AgentReglementation(inference, rag=rag))  # type: ignore[arg-type]
     registre.enregistrer(AgentNormes(inference, rag=rag))  # type: ignore[arg-type]
+    registre.enregistrer(AgentSatellite(inference, OutilSatellite(satellite), rag=rag))  # type: ignore[arg-type]
     registre.enregistrer(AgentReporting(inference))  # type: ignore[arg-type]
     routeur = RouteurIntention(registre)
     return Orchestrateur(

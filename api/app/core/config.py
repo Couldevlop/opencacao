@@ -98,6 +98,11 @@ class Settings(BaseSettings):
     # À mettre à jour à chaque campagne via ConfigMap (PRIX_BORD_CHAMP_FCFA_KG).
     prix_bord_champ_fcfa_kg: int = 0
     prix_campagne: str = ""
+    # Global Forest Watch (agent Satellite) : clé Data API (Secret K8s, jamais en
+    # ConfigMap). Vide = agent actif mais source indisponible (consigne explicite).
+    # ⚠ La clé expire après UN AN (créée le 05/07/2026 -> renouveler avant 30/06/2027).
+    gfw_api_key: str = ""
+    gfw_timeout_s: float = 15.0
 
     # --- Cache sémantique ---
     # Sur un miss exact, vectorise la question et sert la réponse d'une question
