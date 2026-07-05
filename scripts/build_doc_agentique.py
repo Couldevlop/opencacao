@@ -856,8 +856,26 @@ async def synthetiser(self, requete, contributions: list[AgentReponse]) -> Agent
         "ont été confiés à Normes (retirés de Réglementation) pour un routage sans ambiguïté. "
         "Même garde-fou de souveraineté que l'EUDR : sans document RAG, aucun critère, seuil, "
         "montant de prime ni date inventé — redirection vers l'organisme certificateur, la "
-        "coopérative ou l'agent ANADER. Les agents avancés restants (Maladie, Satellite, ERP, "
-        "AgroSense…) nécessitent des intégrations externes.",
+        "coopérative ou l'agent ANADER.",
+    )
+    para(
+        doc,
+        "Agent n°7 — Satellite (A8, 05/07/2026) : premier agent à INTÉGRATION EXTERNE, "
+        "toujours par la même recette (agent_satellite.py + outil satellite.py/satellite_gfw.py). "
+        "Il constate les alertes de déforestation Global Forest Watch (alertes intégrées "
+        "GLAD+RADD) autour de la position du producteur — GPS trouvé dans le fil (borné "
+        "Côte d'Ivoire) prioritaire, sinon localité nommée géocodée, sinon demande de "
+        "position — sur un tampon d'environ 1 km, et croise ces faits datés au contexte RAG "
+        "EUDR. Souveraineté renforcée : l'agent CONSTATE, il ne certifie JAMAIS une "
+        "conformité (réserve injectée dans chaque contexte) ; sans clé GFW_API_KEY (Secret "
+        "K8s, expire le 30/06/2027) la source est neutre → consigne explicite, aucun statut "
+        "inventé. Frontière de routage : déforestation/géolocalisation confiés à Satellite "
+        "(retirés de Réglementation, comme certification→Normes), verrouillée par un test "
+        "discriminant. Source validée sur données réelles avant d'écrire le code : couverture "
+        "ivoirienne discriminante (0 alerte en ville, 1 055 en lisière du parc de Taï), "
+        "fraîcheur ~2 semaines, latence ~3 s ; particularités d'API encodées (redirection 307, "
+        "GROUP BY au lieu de MAX(), alias SQL ignorés). Les agents avancés restants (Maladie, "
+        "ERP, AgroSense) nécessitent d'autres intégrations externes.",
     )
     doc.add_page_break()
 
