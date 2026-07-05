@@ -39,12 +39,10 @@ _CADRE_EUDR_SANS_DOC = (
 
 _MOTS_REGLEMENTATION = (
     "eudr",
-    "deforestation",
-    "déforestation",
+    # « déforestation »/« géolocalisation » sont confiés à l'agent Satellite (constat
+    # terrain) ; l'EUDR réglementaire (due diligence, conformité) reste ici.
     "tracabilite",
     "traçabilité",
-    "geolocalisation",
-    "géolocalisation",
     "reglementation",
     "réglementation",
     "reglement",

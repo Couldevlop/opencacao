@@ -57,7 +57,7 @@ async def test_traiter_injecte_le_cadre_eudr_avec_le_rag() -> None:
 async def test_traiter_sans_rag_garde_le_cadre() -> None:
     inf = _InferenceFactice()
     agent = AgentReglementation(inf, rag=None)
-    await agent.traiter(_requete("règlement européen déforestation ?"))
+    await agent.traiter(_requete("règlement européen conformité ?"))
     assert "EUDR" in (inf.contexte_recu or "")
 
 

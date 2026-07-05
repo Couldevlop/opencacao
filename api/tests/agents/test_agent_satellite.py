@@ -6,6 +6,7 @@ import pytest
 
 from app.domain.agents import AgentRequete
 from app.models.domain import Langue
+from app.services.agents.agent_reglementation import AgentReglementation
 from app.services.agents.agent_satellite import AgentSatellite
 from app.services.outils.indisponible import SatelliteIndisponible
 from app.services.outils.satellite import OutilSatellite
@@ -130,3 +131,22 @@ async def test_source_indisponible_consigne_explicite() -> None:
     agent, inf = _agent({})  # outil renvoie {}
     await agent.traiter(_requete("déforestation à Soubré ?"))
     assert "indisponible" in (inf.contexte_recu or "").lower()
+
+
+# ===== FRONTIÈRE AVEC L'AGENT RÉGLEMENTATION =====
+
+
+@pytest.mark.asyncio
+async def test_frontiere_deforestation_va_au_satellite() -> None:
+    satellite, _ = _agent()
+    reglementation = AgentReglementation(_InferenceFactice())
+    question = _requete("y a-t-il des alertes de déforestation sur ma parcelle ?")
+    assert await satellite.peut_traiter(question) > await reglementation.peut_traiter(question)
+
+
+@pytest.mark.asyncio
+async def test_frontiere_eudr_reste_reglementaire() -> None:
+    satellite, _ = _agent()
+    reglementation = AgentReglementation(_InferenceFactice())
+    question = _requete("que demande la réglementation EUDR pour exporter ?")
+    assert await reglementation.peut_traiter(question) > await satellite.peut_traiter(question)
