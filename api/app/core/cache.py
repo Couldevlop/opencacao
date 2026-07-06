@@ -57,6 +57,7 @@ class CacheClient:
 
     _CACHE_PREFIX = "cache:chat:"
     _SEMIDX_PREFIX = "semidx:chat:"
+    _OUTIL_PREFIX = "outil:"
     _RATE_PREFIX = "rate:"
     _CACHE_TTL_S = 604_800  # 7 jours : les conseils agronomiques sont stables.
 
@@ -124,6 +125,24 @@ class CacheClient:
                 payload,
                 ex=self._CACHE_TTL_S,
             )
+        except redis.RedisError:
+            return
+
+    async def get_outil(self, cle: str) -> str | None:
+        """Retourne le résultat d'outil en cache (préfixe ``outil:``), ou None.
+
+        Les résultats d'outils (météo, alertes satellite) ne dépendent ni du modèle
+        ni de la version applicative : la clé n'est pas cloisonnée par version.
+        """
+        try:
+            return await self._redis.get(f"{self._OUTIL_PREFIX}{cle}")
+        except redis.RedisError:
+            return None
+
+    async def set_outil(self, cle: str, payload: str, ttl_s: int) -> None:
+        """Met en cache un résultat d'outil sérialisé, avec son TTL propre."""
+        try:
+            await self._redis.set(f"{self._OUTIL_PREFIX}{cle}", payload, ex=ttl_s)
         except redis.RedisError:
             return
 

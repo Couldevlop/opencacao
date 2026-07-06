@@ -46,6 +46,19 @@ async def test_previsions_localite_vide_retourne_vide() -> None:
 
 
 @pytest.mark.asyncio
+async def test_localite_de_la_table_statique_sans_geocodage() -> None:
+    # Daloa est dans la table statique (coordonnees_localites.json) : AUCUN appel
+    # de géocodage HTTP ne doit partir — seule la prévision est interrogée.
+    def _forecast_seul(req: httpx.Request) -> httpx.Response:
+        if "search" in req.url.path:
+            raise AssertionError("géocodage inattendu pour une localité de la table statique")
+        return httpx.Response(200, json={"daily": {"precipitation_sum": [3.0]}})
+
+    meteo = MeteoOpenMeteo(client=_client(_forecast_seul))
+    assert (await meteo.previsions("Daloa"))["pluie_mm_24h"] == 3.0
+
+
+@pytest.mark.asyncio
 async def test_resume_reflete_l_intensite_de_pluie() -> None:
     def _sec(req: httpx.Request) -> httpx.Response:
         if "search" in req.url.path:

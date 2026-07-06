@@ -103,6 +103,16 @@ class Settings(BaseSettings):
     # ⚠ La clé expire après UN AN (créée le 05/07/2026 -> renouveler avant 30/06/2027).
     gfw_api_key: str = ""
     gfw_timeout_s: float = 15.0
+    # Cache Redis des résultats d'outils (préfixe outil:) : la pluie sous 30 min ne
+    # change pas de conseil, les alertes GFW sont hebdomadaires — et il n'y a que
+    # ~60 zones. Économise 1-3 s d'appels HTTP répétés + le quota GFW. 0 = coupé.
+    outil_cache_meteo_ttl_s: int = 1800
+    outil_cache_satellite_ttl_s: int = 86_400
+    # Keepalive du préfixe KV : micro-génération périodique (max_tokens=1) pour que
+    # le préfixe système (cache_prompt) reste chaud dans llama-server — le premier
+    # producteur après une période calme ne repaie pas ~15-25 s de préremplissage.
+    # 0 = coupé (défaut) ; prod : 600 (10 min, ~0,5 % de CPU).
+    kv_keepalive_s: int = 0
 
     # --- Cache sémantique ---
     # Sur un miss exact, vectorise la question et sert la réponse d'une question

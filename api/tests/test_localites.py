@@ -66,6 +66,59 @@ def test_yaml_illisible_degrade_proprement(monkeypatch) -> None:
         localites._index.cache_clear()
 
 
+def test_coordonnees_localite_connue() -> None:
+    """Une localité de la table statique renvoie (lat, lon) dans les bornes ivoiriennes."""
+    point = localites.coordonnees("Daloa")
+    assert point is not None
+    lat, lon = point
+    assert 4.0 <= lat <= 11.0 and -9.0 <= lon <= -2.0
+
+
+def test_coordonnees_insensible_casse_et_accents() -> None:
+    assert localites.coordonnees("FERKESSÉDOUGOU") == localites.coordonnees("ferkessedougou")
+
+
+def test_coordonnees_localite_inconnue() -> None:
+    assert localites.coordonnees("VilleInconnue") is None
+
+
+def test_coordonnees_fichier_absent_degrade(monkeypatch) -> None:
+    monkeypatch.setattr(localites, "_CHEMIN_COORDONNEES", Path("/inexistant/coords.json"))
+    localites._coordonnees_table.cache_clear()
+    try:
+        assert localites.coordonnees("Daloa") is None
+    finally:
+        localites._coordonnees_table.cache_clear()
+
+
+def test_detecter_nord_tolere_une_faute_de_frappe() -> None:
+    """« korohgo » (lettres inversées) doit être reconnu comme Korhogo.
+
+    Vécu prod (06/07) : la coquille échappait à la détection exacte, le garde-fou
+    « zone non cacaoyère » ne se déclenchait pas, et le modèle donnait un conseil
+    cacao pour une ville de savane.
+    """
+    assert localites.detecter_nord("ma plantation se trouve à korohgo") == "Korhogo"
+    assert localites.detecter_nord("je suis à korhogoo") == "Korhogo"  # lettre en trop
+
+
+def test_detecter_tolere_une_faute_de_frappe() -> None:
+    assert localites.detecter("quel temps à Dalao ?") == "Daloa"  # lettres inversées
+    assert localites.detecter("je suis à Soubr") == "Soubré"  # lettre manquante
+
+
+def test_tolerance_desactivee_sur_les_noms_courts() -> None:
+    """« mon »/« man » : pas de flou sur les noms < 5 lettres (Man reste exact)."""
+    assert localites.detecter("j'ai vu mon champ hier") is None
+    assert localites.detecter("je suis à Man") == "Man"
+
+
+def test_chercher_zone_tolere_une_faute_de_frappe() -> None:
+    trouve = localites.chercher_zone("le numéro de l'ANADER à korohgo")
+    assert trouve is not None
+    assert trouve[0]["nom"] == "Direction Régionale Nord"
+
+
 def test_detecter_localite_la_plus_recente() -> None:
     # Plusieurs villes cacaoyères : on géocode la DERNIÈRE citée (contexte courant),
     # même si une ville citée plus tôt a un libellé plus long.

@@ -63,12 +63,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("demarrage", version=__version__, backend=settings.inference_backend)
 
     app.state.prewarm_task = _lancer_prechauffage(app, settings)
+    app.state.keepalive_task = _lancer_keepalive(app, settings)
 
     try:
         yield
     finally:
         if app.state.prewarm_task is not None:
             app.state.prewarm_task.cancel()
+        if app.state.keepalive_task is not None:
+            app.state.keepalive_task.cancel()
         if app.state.purge_task is not None:
             app.state.purge_task.cancel()
         await app.state.inference.close()
@@ -133,6 +136,21 @@ def _lancer_prechauffage(app: FastAPI, settings: Settings) -> object | None:
         rag=app.state.rag,
     )
     return asyncio.create_task(prechauffer_cache(service, QUESTIONS_FAQ))
+
+
+def _lancer_keepalive(app: FastAPI, settings: Settings) -> object | None:
+    """Démarre le keepalive du préfixe KV en tâche de fond (non bloquant).
+
+    Returns:
+        La tâche asyncio créée, ou None si le keepalive est désactivé (défaut).
+    """
+    if settings.kv_keepalive_s <= 0:
+        return None
+    import asyncio
+
+    from app.application.keepalive import boucle_keepalive
+
+    return asyncio.create_task(boucle_keepalive(app.state.inference, settings.kv_keepalive_s))
 
 
 def _construire_rag(settings: Settings) -> tuple[object | None, object | None]:

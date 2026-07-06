@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import httpx
 
+from app.services import localites
+
 _GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 _FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 
@@ -69,22 +71,29 @@ class MeteoOpenMeteo:
             return await self._previsions(client, localite)
 
     async def _previsions(self, client: httpx.AsyncClient, localite: str) -> dict[str, object]:
-        """Effectue le géocodage puis la prévision via le client httpx fourni."""
-        reponse_geo = await client.get(
-            self._geocoding_url,
-            params={"name": localite, "count": 1, "language": "fr", "format": "json"},
-        )
-        reponse_geo.raise_for_status()
-        resultats = reponse_geo.json().get("results") or []
-        if not resultats:
-            return {}
-        lieu = resultats[0]
+        """Localise (table statique, sinon géocodage) puis interroge la prévision.
+
+        La table statique (``localites.coordonnees``, localités ivoiriennes connues)
+        évite un appel HTTP par question ; le géocodage live reste le repli pour un
+        nom hors table.
+        """
+        point = localites.coordonnees(localite)
+        if point is None:
+            reponse_geo = await client.get(
+                self._geocoding_url,
+                params={"name": localite, "count": 1, "language": "fr", "format": "json"},
+            )
+            reponse_geo.raise_for_status()
+            resultats = reponse_geo.json().get("results") or []
+            if not resultats:
+                return {}
+            point = (float(resultats[0]["latitude"]), float(resultats[0]["longitude"]))
 
         reponse_prev = await client.get(
             self._forecast_url,
             params={
-                "latitude": lieu["latitude"],
-                "longitude": lieu["longitude"],
+                "latitude": point[0],
+                "longitude": point[1],
                 "daily": "precipitation_sum",
                 "forecast_days": 1,
                 "timezone": "auto",

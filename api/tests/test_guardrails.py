@@ -81,6 +81,17 @@ def test_zone_nord_nomme_la_localite() -> None:
     assert "Korhogo" in guardrails.evaluer("Puis-je cultiver le cacao à Korhogo ?").message
 
 
+def test_zone_nord_detectee_malgre_une_faute_de_frappe() -> None:
+    """« korohgo » (coquille de saisie) déclenche quand même la correction de zone.
+
+    Vécu prod (06/07) : la coquille contournait le garde-fou et le modèle donnait
+    un conseil de fertilisation cacao pour une ville de savane.
+    """
+    refus = guardrails.evaluer("Quel engrais pour mon cacao ? Ma plantation est à korohgo")
+    assert refus is not None and refus.categorie is CategorieRefus.ZONE_NON_CACAO
+    assert "Korhogo" in refus.message
+
+
 @pytest.mark.parametrize(
     "question",
     [
