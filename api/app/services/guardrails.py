@@ -10,7 +10,7 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from app.models.domain import CategorieRefus
-from app.services.localites import LOCALITES_NORD
+from app.services import localites
 
 # --- Messages de refus standardisés (constantes) ---
 
@@ -322,17 +322,16 @@ _RE_IMAGE = _compiler(_TERMES_IMAGE)
 _RE_FILIERE = _compiler(_TERMES_FILIERE)
 _RE_HORS_FILIERE = _compiler(_TERMES_HORS_FILIERE)
 _RE_ZONE_DECLENCHEUR = _compiler(_TERMES_ZONE_DECLENCHEUR)
-_RE_LOCALITES_NORD = tuple(
-    (re.compile(rf"\b{re.escape(cle)}\b"), nom) for cle, nom in LOCALITES_NORD.items()
-)
 
 
 def _localite_nord_detectee(texte: str) -> str | None:
-    """Renvoie le nom d'affichage d'une localité de savane du Nord citée, ou None."""
-    for motif, nom in _RE_LOCALITES_NORD:
-        if motif.search(texte):
-            return nom
-    return None
+    """Renvoie le nom d'affichage d'une localité de savane du Nord citée, ou None.
+
+    Délègue au module partagé ``localites`` (source unique) : la détection y est
+    tolérante aux fautes de frappe (« korohgo » -> Korhogo), pour que le garde-fou
+    « zone non cacaoyère » ne soit pas contourné par une coquille de saisie.
+    """
+    return localites.detecter_nord(texte)
 
 
 def _message_zone(nom: str) -> str:

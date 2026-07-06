@@ -60,6 +60,53 @@ def _normaliser(texte: str) -> str:
     return sans_accent.lower()
 
 
+# Tolérance aux fautes de frappe (saisie mobile) : en dessous de 5 lettres, le flou
+# créerait des faux positifs (« mon » -> « Man ») — les noms courts restent exacts.
+_LONGUEUR_MIN_FLOU = 5
+
+
+def _quasi_egal(a: str, b: str) -> bool:
+    """Distance de Damerau-Levenshtein ≤ 1 (échange, ajout, retrait ou substitution).
+
+    Vécu prod (06/07) : « korohgo » (lettres inversées) échappait à la détection
+    exacte — le garde-fou « zone non cacaoyère » ne se déclenchait pas et le modèle
+    donnait un conseil cacao pour une ville de savane.
+    """
+    if a == b:
+        return True
+    la, lb = len(a), len(b)
+    if abs(la - lb) > 1:
+        return False
+    if la == lb:
+        differences = [i for i in range(la) if a[i] != b[i]]
+        if len(differences) == 1:
+            return True  # substitution unique
+        return (  # transposition adjacente (korohgo <-> korhogo)
+            len(differences) == 2
+            and differences[1] == differences[0] + 1
+            and a[differences[0]] == b[differences[1]]
+            and a[differences[1]] == b[differences[0]]
+        )
+    court, long_ = (a, b) if la < lb else (b, a)
+    i = j = ecarts = 0
+    while i < len(court) and j < len(long_):
+        if court[i] == long_[j]:
+            i += 1
+        else:
+            ecarts += 1
+            if ecarts > 1:
+                return False
+        j += 1
+    return True  # ajout/retrait unique
+
+
+def _positions_flou(norm: str, cible: str) -> list[int]:
+    """Positions des mots du texte quasi-égaux à la cible (mono-mot, ≥ 5 lettres)."""
+    if len(cible) < _LONGUEUR_MIN_FLOU or " " in cible:
+        return []
+    return [m.start() for m in re.finditer(r"\w+", norm) if _quasi_egal(m.group(0), cible)]
+
+
 @lru_cache(maxsize=1)
 def _annuaire() -> dict:
     """Charge l'annuaire YAML (mémoïsé). Renvoie {} si absent/illisible."""
@@ -71,8 +118,8 @@ def _annuaire() -> dict:
 
 
 @lru_cache(maxsize=1)
-def _index() -> list[tuple[re.Pattern, str, dict]]:
-    """Index ``(regex sur libellé normalisé, nom canonique, DR)``, du plus long au plus court.
+def _index() -> list[tuple[re.Pattern, str, str, dict]]:
+    """Index ``(regex, libellé normalisé, nom canonique, DR)``, du plus long au plus court.
 
     Trié par longueur de libellé décroissante pour qu'un libellé long (« san pedro »)
     prime sur un court. Le mot-frontière évite les correspondances partielles.
@@ -84,7 +131,7 @@ def _index() -> list[tuple[re.Pattern, str, dict]]:
             if libelle:
                 paires.append((_normaliser(libelle), libelle, dr))
     paires.sort(key=lambda p: len(p[0]), reverse=True)
-    return [(re.compile(rf"\b{re.escape(n)}\b"), canon, dr) for n, canon, dr in paires]
+    return [(re.compile(rf"\b{re.escape(n)}\b"), n, canon, dr) for n, canon, dr in paires]
 
 
 def detecter(texte: str) -> str | None:
@@ -104,10 +151,10 @@ def detecter(texte: str) -> str | None:
     norm = _normaliser(texte)
     meilleur: tuple[int, int] | None = None  # (dernière position, longueur du libellé)
     resultat: str | None = None
-    for motif, canon, _dr in _index():
-        if _normaliser(canon) in LOCALITES_NORD:
+    for motif, libelle, canon, _dr in _index():
+        if libelle in LOCALITES_NORD:
             continue
-        positions = [m.start() for m in motif.finditer(norm)]
+        positions = [m.start() for m in motif.finditer(norm)] or _positions_flou(norm, libelle)
         if not positions:
             continue
         cle = (max(positions), len(canon))
@@ -120,7 +167,7 @@ def detecter_nord(texte: str) -> str | None:
     """Nom d'affichage de la première ville NON cacaoyère du Nord citée, ou ``None``."""
     norm = _normaliser(texte)
     for cle, nom in LOCALITES_NORD.items():
-        if re.search(rf"\b{re.escape(cle)}\b", norm):
+        if re.search(rf"\b{re.escape(cle)}\b", norm) or _positions_flou(norm, cle):
             return nom
     return None
 
@@ -153,8 +200,12 @@ def chercher_zone(texte: str) -> tuple[dict, str] | None:
     contact ANADER.
     """
     norm = _normaliser(texte)
-    for motif, _canon, dr in _index():
+    for motif, _libelle, _canon, dr in _index():
         m = motif.search(norm)
         if m:
             return dr, m.group(0)
+    # Repli flou (faute de frappe) : on renvoie le libellé CANONIQUE, pas la coquille.
+    for _motif, libelle, _canon, dr in _index():
+        if _positions_flou(norm, libelle):
+            return dr, libelle
     return None
