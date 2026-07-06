@@ -81,6 +81,10 @@ data:
   AGENTS_ENABLED: "true"
   # Source Météo réelle (Open-Meteo, API libre sans clé) : délai max par requête.
   METEO_TIMEOUT_S: "10"
+  # Keepalive du préfixe KV (sprint latence #3) : micro-génération (1 token) toutes
+  # les 10 min pour que cache_prompt reste chaud — le premier producteur après une
+  # période calme ne repaie pas ~15-25 s de préremplissage. ~0,5 % de CPU.
+  KV_KEEPALIVE_S: "600"
   # Prix bord-champ officiel (Conseil du Café-Cacao), valeur ADMINISTRÉE par campagne.
   # 0 = non renseigné -> l'agent Prix NE DONNE AUCUN chiffre et redirige (jamais de
   # prix inventé). À mettre à jour à chaque session du Conseil (valeur officielle).
