@@ -123,13 +123,19 @@ def _construire_orchestrateur(
         else SatelliteIndisponible()
     )
 
+    # Le cache de résultats d'outils réutilise le client Redis applicatif (fail-soft).
+    outil_meteo = OutilMeteo(meteo, cache=cache, ttl_s=settings.outil_cache_meteo_ttl_s)
+    outil_satellite = OutilSatellite(
+        satellite, cache=cache, ttl_s=settings.outil_cache_satellite_ttl_s
+    )
+
     registre = RegistreAgents()
     registre.enregistrer(AgentRag(inference, rag=rag))  # type: ignore[arg-type]
-    registre.enregistrer(AgentMeteo(inference, OutilMeteo(meteo)))  # type: ignore[arg-type]
+    registre.enregistrer(AgentMeteo(inference, outil_meteo))  # type: ignore[arg-type]
     registre.enregistrer(AgentPrix(inference, OutilPrix(prix), rag=rag))  # type: ignore[arg-type]
     registre.enregistrer(AgentReglementation(inference, rag=rag))  # type: ignore[arg-type]
     registre.enregistrer(AgentNormes(inference, rag=rag))  # type: ignore[arg-type]
-    registre.enregistrer(AgentSatellite(inference, OutilSatellite(satellite), rag=rag))  # type: ignore[arg-type]
+    registre.enregistrer(AgentSatellite(inference, outil_satellite, rag=rag))  # type: ignore[arg-type]
     registre.enregistrer(AgentReporting(inference))  # type: ignore[arg-type]
     routeur = RouteurIntention(registre)
     return Orchestrateur(
