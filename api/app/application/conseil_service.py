@@ -11,7 +11,7 @@ import re
 from collections.abc import AsyncIterator
 from dataclasses import replace
 
-from app.application import conseil_commun
+from app.application import conseil_commun, flux
 from app.application.cache_semantique import CacheSemantique
 from app.application.contexte import fil_ancre as _fil_ancre
 from app.application.contexte import texte_conversation as _texte_conversation
@@ -273,6 +273,10 @@ class ConseilService:
             RateLimitDepasse: Si le quota par IP est dépassé.
             InferenceUnavailable: Si l'inférence échoue (propagée par le port).
         """
+        # Progression immédiate (parité V3) : premier octet instantané + statut
+        # affiché par le front pendant l'attente.
+        yield flux.progres(flux.PROGRES_ANALYSE)
+
         historique = historique or []
         texte_conv = _texte_conversation(question, historique)
 
@@ -330,6 +334,9 @@ class ConseilService:
         tampon = ""
         compromis = False
 
+        # Le libellé couvre la recherche RAG et le préremplissage CPU (la plus
+        # longue attente silencieuse avant le premier token).
+        yield flux.progres(flux.PROGRES_REDACTION)
         contexte = await self._contexte(_fil_ancre(question, historique))
         async for delta in self._inference.generer_stream(
             question, contexte=contexte, historique=historique

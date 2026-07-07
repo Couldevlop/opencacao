@@ -18,6 +18,17 @@ from app.services import guardrails
 # scannées par le garde-fou de sortie AVANT émission.
 FIN_PHRASE = re.compile(r"[.!?…](?=\s)")
 
+# Messages de progression : affichés par le front pendant l'attente (indicateur de
+# saisie), jamais dans la réponse. Émis en tête de flux, ils garantissent aussi un
+# premier octet immédiat sur TOUS les chemins (anti-524 Cloudflare, cf. orchestrateur).
+PROGRES_ANALYSE = "J'analyse votre question…"
+PROGRES_REDACTION = "Je rédige ma réponse…"
+
+
+def progres(texte: str) -> dict:
+    """Événement SSE de progression (statut d'attente, ignoré des anciens clients)."""
+    return {"type": "progress", "text": texte}
+
 
 class FiltreSortie:
     """Filtre de flux : émet des phrases validées par le garde-fou de sortie.

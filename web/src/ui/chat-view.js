@@ -66,12 +66,27 @@ export function creerVue(refs, { onFeedback } = {}) {
     m.id = "typing";
     const b = document.createElement("div");
     b.className = "bubble";
+    b.setAttribute("aria-live", "polite"); // les étapes sont annoncées aux lecteurs d'écran
     const t = document.createElement("div");
     t.className = "typing";
     t.append(document.createElement("span"), document.createElement("span"), document.createElement("span"));
     b.appendChild(t);
     m.append(avatar("bot", "🌱"), b);
     refs.thread.appendChild(m);
+    defiler();
+  }
+
+  /** Affiche/actualise l'étape en cours à côté des points animés (serveur : SSE progress). */
+  function majSaisie(texte) {
+    const m = document.getElementById("typing");
+    if (!m) return;
+    let label = m.querySelector(".typing-label");
+    if (!label) {
+      label = document.createElement("span");
+      label.className = "typing-label";
+      m.querySelector(".bubble").appendChild(label);
+    }
+    label.textContent = texte; // texte serveur contrôlé, posé en texte (jamais en HTML)
     defiler();
   }
 
@@ -227,6 +242,7 @@ export function creerVue(refs, { onFeedback } = {}) {
   return Object.freeze({
     ajouterUtilisateur,
     montrerSaisie,
+    majSaisie,
     cacherSaisie,
     ajouterBot,
     demarrerBot,

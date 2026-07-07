@@ -79,10 +79,11 @@ export function creerClientApi(lireBaseUrl) {
 
   /**
    * Demande un conseil en flux (SSE). Appelle onToken(texte) au fil de l'eau et
-   * renvoie l'entité Conseil finale (réponse complète + métadonnées).
+   * renvoie l'entité Conseil finale (réponse complète + métadonnées). Les événements
+   * « progress » (étape en cours côté serveur) sont relayés à options.onProgress.
    * @param {string} question
    * @param {(texte: string) => void} onToken
-   * @param {{historique?: Array<{role: string, content: string}>, sessionId?: string|null}} options
+   * @param {{historique?: Array<{role: string, content: string}>, sessionId?: string|null, onProgress?: (texte: string) => void}} options
    */
   async function demanderStream(question, onToken, options = {}) {
     let resp;
@@ -126,6 +127,8 @@ export function creerClientApi(lireBaseUrl) {
         if (evt.type === "token") {
           texte += evt.text;
           onToken(evt.text);
+        } else if (evt.type === "progress") {
+          if (options.onProgress) options.onProgress(evt.text);
         } else if (evt.type === "done") {
           meta = evt;
         } else if (evt.type === "error") {
