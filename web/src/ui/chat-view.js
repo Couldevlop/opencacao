@@ -177,7 +177,10 @@ export function creerVue(refs, { onFeedback } = {}) {
     let texte = "";
     function append(t) {
       texte += t;
-      corps.textContent = texte; // direct : texte brut (le markdown vient à la fin)
+      // Rendu au fil de l'eau : le texte ACCUMULÉ est re-rendu à chaque fragment
+      // (phrases complètes côté serveur, ~2 Ko max — coût négligeable). Même
+      // moteur sûr que la finalisation : tout est échappé avant balisage.
+      corps.innerHTML = rendreMarkdown(texte);
       defiler();
     }
     function finaliser(conseil) {

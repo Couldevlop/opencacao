@@ -404,9 +404,10 @@ body {
 .fb-btn.choisi { opacity: 1; border-color: var(--cocoa); background: var(--surface-2); }
 .fb-merci { color: var(--cocoa); font-weight: 600; }
 
-/* Réponse en streaming : texte brut pendant la frappe + curseur clignotant. */
-.stream-corps.curseur { white-space: pre-wrap; }
-.stream-corps.curseur::after {
+/* Réponse en streaming : markdown rendu au fil de l'eau + curseur clignotant
+   accroché au DERNIER bloc rendu (sinon il tomberait seul sous le paragraphe). */
+.stream-corps.curseur > p:last-child::after,
+.stream-corps.curseur > ul:last-child > li:last-child::after {
   content: "▋";
   display: inline-block;
   margin-left: 2px;
