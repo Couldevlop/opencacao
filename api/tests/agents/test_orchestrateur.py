@@ -6,6 +6,8 @@ import json
 
 import pytest
 
+from app.application import flux as flux_module
+from app.application import orchestrateur as orchestrateur_module
 from app.application.cache_semantique import CacheSemantique
 from app.application.orchestrateur import Orchestrateur
 from app.application.registre import RegistreAgents
@@ -451,11 +453,13 @@ async def test_composition_stream_garde_fou_sortie(monkeypatch: pytest.MonkeyPat
 
 @pytest.mark.asyncio
 async def test_composition_mono_agent_preserve() -> None:
-    # Aucun synthétiseur → dispatch mono-agent inchangé (flux token-par-token).
+    # Aucun synthétiseur → dispatch mono-agent inchangé (flux token-par-token),
+    # sans message de composition (la progression standard, elle, est émise).
     agent = _AgentStream(["Taillez en saison sèche. "])
     orch = _orchestrateur(agent)
     evenements = await _flux(orch, "comment tailler le cacaoyer ?")
-    assert all(e["type"] != "progress" for e in evenements)  # pas de composition
+    progres = [e["text"] for e in evenements if e["type"] == "progress"]
+    assert orchestrateur_module._PROGRES_COMPOSITION not in progres
     texte = "".join(e["text"] for e in evenements if e["type"] == "token")
     assert "saison sèche" in texte
 
@@ -578,3 +582,70 @@ async def test_cache_semantique_stream_sert_une_paraphrase() -> None:
     texte = "".join(e["text"] for e in evenements if e["type"] == "token")
     assert "saison sèche" in texte
     assert "généré" not in texte
+
+
+# --- Progression pendant l'attente (tous les flux, pas seulement la composition) ---
+
+
+class _AgentStreamNomme(_AgentStream):
+    """Agent streamable dont le nom est paramétrable (libellés de progression)."""
+
+    def __init__(self, nom: str, fragments: list[str]) -> None:
+        super().__init__(fragments)
+        self.nom = nom
+
+
+@pytest.mark.asyncio
+async def test_stream_progression_analyse_puis_libelle_agent() -> None:
+    # Mono-agent : « J'analyse… » en premier octet, puis le libellé de l'agent,
+    # TOUS deux émis avant le premier token (l'utilisateur voit l'étape en cours).
+    agent = _AgentStreamNomme("satellite", ["Aucune alerte détectée. "])
+    orch = _orchestrateur(agent, defaut="satellite")
+    evenements = await _flux(orch, "comment tailler le cacaoyer ?")
+    assert evenements[0] == {"type": "progress", "text": flux_module.PROGRES_ANALYSE}
+    types = [e["type"] for e in evenements]
+    progres = [e["text"] for e in evenements if e["type"] == "progress"]
+    assert orchestrateur_module.PROGRES_AGENTS["satellite"] in progres
+    assert types.index("token") > types.index("progress")  # progression avant la réponse
+    # Aucune progression après le premier token : le statut disparaît à la réponse.
+    assert "progress" not in types[types.index("token") :]
+
+
+@pytest.mark.asyncio
+async def test_stream_progression_agent_inconnu_libelle_generique() -> None:
+    # Agent absent de la table → libellé générique (jamais de KeyError).
+    agent = _AgentStreamNomme("futur-agent", ["Réponse. "])
+    orch = _orchestrateur(agent, defaut="futur-agent")
+    evenements = await _flux(orch, "comment tailler le cacaoyer ?")
+    progres = [e["text"] for e in evenements if e["type"] == "progress"]
+    assert flux_module.PROGRES_REDACTION in progres
+
+
+@pytest.mark.asyncio
+async def test_stream_clarification_progression_analyse_seule() -> None:
+    # Clarification (réponse immédiate) : « J'analyse… » seul, pas de libellé agent.
+    agent = _AgentStream(["ne devrait pas répondre"])
+    orch = _orchestrateur(agent)
+    evenements = [
+        e
+        async for e in orch.traiter_stream(
+            "les feuilles de mon cacaoyer jaunissent", Langue.FR, "ip"
+        )
+    ]
+    progres = [e["text"] for e in evenements if e["type"] == "progress"]
+    assert progres == [flux_module.PROGRES_ANALYSE]
+
+
+@pytest.mark.asyncio
+async def test_composition_stream_libelles_humains() -> None:
+    # Composition : les heartbeats bruts « [nom] » sont remplacés par des libellés
+    # lisibles, et « Je rédige… » précède la synthèse streamée.
+    rag = _AgentEspion("rag", 0.4, "analyse RAG")
+    meteo = _AgentEspion("meteo", 0.9, "analyse météo")
+    reporting = _AgentSynthetiseur("reporting", 0.8, ["synthèse. "])
+    orch = _orchestrateur(rag, meteo, reporting)
+    evenements = await _flux(orch, "comment tailler le cacaoyer ?")
+    progres = [e["text"] for e in evenements if e["type"] == "progress"]
+    assert not any(t.startswith("[") for t in progres)
+    assert orchestrateur_module.PROGRES_AGENTS["meteo"] in progres
+    assert progres[-1] == flux_module.PROGRES_REDACTION

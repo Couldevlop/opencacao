@@ -36,10 +36,23 @@ MAX_CONTRIBUTEURS = 2
 
 # Message de progression émis en TÊTE de composition : garantit un PREMIER OCTET
 # immédiat alors que le fan-out CPU dure ~1-2 min → évite le time-out edge Cloudflare
-# (524, mesuré sur réponse synchrone). Émis en type d'événement « progress » : le front
-# ignore les types inconnus (ni token ni done) → ces octets gardent le flux vivant SANS
-# polluer la réponse affichée. Un heartbeat est ré-émis après chaque contribution.
+# (524, mesuré sur réponse synchrone). Un libellé est ré-émis avant chaque contribution
+# (heartbeat anti-524) et avant la synthèse ; le front les affiche dans l'indicateur
+# d'attente, les clients qui ignorent le type « progress » restent compatibles.
 _PROGRES_COMPOSITION = "Je consulte les agents spécialisés…"
+
+# Libellés de progression par agent : affichés pendant l'attente (dispatch mono-agent
+# et contributions de composition). Un agent absent de la table retombe sur le libellé
+# générique — jamais d'erreur pour un agent futur.
+PROGRES_AGENTS: dict[str, str] = {
+    "rag": "Je recherche dans la documentation cacao…",
+    "meteo": "Je consulte les prévisions météo…",
+    "prix": "Je vérifie le prix officiel du cacao…",
+    "satellite": "Je consulte les données satellite (Global Forest Watch)…",
+    "reglementation": "Je consulte la réglementation…",
+    "normes": "Je consulte les référentiels de certification…",
+    "reporting": "Je prépare votre bilan…",
+}
 
 
 class Orchestrateur:
@@ -217,6 +230,10 @@ class Orchestrateur:
         Raises:
             RateLimitDepasse: Si le quota par IP est dépassé (avant l'inférence).
         """
+        # 0. Progression immédiate : premier octet instantané sur TOUS les chemins
+        #    (anti-524) + statut affiché par le front pendant l'attente.
+        yield flux.progres(flux.PROGRES_ANALYSE)
+
         historique = historique or []
         fil = fil_ancre(question, historique)
         texte_conv = texte_conversation(question, historique)
@@ -326,11 +343,12 @@ class Orchestrateur:
         #     contribution. La synthèse est ensuite streamée token par token, filtrée par
         #     le garde-fou de sortie phrase par phrase.
         if synthetiseur is not None:
-            yield {"type": "progress", "text": _PROGRES_COMPOSITION}
+            yield flux.progres(_PROGRES_COMPOSITION)
             contributions: list[AgentReponse] = []
             for contributeur in self._contributeurs(classement, synthetiseur):
+                yield flux.progres(PROGRES_AGENTS.get(contributeur.nom, flux.PROGRES_REDACTION))
                 contributions.append(await contributeur.traiter(requete))
-                yield {"type": "progress", "text": f"[{contributeur.nom}]"}
+            yield flux.progres(flux.PROGRES_REDACTION)
             logger.info(
                 "composition",
                 synthetiseur=synthetiseur.nom,
@@ -384,9 +402,12 @@ class Orchestrateur:
             return
 
         # 7b. Mono-agent : vrai streaming token-par-token + garde-fou de sortie phrase par phrase.
+        # Le libellé de l'agent est émis AVANT le dispatch : il couvre l'appel d'outil
+        # et le préremplissage CPU (~15-26 s), la plus longue attente silencieuse.
         # Contexte calculé une fois : passé au stream ET réutilisé pour ANCRER les
         # sources après coup (souveraineté : confiance non gonflée par une citation
         # de mémoire non ancrée).
+        yield flux.progres(PROGRES_AGENTS.get(agent.nom, flux.PROGRES_REDACTION))
         contexte = await agent.contexte_pour(requete)
         filtre = flux.FiltreSortie()
         async for phrase in filtre.diffuser(agent.traiter_stream(requete, contexte)):

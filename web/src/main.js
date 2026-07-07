@@ -218,6 +218,8 @@ async function envoyer(question) {
     } else {
       options = { historique };
     }
+    // Étapes serveur (« J'analyse… », « Je consulte… ») affichées pendant l'attente.
+    options.onProgress = (texte) => vue.majSaisie(texte);
 
     const conseil = await demanderConseilStream(
       q,
