@@ -205,6 +205,24 @@ class RagIndex:
         logger.info("rag_index_charge", entrees=len(textes), dimension=int(matrice.shape[1]))
         return cls(textes, sources, matrice)
 
+    def _dimension_compatible(self, requete: np.ndarray) -> bool:
+        """Vrai si le vecteur requête a la même dimension que l'index.
+
+        Garde-fou d'exploitation : si le service d'embeddings et l'index sont
+        désaccordés (bascule de modèle mal séquencée, ex. 2560↔1024), le produit
+        matriciel lèverait une ``ValueError`` et renverrait un HTTP 500. On préfère
+        dégrader en silence (vivier vide → réponse sans contexte) et le tracer, en
+        cohérence avec la tolérance déjà en place côté client d'embeddings.
+        """
+        if requete.shape[0] == self._matrice.shape[1]:
+            return True
+        logger.error(
+            "rag_dimension_incompatible",
+            dim_requete=int(requete.shape[0]),
+            dim_index=int(self._matrice.shape[1]),
+        )
+        return False
+
     def rechercher(self, vecteur: list[float], k: int, seuil: float) -> list[Passage]:
         """Retourne les k passages les plus proches dont la similarité dépasse le seuil."""
         return [p for p in self.candidats(vecteur, k) if p.score >= seuil]
@@ -217,7 +235,7 @@ class RagIndex:
         """
         requete = np.asarray(vecteur, dtype=np.float32)
         norme = np.linalg.norm(requete)
-        if norme == 0 or self._matrice.size == 0:
+        if norme == 0 or self._matrice.size == 0 or not self._dimension_compatible(requete):
             return []
         requete = requete / norme
         scores = self._matrice @ requete
@@ -244,7 +262,7 @@ class RagIndex:
         """
         requete = np.asarray(vecteur, dtype=np.float32)
         norme = np.linalg.norm(requete)
-        if norme == 0 or self._matrice.size == 0:
+        if norme == 0 or self._matrice.size == 0 or not self._dimension_compatible(requete):
             return []
         scores = self._matrice @ (requete / norme)
         n = min(n, len(scores))
