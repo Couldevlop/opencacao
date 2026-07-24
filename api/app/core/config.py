@@ -119,6 +119,10 @@ class Settings(BaseSettings):
     # cachée sémantiquement proche (paraphrase) -> évite une génération CPU.
     # Désactivé par défaut : activable sans rebuild via SEMANTIC_CACHE_ENABLED.
     semantic_cache_enabled: bool = False
+    # Dialogue naturel (formulation des clarifications par le modèle). Désactivé par
+    # défaut : à activer après validation manuelle (déploiement en deux temps). Voir
+    # docs/superpowers/specs/2026-07-24-dialogue-naturel-design.md.
+    dialogue_naturel_enabled: bool = False
     # Similarité cosinus minimale pour servir une réponse cachée (conservateur :
     # mieux vaut un miss qu'une réponse hors sujet).
     semantic_cache_threshold: float = 0.92

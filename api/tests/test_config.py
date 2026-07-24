@@ -34,3 +34,9 @@ def test_defauts_sans_env():
 
     assert settings.cors_origins == []
     assert settings.allowed_hosts == ["*"]
+
+
+def test_dialogue_naturel_desactive_par_defaut() -> None:
+    from app.core.config import Settings
+
+    assert Settings().dialogue_naturel_enabled is False
