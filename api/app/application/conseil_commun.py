@@ -17,7 +17,9 @@ from app.models.domain import Confiance
 from app.services import clarification, contacts
 
 # Latence : une question de clarification est courte -> on borne fort la génération.
-CLARIF_MAX_TOKENS = 80
+# Mesuré en prod (0.6.71) : 80 tokens -> ~8 s de décodage CPU par tour. 40 tokens
+# donne une question plus ramassée pour ~2x moins de décodage (~4-5 s).
+CLARIF_MAX_TOKENS = 40
 
 
 def serialiser(conseil: Conseil) -> str:
