@@ -48,12 +48,31 @@ REFUS_ZONE_NON_CACAO = (
     "local pourra vous orienter."
 )
 
+REFUS_HORS_CI = (
+    "Mes conseils sont calibrés pour la Côte d'Ivoire uniquement. Les variétés, le "
+    "calendrier cultural, la pression des maladies et les prix diffèrent d'un pays "
+    "producteur à l'autre, et mes sources (ANADER, CNRA, Conseil du Café-Cacao) ne "
+    "couvrent pas ce pays. Je préfère ne rien affirmer plutôt que d'y transposer un "
+    "conseil ivoirien. Adressez-vous au service agricole national concerné."
+)
+
+REFUS_TRANSFORMATION = (
+    "Je me concentre sur la culture du cacao et le travail du producteur, jusqu'à la "
+    "fermentation et le séchage des fèves. La transformation en chocolat — ou en "
+    "beurre, poudre et pâte de cacao — relève d'un autre métier, avec ses propres "
+    "exigences techniques et sanitaires. C'est une filière d'avenir pour la valeur "
+    "ajoutée locale en Côte d'Ivoire : pour vous y engager, rapprochez-vous du "
+    "Conseil du Café-Cacao ou d'une structure d'accompagnement à la transformation."
+)
+
 _REFUS_MESSAGES: dict[CategorieRefus, str] = {
     CategorieRefus.PHYTOSANITAIRE: REFUS_PHYTO,
     CategorieRefus.MEDICAL: REFUS_MEDICAL,
     CategorieRefus.DIAGNOSTIC_IMAGE: REFUS_DIAGNOSTIC_IMAGE,
     CategorieRefus.HORS_FILIERE: REFUS_HORS_FILIERE,
     CategorieRefus.ZONE_NON_CACAO: REFUS_ZONE_NON_CACAO,
+    CategorieRefus.HORS_CI: REFUS_HORS_CI,
+    CategorieRefus.TRANSFORMATION: REFUS_TRANSFORMATION,
 }
 
 
@@ -277,6 +296,143 @@ _TERMES_HORS_FILIERE = (
     "vivriere",
     "vivrieres",
     "vivriers",
+    # Hors-sujet manifestes. Sans eux, le modèle refuse quand même — mais APRÈS une
+    # génération complète, mesurée entre 24 et 42 s de CPU plein en prod (24/07/2026).
+    # Le refus par règle est immédiat. Ces termes ne sont retenus QUE s'ils n'ont
+    # aucun sens en cacaoculture : « application » (phytosanitaire), « cours » (prix),
+    # « président » (du Conseil du Café-Cacao) en sont volontairement exclus.
+    "capitale",
+    "president",
+    "presidente",
+    "ministre",
+    "cocktail",
+    "biere",
+    "whisky",
+    "python",
+    "javascript",
+    "programmation",
+    "programmer",
+    "coder",
+    "logiciel",
+    "site web",
+    "site internet",
+    "base de donnees",
+    "algorithme",
+    "chatgpt",
+    "intelligence artificielle",
+    "application mobile",
+    "traduis",
+    "traduction",
+    "poeme",
+    "blague",
+    "chanson",
+    "mathematiques",
+    "visa",
+    "hotel",
+)
+
+# Pays producteurs de cacao AUTRES que la Côte d'Ivoire, et leurs gentilés. Le corpus
+# (ANADER, CNRA, Conseil du Café-Cacao) est strictement ivoirien : transposer un
+# conseil à un autre pays reviendrait à fabriquer. Clé = forme normalisée détectée,
+# valeur = nom affiché dans le message de refus.
+_PAYS_HORS_CI: dict[str, str] = {
+    "ghana": "le Ghana",
+    "ghaneen": "le Ghana",
+    "ghaneens": "le Ghana",
+    "ghaneenne": "le Ghana",
+    "nigeria": "le Nigeria",
+    "nigerian": "le Nigeria",
+    "nigerians": "le Nigeria",
+    "cameroun": "le Cameroun",
+    "camerounais": "le Cameroun",
+    "togo": "le Togo",
+    "togolais": "le Togo",
+    "benin": "le Bénin",
+    "beninois": "le Bénin",
+    "liberia": "le Liberia",
+    "liberien": "le Liberia",
+    "liberiens": "le Liberia",
+    "sierra leone": "la Sierra Leone",
+    "guinee": "la Guinée",
+    "guineen": "la Guinée",
+    "guineens": "la Guinée",
+    "equateur": "l'Équateur",
+    "equatorien": "l'Équateur",
+    "equatoriens": "l'Équateur",
+    "bresil": "le Brésil",
+    "bresilien": "le Brésil",
+    "bresiliens": "le Brésil",
+    "perou": "le Pérou",
+    "peruvien": "le Pérou",
+    "peruviens": "le Pérou",
+    "colombie": "la Colombie",
+    "colombien": "la Colombie",
+    "venezuela": "le Venezuela",
+    "republique dominicaine": "la République dominicaine",
+    "mexique": "le Mexique",
+    "indonesie": "l'Indonésie",
+    "indonesien": "l'Indonésie",
+    "indonesiens": "l'Indonésie",
+    "malaisie": "la Malaisie",
+    "papouasie": "la Papouasie-Nouvelle-Guinée",
+    "philippines": "les Philippines",
+    "vietnam": "le Vietnam",
+    "ouganda": "l'Ouganda",
+    "tanzanie": "la Tanzanie",
+    "madagascar": "Madagascar",
+    "sao tome": "Sao Tomé-et-Principe",
+    "trinidad": "Trinité-et-Tobago",
+    "haiti": "Haïti",
+    "bolivie": "la Bolivie",
+    "costa rica": "le Costa Rica",
+    "nicaragua": "le Nicaragua",
+    "honduras": "le Honduras",
+    "guatemala": "le Guatemala",
+    "panama": "le Panama",
+    "sri lanka": "le Sri Lanka",
+    "inde": "l'Inde",
+    "etats-unis": "les États-Unis",
+    "etats unis": "les États-Unis",
+}
+
+# Transformation industrielle / artisanale : un AUTRE métier que la production. Le
+# producteur s'arrête à la fève fermentée et séchée (fermentation/séchage/écabossage
+# restent dans _TERMES_FILIERE et ne figurent donc PAS ici). Ces termes déclenchent le
+# refus même quand la question mentionne « cacao » ou « fève », car la transformation
+# porte précisément là-dessus.
+_TERMES_TRANSFORMATION = (
+    "chocolat",
+    "chocolats",
+    "chocolaterie",
+    "chocolatier",
+    "beurre de cacao",
+    "poudre de cacao",
+    "pate de cacao",
+    "masse de cacao",
+    "liqueur de cacao",
+    "tourteau de cacao",
+    "torrefaction",
+    "torrefier",
+    "conchage",
+    "concher",
+    "temperage",
+    "temperer le chocolat",
+    "broyage des feves",
+    "nibs",
+    "grue de cacao",
+)
+
+# Mentions explicites de la Côte d'Ivoire. Leur présence neutralise la règle hors-CI :
+# une comparaison « le cacao ivoirien face au Ghana » reste une question ivoirienne.
+_TERMES_ANCRAGE_CI = (
+    "cote d'ivoire",
+    "cote divoire",
+    "cote d ivoire",
+    "ivoirien",
+    "ivoirienne",
+    "ivoiriens",
+    "ivoiriennes",
+    "rci",
 )
 
 
@@ -322,6 +478,42 @@ _RE_IMAGE = _compiler(_TERMES_IMAGE)
 _RE_FILIERE = _compiler(_TERMES_FILIERE)
 _RE_HORS_FILIERE = _compiler(_TERMES_HORS_FILIERE)
 _RE_ZONE_DECLENCHEUR = _compiler(_TERMES_ZONE_DECLENCHEUR)
+_RE_ANCRAGE_CI = _compiler(_TERMES_ANCRAGE_CI)
+_RE_TRANSFORMATION = _compiler(_TERMES_TRANSFORMATION)
+# Ordre décroissant de longueur : « sierra leone » prime sur « guinee » dans un texte
+# qui contiendrait les deux, et le nom affiché reste le plus spécifique.
+_RE_PAYS_HORS_CI: tuple[tuple[re.Pattern, str], ...] = tuple(
+    (re.compile(rf"\b{re.escape(terme)}\b"), nom)
+    for terme, nom in sorted(_PAYS_HORS_CI.items(), key=lambda p: len(p[0]), reverse=True)
+)
+
+
+def _pays_hors_ci_detecte(texte: str) -> str | None:
+    """Nom affiché du premier pays producteur étranger cité, ou None."""
+    for motif, nom in _RE_PAYS_HORS_CI:
+        if motif.search(texte):
+            return nom
+    return None
+
+
+def _ancrage_ivoirien(texte: str) -> bool:
+    """Vrai si le texte rattache explicitement la question à la Côte d'Ivoire.
+
+    Trois signaux, dans l'ordre du moins au plus coûteux : une mention directe du pays
+    ou du gentilé, une localité cacaoyère ivoirienne, ou une localité de savane du Nord
+    (auquel cas la règle « zone non cacaoyère », plus utile au producteur, s'applique).
+    Réutilise ``localites`` — source unique, tolérante aux fautes de frappe.
+    """
+    return (
+        _contient(texte, _RE_ANCRAGE_CI)
+        or localites.detecter(texte) is not None
+        or localites.detecter_nord(texte) is not None
+    )
+
+
+def _message_pays(nom: str) -> str:
+    """Message de refus hors-CI nommant le pays détecté."""
+    return REFUS_HORS_CI.replace("ce pays", nom, 1)
 
 
 def _localite_nord_detectee(texte: str) -> str | None:
@@ -373,6 +565,12 @@ def evaluer(question: str) -> Refus | None:
     if _contient(texte, _RE_IMAGE):
         return Refus(CategorieRefus.DIAGNOSTIC_IMAGE)
 
+    # 3 bis. Transformation (chocolat, beurre/poudre de cacao, torréfaction…) : un autre
+    #        métier que la production. Vérifié AVANT le hors-filière car ces questions
+    #        parlent bien de cacao — l'ancrage filière ne doit pas les laisser passer.
+    if _contient(texte, _RE_TRANSFORMATION):
+        return Refus(CategorieRefus.TRANSFORMATION)
+
     # 4. Hors filière : indice hors-sujet explicite ET aucun ancrage filière cacao.
     if _contient(texte, _RE_HORS_FILIERE) and not _contient(texte, _RE_FILIERE):
         return Refus(CategorieRefus.HORS_FILIERE)
@@ -382,6 +580,13 @@ def evaluer(question: str) -> Refus | None:
     nord = _localite_nord_detectee(texte)
     if nord is not None and _contient(texte, _RE_ZONE_DECLENCHEUR):
         return Refus(CategorieRefus.ZONE_NON_CACAO, message=_message_zone(nord))
+
+    # 6. Cacao d'un AUTRE pays producteur : le corpus est strictement ivoirien, donc
+    #    répondre reviendrait à transposer en silence. On ne refuse que si rien
+    #    n'ancre la question en Côte d'Ivoire (mention du pays ou localité citée).
+    pays = _pays_hors_ci_detecte(texte)
+    if pays is not None and not _ancrage_ivoirien(texte):
+        return Refus(CategorieRefus.HORS_CI, message=_message_pays(pays))
 
     return None
 

@@ -381,3 +381,38 @@ def test_rag_passage_max_chars_defaut() -> None:
     from app.core.config import Settings
 
     assert Settings().rag_passage_max_chars == 480
+
+
+# --- Garde de dimension : index et service d'embeddings désaccordés ---
+
+
+def _index_2560() -> RagIndex:
+    """Index minimal de dimension 2560 (celle du modèle 4B)."""
+    import numpy as np
+
+    return RagIndex(
+        ["Tailler le cacaoyer en début de saison sèche."],
+        ["ANADER"],
+        np.ones((1, 2560), dtype=np.float32),
+    )
+
+
+def test_candidats_vecteur_de_mauvaise_dimension_ne_leve_pas() -> None:
+    """Un vecteur de dimension incompatible renvoie un vivier vide, pas une exception."""
+    assert _index_2560().candidats([0.1] * 1024, 5) == []
+
+
+def test_vivier_hybride_vecteur_de_mauvaise_dimension_ne_leve_pas() -> None:
+    """Idem sur le canal hybride : dégradation propre, jamais de 500."""
+    assert _index_2560().vivier_hybride([0.1] * 1024, "comment tailler ?", 5) == []
+
+
+async def test_contexte_pour_dimension_incompatible_renvoie_none() -> None:
+    """Un index et un service d'embeddings désaccordés dégradent sans casser la requête."""
+
+    class _Embeddings1024:
+        async def embed(self, textes: list[str]) -> list[list[float]] | None:
+            return [[0.1] * 1024 for _ in textes]
+
+    rag = RagRecuperateur(_Embeddings1024(), _index_2560(), 3, 0.5)
+    assert await rag.contexte_pour("Comment tailler mon cacaoyer ?") is None

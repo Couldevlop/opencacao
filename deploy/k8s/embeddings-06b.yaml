@@ -1,0 +1,102 @@
+# Service d'EMBEDDINGS — Qwen3-Embedding-0.6B (GGUF f16, 1024-dim) servi par llama.cpp.
+# Migration du 24/07/2026 depuis Qwen3-Embedding-4B (2560-dim) : le 4B mobilisait ~4,3 Go
+# de RAM en permanence pour ~2,5 min de CPU/jour, disproportionné pour vectoriser des
+# questions courtes. Le 0,6B rend la même qualité de récupération (top-1 identique sur
+# les questions de contrôle, scores ≥ 0,92 très au-dessus du seuil 0,65) pour un RSS de
+# ~1,4 Go — soit ~3 Go récupérés — et vectorise ~10× plus vite (346 vs 35 tok/s).
+#
+# La bascule INVALIDE l'index existant (dimension différente) : appliquer ce manifeste
+# APRÈS avoir reconstruit l'index RAG en 1024-dim, sinon les vecteurs requête/index sont
+# incompatibles. Séquence de bascule sans 500 : échanger l'index sur le PVC, puis couper
+# API→0 / repointer les embeddings / API→1 (l'API recharge l'index au démarrage). Le
+# garde-fou de dimension côté RAG (rag.py) dégrade en silence si les deux se désaccordent.
+#
+# Prérequis nœud : /opt/opencacao/models/embeddings-qwen3-06b-f16.gguf (~1,2 Go) présent.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: embeddings
+  labels: { app: embeddings }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: embeddings }
+  # Recreate : un seul pod monte le modèle en lecture seule ; pas de rolling (éviterait
+  # deux pods chargeant le GGUF en parallèle sur le nœud).
+  strategy: { type: Recreate }
+  template:
+    metadata:
+      labels: { app: embeddings }
+    spec:
+      containers:
+        - name: llamacpp
+          image: ghcr.io/ggml-org/llama.cpp:server
+          args:
+            - "--embeddings"
+            - "-m"
+            - "/models/embeddings-qwen3-06b-f16.gguf"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8001"
+            # Dimensionné sur la charge RÉELLE mesurée en prod (1488 appels / 25 j) :
+            # 1486 entrées de 23-74 tokens (questions utilisateur) et 2 entrées de
+            # 600-605 tokens (extraits PDF du cron d'enrichissement). 0 troncature.
+            # -c 1024 laisse donc x1,7 de marge sur le pire cas observé ; -c 512
+            # tronquerait les extraits longs et corromprait silencieusement l'index.
+            - "-c"
+            - "1024"
+            # En mode --embeddings llama.cpp force n_batch = n_ubatch (assertion) :
+            # les garder égaux évite le warning et rend la valeur effective explicite.
+            # Une séquence plus longue que n_ubatch est découpée sans erreur (vérifié
+            # sur les entrées de 605 tokens, progress = 0.85 puis release truncated=0).
+            - "-b"
+            - "256"
+            - "-ub"
+            - "256"
+            # 1 seul slot : ~1,2 requête/heure en régime permanent, aucune contention.
+            # Sans cette borne, llama.cpp « fit to device memory » choisit n_parallel=4
+            # tout seul et gonfle le KV cache pour remplir la RAM libre du nœud.
+            - "-np"
+            - "1"
+            # Cache de prompt inutile pour des embeddings (aucune génération) et plafonné
+            # à 8192 Mio par défaut : on le désactive pour borner l'empreinte.
+            - "--cache-ram"
+            - "0"
+            # Régime permanent : 4 threads (~0,1 s/embed sur le 0,6B), laisse les cœurs
+            # à l'inférence. Une réindexation massive utilise un pod séparé plus agressif.
+            - "-t"
+            - "4"
+          ports:
+            - containerPort: 8001
+          volumeMounts:
+            - name: modele
+              mountPath: /models
+              readOnly: true
+          resources:
+            # Mesuré en prod après bascule (smaps_rollup) : RSS ~1,36 Go dont ~216 Mio
+            # de mémoire ANONYME (KV + buffers), le reste étant le GGUF mmap'é (pages
+            # propres, récupérables par le noyau). La `request` reflète le working set
+            # non récupérable (+ marge), pas le RSS brut.
+            requests: { cpu: "500m", memory: "1Gi" }
+            limits: { cpu: "4", memory: "3Gi" }
+          readinessProbe:
+            httpGet: { path: /health, port: 8001 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 30  # le 0,6B charge vite (~1 s)
+      volumes:
+        - name: modele
+          hostPath:
+            path: /opt/opencacao/models
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: embeddings
+spec:
+  selector: { app: embeddings }
+  ports:
+    - port: 8001
+      targetPort: 8001
