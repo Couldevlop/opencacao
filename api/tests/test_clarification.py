@@ -150,3 +150,36 @@ def test_signature_swollen_shoot_repond_directement() -> None:
         )
         is None
     )
+
+
+def test_detecter_theme_symptome() -> None:
+    assert clarification.detecter_theme("Mes feuilles jaunissent", None) == "symptome"
+
+
+def test_detecter_theme_contact_sans_ville() -> None:
+    assert clarification.detecter_theme("Je veux le numéro de l'ANADER", None) == "contact"
+
+
+def test_detecter_theme_question_factuelle_est_none() -> None:
+    assert clarification.detecter_theme("Quand récolter les cabosses ?", None) is None
+
+
+def test_detecter_theme_anti_boucle() -> None:
+    historique = [
+        {"role": "user", "content": "Mes feuilles jaunissent"},
+        {"role": "assistant", "content": "Répondez-moi et je vous conseillerai au mieux."},
+        {"role": "user", "content": "Sur les feuilles"},
+    ]
+    assert clarification.detecter_theme("Sur les feuilles", historique) is None
+
+
+def test_consigne_theme_ajoute_la_localite_si_besoin() -> None:
+    sans = clarification.consigne_theme("symptome", besoin_localite=False)
+    avec = clarification.consigne_theme("symptome", besoin_localite=True)
+    assert "localit" in avec.lower()
+    assert "localit" not in sans.lower()
+
+
+def test_besoin_localite_vrai_si_aucune_ville() -> None:
+    assert clarification.besoin_localite("Mes feuilles jaunissent", None) is True
+    assert clarification.besoin_localite("Mes feuilles jaunissent à Daloa", None) is False
