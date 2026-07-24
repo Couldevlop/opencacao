@@ -202,7 +202,9 @@ async def test_generer_transmet_la_consigne_et_le_prompt_strict() -> None:
 
     client = _client(handler)
     object.__setattr__(client, "_system_prompt", SYSTEM_PROMPT_STRICT)
-    texte = await client.generer("Mes feuilles jaunissent", consigne="Pose une question.", max_tokens=80)
+    texte = await client.generer(
+        "Mes feuilles jaunissent", consigne="Pose une question.", max_tokens=80
+    )
 
     assert texte == "Dans quelle ville ?"
     msgs = captures["payload"]["messages"]
