@@ -49,11 +49,11 @@ REFUS_ZONE_NON_CACAO = (
 )
 
 REFUS_HORS_CI = (
-    "Mes conseils sont calibrés pour la Côte d'Ivoire uniquement. Les variétés, le "
+    "Mes conseils sont calibrés pour la Côte d'Ivoire uniquement : les variétés, le "
     "calendrier cultural, la pression des maladies et les prix diffèrent d'un pays "
-    "producteur à l'autre, et mes sources (ANADER, CNRA, Conseil du Café-Cacao) ne "
-    "couvrent pas ce pays. Je préfère ne rien affirmer plutôt que d'y transposer un "
-    "conseil ivoirien. Adressez-vous au service agricole national concerné."
+    "producteur à l'autre, et je ne dispose pas de données fiables pour ce pays. Je "
+    "préfère ne rien affirmer plutôt que d'y transposer un conseil ivoirien. Le mieux "
+    "est de vous rapprocher du service agricole ou de la filière cacao de votre pays."
 )
 
 REFUS_TRANSFORMATION = (
@@ -75,6 +75,11 @@ _REFUS_MESSAGES: dict[CategorieRefus, str] = {
     CategorieRefus.TRANSFORMATION: REFUS_TRANSFORMATION,
 }
 
+# Refus pour lesquels l'ANADER (agence ivoirienne) n'a PAS de sens : un demandeur qui
+# interroge sur un autre pays producteur ne la connaît pas et n'en relève pas. Ces refus
+# ne doivent donc pas déclencher l'ajout d'un contact ANADER.
+_CATEGORIES_SANS_ANADER: frozenset[CategorieRefus] = frozenset({CategorieRefus.HORS_CI})
+
 
 @dataclass(frozen=True)
 class Refus:
@@ -91,6 +96,16 @@ class Refus:
     def __post_init__(self) -> None:
         if not self.message:
             object.__setattr__(self, "message", _REFUS_MESSAGES[self.categorie])
+
+    @property
+    def redirige_anader(self) -> bool:
+        """Vrai si ce refus oriente vers l'ANADER ivoirienne.
+
+        Faux pour un refus hors Côte d'Ivoire : proposer l'ANADER à un demandeur
+        étranger (ex. cacao du Ghana) n'a pas de sens — il ne la connaît pas et n'en
+        relève pas. Sert à ne pas enrichir ces refus d'un contact ANADER.
+        """
+        return self.categorie not in _CATEGORIES_SANS_ANADER
 
 
 # --- Vocabulaire de détection ---

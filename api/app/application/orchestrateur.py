@@ -123,7 +123,10 @@ class Orchestrateur:
         if refus is not None:
             logger.info("garde_fou_declenche", categorie=refus.categorie.value)
             conseil = conseil_commun.enrichir_contact(
-                Conseil(refus.message, Confiance.ELEVEE, [], redirection_anader=True), texte_conv
+                Conseil(
+                    refus.message, Confiance.ELEVEE, [], redirection_anader=refus.redirige_anader
+                ),
+                texte_conv,
             )
             return await self._journaliser(question, langue, conseil)
 
@@ -267,7 +270,10 @@ class Orchestrateur:
         if refus is not None:
             logger.info("garde_fou_declenche", categorie=refus.categorie.value)
             conseil = conseil_commun.enrichir_contact(
-                Conseil(refus.message, Confiance.ELEVEE, [], redirection_anader=True), texte_conv
+                Conseil(
+                    refus.message, Confiance.ELEVEE, [], redirection_anader=refus.redirige_anader
+                ),
+                texte_conv,
             )
             for ev in flux.evenements_token(refus.message, conseil.reponse):
                 yield ev

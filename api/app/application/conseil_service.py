@@ -142,7 +142,9 @@ class ConseilService:
         refus = guardrails.evaluer(_fil_ancre(question, historique))
         if refus is not None:
             logger.info("garde_fou_declenche", categorie=refus.categorie.value)
-            conseil = Conseil(refus.message, Confiance.ELEVEE, [], redirection_anader=True)
+            conseil = Conseil(
+                refus.message, Confiance.ELEVEE, [], redirection_anader=refus.redirige_anader
+            )
             return await self._journaliser(
                 question, langue, self._enrichir_contact(conseil, texte_conv)
             )
@@ -300,7 +302,10 @@ class ConseilService:
         if refus is not None:
             logger.info("garde_fou_declenche", categorie=refus.categorie.value)
             conseil = self._enrichir_contact(
-                Conseil(refus.message, Confiance.ELEVEE, [], redirection_anader=True), texte_conv
+                Conseil(
+                    refus.message, Confiance.ELEVEE, [], redirection_anader=refus.redirige_anader
+                ),
+                texte_conv,
             )
             for ev in _evenements_token(refus.message, conseil.reponse):
                 yield ev
