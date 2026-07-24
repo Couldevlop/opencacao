@@ -86,10 +86,16 @@ il harmonise.
 
 ### 5. Drapeau de configuration
 
-- `dialogue_naturel_enabled: bool = True` dans `config.py`, injecté dans les services.
+- `dialogue_naturel_enabled: bool = False` dans `config.py` (**désactivé par défaut**, comme
+  les autres fonctionnalités sensibles — ex. `semantic_cache_enabled`), injecté dans les
+  services.
 - Variable d'environnement `DIALOGUE_NATUREL_ENABLED` dans le ConfigMap `api-config`.
 - À `false` : clarification scriptée + `SYSTEM_PROMPT_STRICT` → comportement d'aujourd'hui à
   l'identique.
+- **Déploiement en deux temps** : 0.6.71 sort avec le drapeau à **`false`** (aucun changement
+  de comportement visible). Validation manuelle du dialogue naturel (en local, ou par une
+  bascule temporaire à `true` sur le ConfigMap). Puis activation définitive en prod :
+  `DIALOGUE_NATUREL_ENABLED=true` + redémarrage API.
 
 ### 6. Garde-fous / refus — inchangés
 
