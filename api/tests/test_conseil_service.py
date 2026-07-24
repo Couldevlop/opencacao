@@ -33,6 +33,26 @@ def _service(
     return service, cache, journal
 
 
+@pytest.fixture
+def service_factory():
+    """Fabrique un ConseilService avec fakes (cache/journal/inférence), paramétrable."""
+
+    def _fabrique(
+        dialogue_naturel: bool = False,
+        reponse_inference: str | None = None,
+        cache: FakeCache | None = None,
+        journal: FakeJournal | None = None,
+    ) -> ConseilService:
+        return ConseilService(
+            inference=FakeInference(reponse=reponse_inference),
+            cache=cache or FakeCache(),
+            journal=journal or FakeJournal(),
+            dialogue_naturel=dialogue_naturel,
+        )
+
+    return _fabrique
+
+
 def _service_semantique(
     embeddings: FakeEmbeddings,
     cache: FakeCache | None = None,
@@ -354,3 +374,57 @@ def test_enrichir_contact_ajout_deja_present() -> None:
     # Réenrichir le texte déjà enrichi : aucune ligne nouvelle -> conseil inchangé.
     re_enrichi = service._enrichir_contact(enrichi, "Je suis à Bouaké")
     assert re_enrichi.reponse == enrichi.reponse
+
+
+# --- Drapeau dialogue_naturel : branche vers la clarification générée par le modèle ---
+
+
+async def test_dialogue_naturel_on_genere_la_question(service_factory) -> None:
+    service = service_factory(dialogue_naturel=True, reponse_inference="Sur quelle partie ?")
+    conseil = await service.conseiller("Mes feuilles jaunissent", Langue.FR, "ip")
+    assert "partie" in conseil.reponse  # question générée, pas les puces scriptées
+    assert "•" not in conseil.reponse
+
+
+async def test_dialogue_naturel_off_garde_le_scripte(service_factory) -> None:
+    service = service_factory(dialogue_naturel=False)
+    conseil = await service.conseiller("Mes feuilles jaunissent", Langue.FR, "ip")
+    assert "•" in conseil.reponse  # puces scriptées inchangées
+
+
+async def test_dialogue_naturel_stream_genere_la_question(service_factory) -> None:
+    """En flux, la clarification naturelle diffuse la question générée fragment par fragment."""
+    service = service_factory(dialogue_naturel=True, reponse_inference="Sur quelle partie ?")
+
+    evts = [
+        ev async for ev in service.conseiller_stream("Mes feuilles jaunissent", Langue.FR, "ip")
+    ]
+
+    tokens = [e for e in evts if e["type"] == "token"]
+    texte = "".join(e["text"] for e in tokens)
+    assert tokens  # au moins un fragment émis
+    assert "Sur quelle partie" in texte  # question générée, pas les puces scriptées
+    assert "•" not in texte
+    assert evts[-1]["type"] == "done"
+    assert evts[-1]["confiance"] == Confiance.MOYENNE.value
+
+
+# --- Helper partagé de clarification naturelle (conseil_commun) ---
+
+
+async def test_question_clarification_utilise_la_consigne_et_borne_les_tokens() -> None:
+    from app.application import conseil_commun
+
+    captures: dict = {}
+
+    class _FauxInference:
+        async def generer(self, question, *, consigne=None, historique=None, max_tokens=None):
+            captures.update(consigne=consigne, max_tokens=max_tokens)
+            return "Sur quelle partie l'observez-vous, et dans quelle ville êtes-vous ?"
+
+    texte = await conseil_commun.question_clarification(
+        _FauxInference(), "symptome", "Mes feuilles jaunissent", None
+    )
+    assert "ville" in texte
+    assert captures["max_tokens"] == conseil_commun.CLARIF_MAX_TOKENS
+    assert "question" in captures["consigne"].lower()

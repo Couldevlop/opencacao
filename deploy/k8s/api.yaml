@@ -94,6 +94,9 @@ data:
   # Plafond de longueur d'un passage RAG (chantier latence) : coupe le gras des
   # passages pour réduire les tokens d'entrée. Réglable à chaud.
   RAG_PASSAGE_MAX_CHARS: "480"
+  # Dialogue naturel (clarification formulée par le modèle plutôt que le texte
+  # scripté). Déploiement OFF par défaut ; à activer explicitement après validation.
+  DIALOGUE_NATUREL_ENABLED: "false"
 ---
 apiVersion: apps/v1
 kind: Deployment

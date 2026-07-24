@@ -102,3 +102,10 @@ def test_conseil_service_avec_cache_semantique(monkeypatch) -> None:
     service = api_deps.get_conseil_service(_FakeAppRequest(state))
     assert service._semantique._embeddings is emb
     assert service._semantique._seuil == 0.9
+
+
+def test_conseil_service_recoit_le_drapeau(monkeypatch) -> None:
+    """Le drapeau ``dialogue_naturel_enabled`` des settings est câblé au service."""
+    _patch_settings(monkeypatch, dialogue_naturel_enabled=True)
+    service = api_deps.get_conseil_service(_FakeAppRequest(_state()))
+    assert service._dialogue_naturel is True

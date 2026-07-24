@@ -77,6 +77,7 @@ def _construire_orchestrateur(
     journal: object,
     rag: object,
     cache_semantique: CacheSemantique | None = None,
+    dialogue_naturel: bool = False,
 ) -> Orchestrateur:
     """Composition racine de la plateforme agentique (testable sans FastAPI).
 
@@ -94,6 +95,8 @@ def _construire_orchestrateur(
         journal: Port de journalisation.
         rag: Récupérateur RAG, ou None.
         cache_semantique: Couche de cache sémantique (paraphrases), ou None → exact seul.
+        dialogue_naturel: Si vrai, la clarification est formulée par le modèle
+            (naturelle) plutôt que par le texte scripté. Défaut False (inchangé).
 
     Returns:
         Un orchestrateur prêt à traiter, avec rag/meteo/prix/reglementation/normes/
@@ -144,6 +147,8 @@ def _construire_orchestrateur(
         cache,  # type: ignore[arg-type]
         agent_defaut="rag",
         cache_semantique=cache_semantique,
+        inference=inference,  # type: ignore[arg-type]
+        dialogue_naturel=dialogue_naturel,
     )
 
 
@@ -171,6 +176,7 @@ def get_orchestrateur(request: Request) -> Orchestrateur:
         cache_semantique=cache_semantique,
         journal=request.app.state.journal,
         rag=getattr(request.app.state, "rag", None),
+        dialogue_naturel=settings.dialogue_naturel_enabled,
     )
 
 
@@ -197,6 +203,7 @@ def get_conseil_service(request: Request) -> ConseilService | ConseilAgentique:
         embeddings=embeddings,
         semantic_cache_threshold=settings.semantic_cache_threshold,
         semantic_cache_lexical_min=settings.semantic_cache_lexical_min,
+        dialogue_naturel=settings.dialogue_naturel_enabled,
     )
 
 

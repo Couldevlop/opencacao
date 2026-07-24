@@ -202,6 +202,81 @@ def _fil_utilisateur(question: str, historique: list[dict[str, str]]) -> str:
     return " ".join([*tours, question])
 
 
+_CONSIGNES: dict[str, str] = {
+    "contact": (
+        "Le producteur cherche un contact de l'ANADER mais n'a pas indiqué sa localité. "
+        "Demande-lui simplement et chaleureusement dans quelle ville ou région il se "
+        "trouve, sans rien affirmer d'autre et sans donner de numéro."
+    ),
+    "symptome": (
+        "Il te manque, pour bien l'aider, la partie atteinte (feuilles, cabosses, "
+        "tronc/rameaux, racines) et depuis combien de temps cela dure. Pose UNE question "
+        "brève, naturelle et bienveillante pour l'obtenir, sans donner de conseil encore."
+    ),
+    "traitement": (
+        "Avant d'orienter, il te faut savoir quel problème précis traiter (maladie, "
+        "insecte, mauvaises herbes), sur quelle partie et quelle ampleur. Pose UNE "
+        "question brève et naturelle pour le préciser, sans conseiller encore."
+    ),
+    "rendement": (
+        "Pour comprendre la baisse de rendement, il te faut l'âge de la plantation, les "
+        "entretiens récents (taille, désherbage, égourmandage) et la présence éventuelle "
+        "de maladies. Pose UNE question brève et naturelle en ce sens, sans conclure encore."
+    ),
+    "fertilisation": (
+        "Pour conseiller sur la fertilité, il te faut l'âge de la plantation, si elle a "
+        "déjà été fertilisée et le type de sol. Pose UNE question brève et naturelle "
+        "pour le savoir, sans donner de recommandation encore."
+    ),
+    "plantation": (
+        "Pour bien accompagner une nouvelle plantation, il te faut la surface envisagée, "
+        "le type de sol et si le producteur a déjà des plants sélectionnés. Pose UNE "
+        "question brève et naturelle en ce sens, sans conseiller encore."
+    ),
+}
+
+
+def detecter_theme(question: str, historique: list[dict[str, str]] | None) -> str | None:
+    """Retourne le thème nécessitant une clarification, ou None (réponse directe).
+
+    Même logique de déclenchement que :func:`analyser` (anti-boucle, contact sans
+    ville, question informationnelle, détection de thème), mais renvoie le THÈME plutôt
+    que le texte scripté — pour que l'appelant fasse formuler la question par le modèle.
+    """
+    historique = historique or []
+    if _derniere_reponse_est_clarification(historique):
+        return None
+    fil = _fil_utilisateur(question, historique)
+    if contacts.intention_contact(question) and contacts.chercher(fil) is None:
+        return "contact"
+    texte = _normaliser(question)
+    if _repondre_directement(texte):
+        return None
+    return _detecter(texte)
+
+
+def besoin_localite(question: str, historique: list[dict[str, str]] | None) -> bool:
+    """Vrai si aucune ville connue n'apparaît dans le fil (localité à demander)."""
+    fil = _fil_utilisateur(question, historique or [])
+    return contacts.chercher(fil) is None
+
+
+def consigne_theme(theme: str, besoin_localite: bool) -> str:
+    """Consigne au modèle pour formuler la question de clarification du thème.
+
+    Args:
+        theme: Thème renvoyé par :func:`detecter_theme`.
+        besoin_localite: Si vrai (et thème != contact), on demande aussi la ville.
+    """
+    consigne = _CONSIGNES[theme]
+    if besoin_localite and theme != "contact":
+        consigne += (
+            " Demande aussi, dans la même phrase et naturellement, dans quelle localité "
+            "il se trouve."
+        )
+    return consigne
+
+
 def analyser(question: str, historique: list[dict[str, str]] | None) -> str | None:
     """Retourne des questions complémentaires à poser, ou None pour répondre directement.
 

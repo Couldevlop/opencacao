@@ -186,6 +186,34 @@ async def test_cache_prompt_envoye_dans_le_payload() -> None:
     await client.close()
 
 
+async def test_generer_transmet_la_consigne_et_le_prompt_strict() -> None:
+    """La consigne et le prompt système (choisi) sont transmis à l'inférence."""
+    from app.services.prompts import SYSTEM_PROMPT_STRICT
+
+    captures: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        captures["payload"] = _json.loads(request.content)
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": "Dans quelle ville ?"}}]}
+        )
+
+    client = _client(handler)
+    object.__setattr__(client, "_system_prompt", SYSTEM_PROMPT_STRICT)
+    texte = await client.generer(
+        "Mes feuilles jaunissent", consigne="Pose une question.", max_tokens=80
+    )
+
+    assert texte == "Dans quelle ville ?"
+    msgs = captures["payload"]["messages"]
+    assert msgs[0]["content"] == SYSTEM_PROMPT_STRICT
+    assert "Pose une question." in msgs[-1]["content"]
+    assert captures["payload"]["max_tokens"] == 80
+    await client.close()
+
+
 async def test_cache_prompt_envoye_dans_le_payload_stream() -> None:
     """cache_prompt est aussi transmis sur le chemin streaming."""
     vu: dict = {}

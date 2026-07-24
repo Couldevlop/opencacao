@@ -23,7 +23,7 @@ from app.core.logging import get_logger
 from app.domain.agents import AgentPort, AgentReponse, AgentRequete
 from app.domain.entities import Conseil
 from app.domain.exceptions import RateLimitDepasse
-from app.domain.ports import CachePort, JournalPort
+from app.domain.ports import CachePort, InferencePort, JournalPort
 from app.models.domain import Confiance, Langue
 from app.services import clarification, guardrails, postprocess
 
@@ -65,6 +65,8 @@ class Orchestrateur:
         cache: CachePort,
         agent_defaut: str = "rag",
         cache_semantique: CacheSemantique | None = None,
+        inference: InferencePort | None = None,
+        dialogue_naturel: bool = False,
     ) -> None:
         """Initialise l'orchestrateur.
 
@@ -75,12 +77,20 @@ class Orchestrateur:
             agent_defaut: Nom de l'agent de repli si aucun routage n'aboutit.
             cache_semantique: Couche de cache sémantique (paraphrases), ou None → une
                 instance inerte (exact-match seul, comme avant l'ajout de la couche).
+            inference: Port d'inférence, utilisé UNIQUEMENT pour formuler la question
+                de clarification naturelle (le reste du traitement passe par les
+                agents). None → le drapeau ``dialogue_naturel`` reste sans effet.
+            dialogue_naturel: Si vrai (et ``inference`` fourni), la clarification est
+                formulée par le modèle (naturelle) plutôt que par le texte scripté.
+                Défaut False (inchangé).
         """
         self._routeur = routeur
         self._journal = journal
         self._cache = cache
         self._agent_defaut = agent_defaut
         self._semantique = cache_semantique or CacheSemantique(cache, embeddings=None)
+        self._inference = inference
+        self._dialogue_naturel = dialogue_naturel
 
     async def traiter(
         self,
@@ -118,12 +128,26 @@ class Orchestrateur:
             return await self._journaliser(question, langue, conseil)
 
         # 2. Clarification consultative (1er tour) : poser des questions plutôt que
-        #    répondre à l'aveugle. Parité V2 — instantané, aucune inférence.
-        clarif = clarification.analyser(question, historique)
-        if clarif is not None:
-            logger.info("clarification_demandee")
-            conseil = Conseil(clarif, Confiance.MOYENNE, [], redirection_anader=False)
-            return await self._journaliser(question, langue, conseil)
+        #    répondre à l'aveugle. Parité V2 — scriptée (instantanée, aucune
+        #    inférence) par défaut ; naturelle (formulée par le modèle) derrière le
+        #    drapeau ``dialogue_naturel`` si une inférence est injectée.
+        if self._dialogue_naturel and self._inference is not None:
+            theme = clarification.detecter_theme(question, historique)
+            if theme is not None:
+                logger.info("clarification_demandee", mode="naturel", theme=theme)
+                if await self._cache.hit_rate_limit(client_ip):
+                    raise RateLimitDepasse
+                texte = await conseil_commun.question_clarification(
+                    self._inference, theme, question, historique
+                )
+                conseil = Conseil(texte, Confiance.MOYENNE, [], redirection_anader=False)
+                return await self._journaliser(question, langue, conseil)
+        else:
+            clarif = clarification.analyser(question, historique)
+            if clarif is not None:
+                logger.info("clarification_demandee")
+                conseil = Conseil(clarif, Confiance.MOYENNE, [], redirection_anader=False)
+                return await self._journaliser(question, langue, conseil)
 
         # 3. Cache EXACT (tour unique) : réponse instantanée, parité V2. Le cache stocke
         #    le conseil NON enrichi ; l'enrichissement contact, qui dépend de la
@@ -258,15 +282,39 @@ class Orchestrateur:
             )
             return
 
-        # 2. Clarification consultative (émise d'un bloc).
-        clarif = clarification.analyser(question, historique)
-        if clarif is not None:
-            logger.info("clarification_demandee")
-            yield {"type": "token", "text": clarif}
-            yield await flux.evenement_final(
-                self._journal, question, langue, clarif, [], Confiance.MOYENNE, redirection=False
-            )
-            return
+        # 2. Clarification consultative (émise d'un bloc en scripté ; en flux
+        #    token par token pour la variante naturelle derrière le drapeau).
+        if self._dialogue_naturel and self._inference is not None:
+            theme = clarification.detecter_theme(question, historique)
+            if theme is not None:
+                logger.info("clarification_demandee", mode="naturel", theme=theme)
+                if await self._cache.hit_rate_limit(client_ip):
+                    raise RateLimitDepasse
+                texte = ""
+                async for frag in conseil_commun.question_clarification_stream(
+                    self._inference, theme, question, historique
+                ):
+                    texte += frag
+                    yield {"type": "token", "text": frag}
+                yield await flux.evenement_final(
+                    self._journal, question, langue, texte, [], Confiance.MOYENNE, redirection=False
+                )
+                return
+        else:
+            clarif = clarification.analyser(question, historique)
+            if clarif is not None:
+                logger.info("clarification_demandee")
+                yield {"type": "token", "text": clarif}
+                yield await flux.evenement_final(
+                    self._journal,
+                    question,
+                    langue,
+                    clarif,
+                    [],
+                    Confiance.MOYENNE,
+                    redirection=False,
+                )
+                return
 
         # 3. Cache EXACT (tour unique) : réponse cachée émise d'un bloc.
         paquet: dict | None = None

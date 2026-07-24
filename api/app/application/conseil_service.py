@@ -43,6 +43,7 @@ class ConseilService:
         embeddings: EmbeddingsPort | None = None,
         semantic_cache_threshold: float = 0.92,
         semantic_cache_lexical_min: float = 0.75,
+        dialogue_naturel: bool = False,
     ) -> None:
         """Initialise le service avec ses dépendances (ports).
 
@@ -57,6 +58,8 @@ class ConseilService:
                 réponse cachée sémantiquement proche.
             semantic_cache_lexical_min: Couverture lexicale minimale (garde-fou) des
                 mots-clés de la question cachée par la question entrante.
+            dialogue_naturel: Si vrai, la clarification est formulée par le modèle
+                (naturelle) plutôt que par le texte scripté. Défaut False (inchangé).
         """
         self._inference = inference
         self._cache = cache
@@ -67,6 +70,7 @@ class ConseilService:
         self._semantique = CacheSemantique(
             cache, embeddings, semantic_cache_threshold, semantic_cache_lexical_min
         )
+        self._dialogue_naturel = dialogue_naturel
 
     @staticmethod
     def _conseil_depuis_paquet(donnees: dict) -> Conseil:
@@ -145,11 +149,23 @@ class ConseilService:
 
         # Clarification consultative : au 1er tour, on analyse et on pose des questions
         # complémentaires plutôt que de répondre à l'aveugle (réponse instantanée).
-        clarif = clarification.analyser(question, historique)
-        if clarif is not None:
-            logger.info("clarification_demandee")
-            conseil = Conseil(clarif, Confiance.MOYENNE, [], redirection_anader=False)
-            return await self._journaliser(question, langue, conseil)
+        if self._dialogue_naturel:
+            theme = clarification.detecter_theme(question, historique)
+            if theme is not None:
+                logger.info("clarification_demandee", mode="naturel", theme=theme)
+                if await self._cache.hit_rate_limit(client_ip):
+                    raise RateLimitDepasse
+                texte = await conseil_commun.question_clarification(
+                    self._inference, theme, question, historique
+                )
+                conseil = Conseil(texte, Confiance.MOYENNE, [], redirection_anader=False)
+                return await self._journaliser(question, langue, conseil)
+        else:
+            clarif = clarification.analyser(question, historique)
+            if clarif is not None:
+                logger.info("clarification_demandee")
+                conseil = Conseil(clarif, Confiance.MOYENNE, [], redirection_anader=False)
+                return await self._journaliser(question, langue, conseil)
 
         # Cache de réponses (instantané) — uniquement en tour unique : une réponse
         # multi-tours dépend du contexte et ne doit pas polluer/servir le cache.
@@ -299,14 +315,31 @@ class ConseilService:
             return
 
         # Clarification consultative (1er tour) : poser des questions complémentaires.
-        clarif = clarification.analyser(question, historique)
-        if clarif is not None:
-            logger.info("clarification_demandee")
-            yield {"type": "token", "text": clarif}
-            yield await self._evenement_final(
-                question, langue, clarif, [], Confiance.MOYENNE, redirection=False
-            )
-            return
+        if self._dialogue_naturel:
+            theme = clarification.detecter_theme(question, historique)
+            if theme is not None:
+                logger.info("clarification_demandee", mode="naturel", theme=theme)
+                if await self._cache.hit_rate_limit(client_ip):
+                    raise RateLimitDepasse
+                texte = ""
+                async for frag in conseil_commun.question_clarification_stream(
+                    self._inference, theme, question, historique
+                ):
+                    texte += frag
+                    yield {"type": "token", "text": frag}
+                yield await self._evenement_final(
+                    question, langue, texte, [], Confiance.MOYENNE, redirection=False
+                )
+                return
+        else:
+            clarif = clarification.analyser(question, historique)
+            if clarif is not None:
+                logger.info("clarification_demandee")
+                yield {"type": "token", "text": clarif}
+                yield await self._evenement_final(
+                    question, langue, clarif, [], Confiance.MOYENNE, redirection=False
+                )
+                return
 
         # Cache (tour unique) : exact d'abord (le moins cher), puis sémantique.
         embedding: list[float] | None = None
