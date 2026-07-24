@@ -32,15 +32,31 @@ spec:
             - "0.0.0.0"
             - "--port"
             - "8001"
-            # Questions courtes (~30 tokens) : -c 2048 large. -ub modéré pour borner
-            # l'empreinte mémoire du 4B (bien plus lourd que l'ancien 146 Mo).
+            # Dimensionné sur la charge RÉELLE mesurée en prod (1488 appels / 25 j) :
+            # 1486 entrées de 23-74 tokens (questions utilisateur) et 2 entrées de
+            # 600-605 tokens (extraits PDF du cron d'enrichissement). 0 troncature.
+            # -c 1024 laisse donc x1,7 de marge sur le pire cas observé ; -c 512
+            # tronquerait les extraits longs et corromprait silencieusement l'index.
             - "-c"
-            - "2048"
+            - "1024"
+            # En mode --embeddings llama.cpp force n_batch = n_ubatch (assertion) :
+            # les garder égaux évite le warning et rend la valeur effective explicite.
+            # Une séquence plus longue que n_ubatch est découpée sans erreur (vérifié
+            # sur les entrées de 605 tokens, progress = 0.85 puis release truncated=0).
             - "-b"
-            - "2048"
+            - "256"
             - "-ub"
-            - "512"
-            # Régime permanent : 4 threads (~1-1,5 s/embed), laisse les cœurs à
+            - "256"
+            # 1 seul slot : ~1,2 requête/heure en régime permanent, aucune contention.
+            # Sans cette borne, llama.cpp « fit to device memory » choisit n_parallel=4
+            # tout seul et gonfle le KV cache pour remplir la RAM libre du nœud.
+            - "-np"
+            - "1"
+            # Cache de prompt inutile pour des embeddings (aucune génération) et plafonné
+            # à 8192 Mio par défaut : on le désactive pour borner l'empreinte.
+            - "--cache-ram"
+            - "0"
+            # Régime permanent : 4 threads (~0,7 s/embed), laisse les cœurs à
             # l'inférence. Le build de nuit utilise un pod séparé plus agressif.
             - "-t"
             - "4"
@@ -51,9 +67,14 @@ spec:
               mountPath: /models
               readOnly: true
           resources:
-            # Le 4B Q8 occupe ~4,3 Go + KV/compute -> ~5-6 Go. Le nœud a ~20 Go libres.
-            requests: { cpu: "1", memory: "5Gi" }
-            limits: { cpu: "4", memory: "8Gi" }
+            # Mesuré (smaps_rollup) avec les paramètres ci-dessus : 196 Mio de mémoire
+            # ANONYME (KV + buffers de calcul), le reste des ~4,3 Go étant le fichier
+            # GGUF mmap'é — des pages propres, adossées au disque, que le noyau peut
+            # récupérer sous pression. La `request` reflète donc le working set non
+            # récupérable (+ marge), pas le RSS brut : réserver 5Gi bloquait 3 Gi
+            # d'ordonnancement sur un cluster déjà à 62 % de requests.
+            requests: { cpu: "500m", memory: "2Gi" }
+            limits: { cpu: "4", memory: "6Gi" }
           readinessProbe:
             httpGet: { path: /health, port: 8001 }
             initialDelaySeconds: 20
