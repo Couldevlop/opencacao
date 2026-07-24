@@ -171,6 +171,23 @@ async def test_orchestrateur_dialogue_naturel_off(orchestrateur_factory) -> None
 
 
 @pytest.mark.asyncio
+async def test_orchestrateur_dialogue_naturel_stream_genere_la_question(
+    orchestrateur_factory,
+) -> None:
+    """En flux, la clarification naturelle diffuse la question générée par le modèle."""
+    orch = orchestrateur_factory(dialogue_naturel=True, reponse_inference="Sur quelle partie ?")
+
+    evenements = [e async for e in orch.traiter_stream("Mes feuilles jaunissent", Langue.FR, "ip")]
+
+    tokens = [e for e in evenements if e["type"] == "token"]
+    texte = "".join(e["text"] for e in tokens)
+    assert tokens  # au moins un fragment émis
+    assert "partie" in texte  # question générée, pas les puces scriptées
+    assert "•" not in texte
+    assert evenements[-1]["type"] == "done"
+
+
+@pytest.mark.asyncio
 async def test_route_vers_agent_le_plus_pertinent() -> None:
     rag = _AgentEspion("rag", 0.4, "conseil RAG")
     meteo = _AgentEspion("meteo", 0.9, "conseil météo")

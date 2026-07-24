@@ -392,6 +392,23 @@ async def test_dialogue_naturel_off_garde_le_scripte(service_factory) -> None:
     assert "•" in conseil.reponse  # puces scriptées inchangées
 
 
+async def test_dialogue_naturel_stream_genere_la_question(service_factory) -> None:
+    """En flux, la clarification naturelle diffuse la question générée fragment par fragment."""
+    service = service_factory(dialogue_naturel=True, reponse_inference="Sur quelle partie ?")
+
+    evts = [
+        ev async for ev in service.conseiller_stream("Mes feuilles jaunissent", Langue.FR, "ip")
+    ]
+
+    tokens = [e for e in evts if e["type"] == "token"]
+    texte = "".join(e["text"] for e in tokens)
+    assert tokens  # au moins un fragment émis
+    assert "Sur quelle partie" in texte  # question générée, pas les puces scriptées
+    assert "•" not in texte
+    assert evts[-1]["type"] == "done"
+    assert evts[-1]["confiance"] == Confiance.MOYENNE.value
+
+
 # --- Helper partagé de clarification naturelle (conseil_commun) ---
 
 
