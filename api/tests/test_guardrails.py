@@ -255,3 +255,108 @@ def test_mention_cuivre_sans_dose_pas_de_faux_positif() -> None:
     """Une simple mention (« carence en cuivre »), sans dosage, ne doit PAS refuser."""
     refus = guardrails.evaluer("Comment corriger une carence en cuivre du cacaoyer ?")
     assert refus is None or refus.categorie is not CategorieRefus.PHYTOSANITAIRE
+
+
+# --- Règle « hors Côte d'Ivoire » (cacao ivoirien UNIQUEMENT) ---
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Comment cultive-t-on le cacao au Ghana ?",
+        "Quels sont les rendements du cacao au Cameroun ?",
+        "Je veux planter du cacao au Brésil, quelle variété choisir ?",
+        "Le cacao en Équateur pousse-t-il mieux ?",
+        "Comment font les producteurs du Nigeria ?",
+        "Quelle variété de cacao en Indonésie ?",
+        "Le cacao du Pérou est-il plus cher ?",
+    ],
+)
+def test_refus_cacao_hors_cote_divoire(question: str) -> None:
+    """Le conseil est calibré pour la Côte d'Ivoire : un autre pays producteur est refusé."""
+    refus = guardrails.evaluer(question)
+    assert refus is not None and refus.categorie is CategorieRefus.HORS_CI
+
+
+def test_hors_ci_nomme_le_pays_et_redirige() -> None:
+    """Le message nomme le pays détecté et rappelle le périmètre ivoirien."""
+    refus = guardrails.evaluer("Comment cultive-t-on le cacao au Ghana ?")
+    assert refus is not None
+    assert "Ghana" in refus.message
+    assert "Côte d'Ivoire" in refus.message
+
+
+def test_gentile_etranger_refuse() -> None:
+    """Le gentilé (« ghanéens ») déclenche aussi la règle, pas seulement le nom du pays."""
+    refus = guardrails.evaluer("Quelle variété les producteurs ghanéens utilisent-ils ?")
+    assert refus is not None and refus.categorie is CategorieRefus.HORS_CI
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        # Une localité ivoirienne est citée : le producteur est bien en Côte d'Ivoire.
+        "Mon cacao de Soubré se vend-il mieux que celui du Ghana ?",
+        # La Côte d'Ivoire est explicitement nommée : comparaison légitime.
+        "Le cacao de Côte d'Ivoire est-il meilleur que celui du Ghana ?",
+        # Localité du Nord : la règle « zone non cacaoyère » est plus utile ici.
+        "Puis-je cultiver le cacao à Korhogo comme au Ghana ?",
+    ],
+)
+def test_ancrage_ivoirien_pas_de_refus_hors_ci(question: str) -> None:
+    """Un ancrage ivoirien (localité ou mention du pays) neutralise la règle hors-CI."""
+    refus = guardrails.evaluer(question)
+    assert refus is None or refus.categorie is not CategorieRefus.HORS_CI
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Comment tailler mon cacaoyer pour améliorer la production ?",
+        "Quand faut-il récolter les cabosses ?",
+        "Je suis à San-Pédro, quel ombrage choisir ?",
+        "Comment fermenter mes fèves de cacao ?",
+    ],
+)
+def test_question_cacao_ordinaire_pas_de_refus(question: str) -> None:
+    """Aucune question cacao ordinaire ne doit être refusée par la nouvelle règle."""
+    refus = guardrails.evaluer(question)
+    assert refus is None
+
+
+# --- Élargissement du hors-filière : refus AVANT génération ---
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Quelle est la capitale de la France ?",
+        "Écris-moi un script Python qui trie une liste",
+        "Donne-moi une recette de cocktail",
+        "Qui est le président des États-Unis ?",
+        "Traduis cette phrase en anglais",
+        "Comment créer un site web ?",
+    ],
+)
+def test_hors_sujet_refuse_sans_generation(question: str) -> None:
+    """Un hors-sujet manifeste est refusé par règle, sans coûter une génération CPU."""
+    refus = guardrails.evaluer(question)
+    assert refus is not None
+    assert refus.categorie in (CategorieRefus.HORS_FILIERE, CategorieRefus.HORS_CI)
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        # « application » (phyto) ne doit pas être confondu avec « application mobile ».
+        "Quelle est la bonne période d'application du traitement sur cacaoyer ?",
+        # « cours » (prix) reste dans le périmètre cacao.
+        "Quel est le cours du cacao fixé par le Conseil du Café-Cacao ?",
+        # « plan » / « planter » ne doivent pas matcher un terme informatique.
+        "Comment planter mes jeunes cacaoyers ?",
+    ],
+)
+def test_elargissement_sans_faux_positif(question: str) -> None:
+    """L'élargissement du hors-filière ne doit refuser aucune question cacao légitime."""
+    refus = guardrails.evaluer(question)
+    assert refus is None or refus.categorie is not CategorieRefus.HORS_FILIERE
