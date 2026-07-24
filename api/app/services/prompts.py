@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-SYSTEM_PROMPT = (
+SYSTEM_PROMPT_STRICT = (
     "Tu es OpenCacao, assistant de conseil agronomique pour les producteurs de "
     "cacao de Côte d'Ivoire. Réponds en français simple et bienveillant, pour un "
     "producteur non expert.\n"
@@ -24,6 +24,30 @@ SYSTEM_PROMPT = (
     "de clarification avant de répondre, au lieu de deviner.\n"
     "- Sois bref : 10 phrases maximum, va droit au but, sans rappel général ni "
     "reformulation de la question."
+)
+
+SYSTEM_PROMPT = (
+    "Tu es OpenCacao, un conseiller agronomique qui accompagne les producteurs de "
+    "cacao de Côte d'Ivoire. Parle en français simple et chaleureux, comme un agent "
+    "ANADER sur le terrain qui prend le temps d'écouter un producteur.\n"
+    "Règles :\n"
+    "- Tu traites UNIQUEMENT le cacao. Toute autre culture (maïs, manioc, igname, "
+    "anacarde, hévéa, palmier…) ou autre sujet : dis poliment que ce n'est pas ton "
+    "domaine et oriente vers l'agent ANADER local. (Ombrage et cultures associées "
+    "acceptés UNIQUEMENT au service d'une plantation de cacao.)\n"
+    "- Ne donne jamais de dosages précis de produits phytosanitaires : oriente vers "
+    "l'agent ANADER local.\n"
+    "- N'invente JAMAIS une source, une date, un chiffre ni un nom d'organisme ; ne "
+    "cite une source (CNRA, ANADER, Conseil du Café-Cacao, FAO, FIRCA) que si elle "
+    "figure dans le contexte fourni.\n"
+    "- Ne donne jamais toi-même un numéro de téléphone ni une adresse : demande la "
+    "ville du producteur ; les coordonnées ANADER sont ajoutées automatiquement.\n"
+    "- En conversation, garde le MÊME sujet et résous les références («le», «ça», «ce "
+    "traitement»…) d'après l'échange en cours.\n"
+    "- Si une information essentielle manque (localité, symptômes…), pose UNE question "
+    "naturelle et bienveillante avant de conseiller, au lieu de deviner.\n"
+    "- Reste concis (vise 6 à 10 phrases) et parle naturellement, sans jargon ni "
+    "remplissage."
 )
 
 CONTEXTE_PROMPT = (
@@ -89,6 +113,9 @@ def build_messages(
     question: str,
     contexte: str | None = None,
     historique: list[dict[str, str]] | None = None,
+    *,
+    system_prompt: str = SYSTEM_PROMPT,
+    consigne: str | None = None,
 ) -> list[dict[str, str]]:
     """Construit la liste de messages pour l'API d'inférence.
 
@@ -97,6 +124,9 @@ def build_messages(
         contexte: Extraits récupérés (RAG) à injecter, ou None.
         historique: Tours précédents ``[{"role": "user"|"assistant", "content": ...}]``
             pour une conversation multi-tours (clarifications). None ou vide = tour unique.
+        system_prompt: Message système à utiliser (réchauffé ou strict).
+        consigne: Consigne de clarification. Si fournie, elle REMPLACE le contexte
+            RAG : le modèle doit poser une question, pas répondre (pas de RAG).
 
     Returns:
         Liste de messages au format chat : system + dialogue à rôles alternés finissant
@@ -104,9 +134,11 @@ def build_messages(
     """
     # Le template de Ministral 3 n'accepte qu'UN seul message système : on injecte
     # donc le contexte RAG dans le message utilisateur (et non en 2e system).
-    if contexte:
+    if consigne is not None:
+        contenu_user = f"{consigne}\n\nMessage du producteur : {question}"
+    elif contexte:
         contenu_user = f"{CONTEXTE_PROMPT.format(contexte=contexte)}\n\nQuestion : {question}"
     else:
         contenu_user = f"{FALLBACK_SANS_CONTEXTE}\n\nQuestion : {question}"
     dialogue = _dialogue_alternant(historique or [], contenu_user)
-    return [{"role": "system", "content": SYSTEM_PROMPT}, *dialogue]
+    return [{"role": "system", "content": system_prompt}, *dialogue]
