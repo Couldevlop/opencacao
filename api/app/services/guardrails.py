@@ -56,6 +56,15 @@ REFUS_HORS_CI = (
     "conseil ivoirien. Adressez-vous au service agricole national concerné."
 )
 
+REFUS_TRANSFORMATION = (
+    "Je me concentre sur la culture du cacao et le travail du producteur, jusqu'à la "
+    "fermentation et le séchage des fèves. La transformation en chocolat — ou en "
+    "beurre, poudre et pâte de cacao — relève d'un autre métier, avec ses propres "
+    "exigences techniques et sanitaires. C'est une filière d'avenir pour la valeur "
+    "ajoutée locale en Côte d'Ivoire : pour vous y engager, rapprochez-vous du "
+    "Conseil du Café-Cacao ou d'une structure d'accompagnement à la transformation."
+)
+
 _REFUS_MESSAGES: dict[CategorieRefus, str] = {
     CategorieRefus.PHYTOSANITAIRE: REFUS_PHYTO,
     CategorieRefus.MEDICAL: REFUS_MEDICAL,
@@ -63,6 +72,7 @@ _REFUS_MESSAGES: dict[CategorieRefus, str] = {
     CategorieRefus.HORS_FILIERE: REFUS_HORS_FILIERE,
     CategorieRefus.ZONE_NON_CACAO: REFUS_ZONE_NON_CACAO,
     CategorieRefus.HORS_CI: REFUS_HORS_CI,
+    CategorieRefus.TRANSFORMATION: REFUS_TRANSFORMATION,
 }
 
 
@@ -385,6 +395,33 @@ _PAYS_HORS_CI: dict[str, str] = {
     "etats unis": "les États-Unis",
 }
 
+# Transformation industrielle / artisanale : un AUTRE métier que la production. Le
+# producteur s'arrête à la fève fermentée et séchée (fermentation/séchage/écabossage
+# restent dans _TERMES_FILIERE et ne figurent donc PAS ici). Ces termes déclenchent le
+# refus même quand la question mentionne « cacao » ou « fève », car la transformation
+# porte précisément là-dessus.
+_TERMES_TRANSFORMATION = (
+    "chocolat",
+    "chocolats",
+    "chocolaterie",
+    "chocolatier",
+    "beurre de cacao",
+    "poudre de cacao",
+    "pate de cacao",
+    "masse de cacao",
+    "liqueur de cacao",
+    "tourteau de cacao",
+    "torrefaction",
+    "torrefier",
+    "conchage",
+    "concher",
+    "temperage",
+    "temperer le chocolat",
+    "broyage des feves",
+    "nibs",
+    "grue de cacao",
+)
+
 # Mentions explicites de la Côte d'Ivoire. Leur présence neutralise la règle hors-CI :
 # une comparaison « le cacao ivoirien face au Ghana » reste une question ivoirienne.
 _TERMES_ANCRAGE_CI = (
@@ -442,6 +479,7 @@ _RE_FILIERE = _compiler(_TERMES_FILIERE)
 _RE_HORS_FILIERE = _compiler(_TERMES_HORS_FILIERE)
 _RE_ZONE_DECLENCHEUR = _compiler(_TERMES_ZONE_DECLENCHEUR)
 _RE_ANCRAGE_CI = _compiler(_TERMES_ANCRAGE_CI)
+_RE_TRANSFORMATION = _compiler(_TERMES_TRANSFORMATION)
 # Ordre décroissant de longueur : « sierra leone » prime sur « guinee » dans un texte
 # qui contiendrait les deux, et le nom affiché reste le plus spécifique.
 _RE_PAYS_HORS_CI: tuple[tuple[re.Pattern, str], ...] = tuple(
@@ -526,6 +564,12 @@ def evaluer(question: str) -> Refus | None:
     # 3. Identification de maladie sur image sans agent
     if _contient(texte, _RE_IMAGE):
         return Refus(CategorieRefus.DIAGNOSTIC_IMAGE)
+
+    # 3 bis. Transformation (chocolat, beurre/poudre de cacao, torréfaction…) : un autre
+    #        métier que la production. Vérifié AVANT le hors-filière car ces questions
+    #        parlent bien de cacao — l'ancrage filière ne doit pas les laisser passer.
+    if _contient(texte, _RE_TRANSFORMATION):
+        return Refus(CategorieRefus.TRANSFORMATION)
 
     # 4. Hors filière : indice hors-sujet explicite ET aucun ancrage filière cacao.
     if _contient(texte, _RE_HORS_FILIERE) and not _contient(texte, _RE_FILIERE):

@@ -360,3 +360,45 @@ def test_elargissement_sans_faux_positif(question: str) -> None:
     """L'élargissement du hors-filière ne doit refuser aucune question cacao légitime."""
     refus = guardrails.evaluer(question)
     assert refus is None or refus.categorie is not CategorieRefus.HORS_FILIERE
+
+
+# --- Règle « transformation » (le producteur, pas le chocolatier) ---
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Comment fabriquer du chocolat noir à partir de mes fèves ?",
+        "Quelle machine pour faire du beurre de cacao ?",
+        "Comment obtenir de la poudre de cacao ?",
+        "Quel est le procédé de torréfaction des fèves ?",
+        "Comment fonctionne le conchage du chocolat ?",
+        "Je veux ouvrir une chocolaterie, par où commencer ?",
+    ],
+)
+def test_refus_transformation(question: str) -> None:
+    """La transformation (chocolat, beurre, poudre…) sort du périmètre producteur."""
+    refus = guardrails.evaluer(question)
+    assert refus is not None and refus.categorie is CategorieRefus.TRANSFORMATION
+
+
+def test_transformation_message_strategique_et_poli() -> None:
+    """Le message reste positif : il valorise la filière transformation, sans rejet sec."""
+    message = guardrails.evaluer("Comment fabriquer du chocolat ?").message
+    assert "valeur ajoutée" in message.lower()
+    assert "Conseil du Café-Cacao" in message
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        # Étapes POST-RÉCOLTE du producteur : dans le périmètre, jamais refusées.
+        "Comment bien fermenter mes fèves de cacao après la récolte ?",
+        "Combien de jours faut-il pour le séchage des fèves ?",
+        "Quand faut-il écabosser les cabosses mûres ?",
+    ],
+)
+def test_transformation_ne_confond_pas_les_etapes_producteur(question: str) -> None:
+    """Fermentation, séchage, écabossage restent le métier du producteur -> pas de refus."""
+    refus = guardrails.evaluer(question)
+    assert refus is None or refus.categorie is not CategorieRefus.TRANSFORMATION
