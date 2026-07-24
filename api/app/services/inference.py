@@ -10,7 +10,7 @@ import httpx
 from app.core.config import Settings
 from app.core.logging import get_logger
 from app.domain.exceptions import InferenceUnavailable
-from app.services.prompts import build_messages
+from app.services.prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_STRICT, build_messages
 
 logger = get_logger(__name__)
 
@@ -34,6 +34,7 @@ class InferenceClient:
         top_p: float = 0.9,
         frequency_penalty: float = 0.3,
         client: httpx.AsyncClient | None = None,
+        system_prompt: str = SYSTEM_PROMPT,
     ) -> None:
         """Initialise le client d'inférence.
 
@@ -46,6 +47,7 @@ class InferenceClient:
             top_p: Noyau de probabilité (nucleus sampling).
             frequency_penalty: Pénalité de répétition (réduit le remplissage).
             client: Client httpx injectable (pour les tests).
+            system_prompt: Message système injecté dans chaque requête (réchauffé ou strict).
         """
         self._base_url = base_url.rstrip("/")
         self._model_name = model_name
@@ -54,6 +56,7 @@ class InferenceClient:
         self._top_p = top_p
         self._frequency_penalty = frequency_penalty
         self._client = client or httpx.AsyncClient(timeout=timeout_s)
+        self._system_prompt = system_prompt
 
     @classmethod
     def from_settings(cls, settings: Settings) -> InferenceClient:
@@ -66,6 +69,9 @@ class InferenceClient:
             temperature=settings.inference_temperature,
             top_p=settings.inference_top_p,
             frequency_penalty=settings.inference_frequency_penalty,
+            system_prompt=SYSTEM_PROMPT
+            if settings.dialogue_naturel_enabled
+            else SYSTEM_PROMPT_STRICT,
         )
 
     def _params_decodage(self, temperature: float | None) -> dict:
@@ -83,6 +89,7 @@ class InferenceClient:
         max_tokens: int | None = None,
         contexte: str | None = None,
         historique: list[dict[str, str]] | None = None,
+        consigne: str | None = None,
     ) -> str:
         """Génère une réponse agronomique pour la question donnée.
 
@@ -92,6 +99,7 @@ class InferenceClient:
             max_tokens: Nombre maximum de tokens générés.
             contexte: Extraits récupérés (RAG) à injecter, ou None.
             historique: Tours précédents de la conversation, ou None.
+            consigne: Consigne de clarification à faire poser au modèle, ou None.
 
         Returns:
             Le texte de la réponse du modèle.
@@ -101,7 +109,13 @@ class InferenceClient:
         """
         payload = {
             "model": self._model_name,
-            "messages": build_messages(question, contexte, historique),
+            "messages": build_messages(
+                question,
+                contexte,
+                historique,
+                system_prompt=self._system_prompt,
+                consigne=consigne,
+            ),
             "max_tokens": max_tokens if max_tokens is not None else self._max_tokens,
             # Réutilise le KV du préfixe commun (message système constant) d'une requête
             # à l'autre -> le prompt système n'est plus re-prérempli (latence CPU).
@@ -126,6 +140,7 @@ class InferenceClient:
         max_tokens: int | None = None,
         contexte: str | None = None,
         historique: list[dict[str, str]] | None = None,
+        consigne: str | None = None,
     ) -> AsyncIterator[str]:
         """Génère une réponse en flux (SSE), morceau par morceau.
 
@@ -135,6 +150,7 @@ class InferenceClient:
             max_tokens: Nombre maximum de tokens générés.
             contexte: Extraits récupérés (RAG) à injecter, ou None.
             historique: Tours précédents de la conversation, ou None.
+            consigne: Consigne de clarification à faire poser au modèle, ou None.
 
         Yields:
             Les fragments de texte (deltas) au fur et à mesure de la génération.
@@ -144,7 +160,13 @@ class InferenceClient:
         """
         payload = {
             "model": self._model_name,
-            "messages": build_messages(question, contexte, historique),
+            "messages": build_messages(
+                question,
+                contexte,
+                historique,
+                system_prompt=self._system_prompt,
+                consigne=consigne,
+            ),
             "max_tokens": max_tokens if max_tokens is not None else self._max_tokens,
             "stream": True,
             "cache_prompt": True,
