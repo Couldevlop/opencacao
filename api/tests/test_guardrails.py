@@ -402,3 +402,26 @@ def test_transformation_ne_confond_pas_les_etapes_producteur(question: str) -> N
     """Fermentation, séchage, écabossage restent le métier du producteur -> pas de refus."""
     refus = guardrails.evaluer(question)
     assert refus is None or refus.categorie is not CategorieRefus.TRANSFORMATION
+
+
+def test_hors_ci_ne_mentionne_pas_les_institutions_ivoiriennes() -> None:
+    """Un demandeur étranger (Ghana) ne connaît pas l'ANADER : ne pas la lui citer."""
+    refus = guardrails.evaluer("Comment cultive-t-on le cacao au Ghana ?")
+    assert refus is not None
+    assert "ANADER" not in refus.message
+    assert "CNRA" not in refus.message
+    assert "Conseil du Café-Cacao" not in refus.message
+
+
+def test_hors_ci_ne_redirige_pas_vers_anader() -> None:
+    """Le refus hors-CI ne doit pas déclencher l'ajout d'un contact ANADER."""
+    refus = guardrails.evaluer("Comment cultive-t-on le cacao au Ghana ?")
+    assert refus is not None and refus.redirige_anader is False
+
+
+def test_refus_ivoiriens_gardent_la_redirection_anader() -> None:
+    """Les refus en contexte ivoirien conservent la redirection ANADER."""
+    med = guardrails.evaluer("Mon enfant a de la fièvre, quel médicament donner ?")
+    assert med is not None and med.redirige_anader is True
+    phyto = guardrails.evaluer("Quelle dose de fongicide appliquer par hectare ?")
+    assert phyto is not None and phyto.redirige_anader is True

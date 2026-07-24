@@ -95,8 +95,10 @@ data:
   # passages pour réduire les tokens d'entrée. Réglable à chaud.
   RAG_PASSAGE_MAX_CHARS: "480"
   # Dialogue naturel (clarification formulée par le modèle plutôt que le texte
-  # scripté). Déploiement OFF par défaut ; à activer explicitement après validation.
-  DIALOGUE_NATUREL_ENABLED: "false"
+  # scripté). ACTIVÉ en prod le 24/07/2026 après validation A/B (0.6.73) : question
+  # courte et complète, ~5-6 s de décodage CPU par tour vs scripté instantané.
+  # Rollback : repasser à "false" + redémarrage API (~15 s).
+  DIALOGUE_NATUREL_ENABLED: "true"
 ---
 apiVersion: apps/v1
 kind: Deployment
