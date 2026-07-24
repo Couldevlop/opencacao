@@ -16,10 +16,11 @@ from app.domain.entities import Conseil
 from app.models.domain import Confiance
 from app.services import clarification, contacts
 
-# Latence : une question de clarification est courte -> on borne fort la génération.
-# Mesuré en prod (0.6.71) : 80 tokens -> ~8 s de décodage CPU par tour. 40 tokens
-# donne une question plus ramassée pour ~2x moins de décodage (~4-5 s).
-CLARIF_MAX_TOKENS = 40
+# Latence : une question de clarification tient en une phrase courte (la consigne
+# l'exige). Le plafond n'est qu'un garde-fou anti-emballement : 40 tronquait des
+# questions de 50-70 tokens EN plein milieu (mesuré 0.6.72) ; 64 laisse une phrase
+# courte se terminer, la brièveté venant désormais de la consigne, pas de la coupe.
+CLARIF_MAX_TOKENS = 64
 
 
 def serialiser(conseil: Conseil) -> str:

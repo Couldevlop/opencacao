@@ -274,6 +274,12 @@ def consigne_theme(theme: str, besoin_localite: bool) -> str:
             " Demande aussi, dans la même phrase et naturellement, dans quelle localité "
             "il se trouve."
         )
+    # Latence : le modèle rédige sinon 50-70 tokens et la question est tronquée par le
+    # plafond CPU. On exige une formulation TRÈS courte, complète en une phrase.
+    consigne += (
+        " Réponds par UNE SEULE question, en une phrase courte (20 mots maximum), "
+        "sans préambule ni politesse d'introduction."
+    )
     return consigne
 
 
