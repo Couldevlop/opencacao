@@ -9,11 +9,15 @@ fonctionnelle que la V2, et que le cache soit interopérable entre les deux chem
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 from dataclasses import replace
 
 from app.domain.entities import Conseil
 from app.models.domain import Confiance
-from app.services import contacts
+from app.services import clarification, contacts
+
+# Latence : une question de clarification est courte -> on borne fort la génération.
+CLARIF_MAX_TOKENS = 80
 
 
 def serialiser(conseil: Conseil) -> str:
@@ -76,3 +80,28 @@ def enrichir_contact(conseil: Conseil, texte_conversation: str) -> Conseil:
         sources=sources,
         redirection_anader=True,
     )
+
+
+async def question_clarification(
+    inference: object, theme: str, question: str, historique: list[dict[str, str]] | None
+) -> str:
+    """Fait formuler par le modèle une question de clarification naturelle et brève."""
+    consigne = clarification.consigne_theme(
+        theme, clarification.besoin_localite(question, historique)
+    )
+    return await inference.generer(  # type: ignore[attr-defined]
+        question, consigne=consigne, historique=historique, max_tokens=CLARIF_MAX_TOKENS
+    )
+
+
+async def question_clarification_stream(
+    inference: object, theme: str, question: str, historique: list[dict[str, str]] | None
+) -> AsyncIterator[str]:
+    """Variante flux : diffuse la question de clarification au fil de l'eau."""
+    consigne = clarification.consigne_theme(
+        theme, clarification.besoin_localite(question, historique)
+    )
+    async for fragment in inference.generer_stream(  # type: ignore[attr-defined]
+        question, consigne=consigne, historique=historique, max_tokens=CLARIF_MAX_TOKENS
+    ):
+        yield fragment

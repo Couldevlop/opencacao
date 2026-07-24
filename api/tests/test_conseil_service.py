@@ -354,3 +354,24 @@ def test_enrichir_contact_ajout_deja_present() -> None:
     # Réenrichir le texte déjà enrichi : aucune ligne nouvelle -> conseil inchangé.
     re_enrichi = service._enrichir_contact(enrichi, "Je suis à Bouaké")
     assert re_enrichi.reponse == enrichi.reponse
+
+
+# --- Helper partagé de clarification naturelle (conseil_commun) ---
+
+
+async def test_question_clarification_utilise_la_consigne_et_borne_les_tokens() -> None:
+    from app.application import conseil_commun
+
+    captures: dict = {}
+
+    class _FauxInference:
+        async def generer(self, question, *, consigne=None, historique=None, max_tokens=None):
+            captures.update(consigne=consigne, max_tokens=max_tokens)
+            return "Sur quelle partie l'observez-vous, et dans quelle ville êtes-vous ?"
+
+    texte = await conseil_commun.question_clarification(
+        _FauxInference(), "symptome", "Mes feuilles jaunissent", None
+    )
+    assert "ville" in texte
+    assert captures["max_tokens"] == conseil_commun.CLARIF_MAX_TOKENS
+    assert "question" in captures["consigne"].lower()
