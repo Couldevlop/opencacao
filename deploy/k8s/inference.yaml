@@ -44,6 +44,16 @@ spec:
             - "2048"       # taille de batch logique
             - "-ub"
             - "512"        # taille de micro-batch physique
+            # Cache de prompt BORNÉ. Sans ce drapeau, llama.cpp applique 8192 Mio par
+            # défaut et remplit jusqu'à saturation : mesuré le 24/07/2026 en prod,
+            # « cache state: 109 prompts, 8183 MiB » soit 8,2 Go des 12,4 Go de mémoire
+            # anonyme du pod, memory.current à 99,99 % de la limite de 12 Gi et
+            # 133 974 franchissements du plafond (memory.events: max). Un OOM-kill a
+            # eu lieu le 28/06/2026 (anon-rss 8 361 680 kB au moment du kill).
+            # 1 Gio suffit : l'éviction est LRU et le préfixe système (~57 tokens),
+            # que le keepalive KV maintient chaud, tient dans une fraction de ce budget.
+            - "--cache-ram"
+            - "1024"
           ports:
             - containerPort: 8000
           volumeMounts:
