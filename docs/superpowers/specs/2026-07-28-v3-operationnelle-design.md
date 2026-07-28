@@ -286,13 +286,29 @@ curation — ce qui évite la dépendance `python-multipart`, conformément au c
 
 ### 6.2 Étage 0 — recevabilité, sans modèle
 
-Nouveau module `api/app/services/vision/recevabilite.py`. **Aucun modèle d'apprentissage** :
-variance du laplacien pour la netteté, histogramme pour l'exposition, seuil de résolution
-minimale. `numpy` est déjà une dépendance de l'API.
+**Aucun modèle d'apprentissage.** Variance du laplacien pour la netteté, luminance moyenne pour
+l'exposition, seuil de résolution minimale.
+
+*Correction du 28/07/2026, au moment d'écrire le plan C1 :* cet étage ne peut pas être
+entièrement serveur. `numpy` ne décode pas le JPEG, et il n'y aura pas de dépendance Pillow.
+La responsabilité se répartit donc ainsi — ce qui se révèle meilleur que la version initiale,
+puisqu'une mauvaise image n'est même plus téléversée :
+
+| Responsabilité | Où | Pourquoi |
+|---|---|---|
+| Netteté et exposition | **navigateur** | il possède déjà les pixels décodés dans `canvas` ; refuse avant téléversement, ce qui économise la bande passante sur réseau faible |
+| Format, dimensions, taille | **serveur** (`api/app/services/vision/recevabilite.py`) | contrôle de sécurité sur un fichier écrit sur disque ; lecture d'en-tête PNG/JPEG en Python pur, sans dépendance |
+| Plausibilité des métriques déclarées | **serveur** | le client peut mentir : on borne, on ne fait pas confiance aveuglément |
 
 C'est le composant le moins spectaculaire et le plus rentable de la chaîne : sans lui, tout
 l'aval analyse du bruit. Une image refusée renvoie un **conseil de reprise en français simple**
 (« approchez-vous de la cabosse », « tournez-vous dos au soleil »), jamais un code d'erreur.
+
+Deux règles de sécurité, puisqu'on accepte des fichiers d'utilisateurs : le nom de fichier
+dérive de l'**empreinte SHA-256 du contenu**, jamais d'une donnée fournie par le client — aucune
+traversée de chemin n'est possible, et la déduplication est gratuite ; un fichier dont l'en-tête
+n'est pas reconnu n'est **jamais écrit sur disque**, tout en étant consigné en métadonnées avec
+son motif de refus, pour que le producteur voie ce qui a été rejeté.
 
 ### 6.3 API
 
