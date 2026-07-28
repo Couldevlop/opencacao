@@ -17,6 +17,7 @@ from app.domain.agents import AgentRequete
 from app.domain.ports import InferencePort
 from app.services import localites
 from app.services.agents.base import AgentBase, compter_mots_cles
+from app.services.geometrie import dans_cote_ivoire
 from app.services.outils.satellite import OutilSatellite
 from app.services.rag import RagRecuperateur
 
@@ -138,7 +139,7 @@ def _coordonnees(texte: str) -> tuple[float, float] | None:
     for correspondance in _COORDONNEES.finditer(texte):
         lat = float(correspondance.group(1).replace(",", "."))
         lon = float(correspondance.group(2).replace(",", "."))
-        if 4.0 <= lat <= 11.0 and -9.0 <= lon <= -2.0:
+        if dans_cote_ivoire(lat, lon):
             return lat, lon
     return None
 
