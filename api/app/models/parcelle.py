@@ -19,7 +19,7 @@ from enum import Enum
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.services.geometrie import dans_cote_ivoire, superficie_ha
+from app.services.geometrie import superficie_ha
 
 # Bornes de plausibilité d'une parcelle cacaoyère ivoirienne. En dessous de 0,1 ha le
 # tracé est une erreur de manipulation ; au-delà de 50 ha ce n'est plus une parcelle
@@ -275,8 +275,3 @@ class CaptureReponse(BaseModel):
     cree_le: datetime
     images: list[ImageReponse] = Field(default_factory=list)
     trace: list[CoordonneeRequest] = Field(default_factory=list)
-
-
-def point_ivoirien(point: CoordonneeRequest) -> bool:
-    """Indique si un point reçu tombe dans l'enveloppe de la Côte d'Ivoire."""
-    return dans_cote_ivoire(point.latitude, point.longitude)
