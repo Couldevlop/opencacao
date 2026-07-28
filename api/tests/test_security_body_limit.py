@@ -89,3 +89,30 @@ def test_les_methodes_sans_corps_ne_sont_pas_penalisees(methode):
     with TestClient(app) as client:
         if methode == "get":
             assert client.get("/vide").status_code == 200
+
+
+# ------------------------------------------------------------ Permissions-Policy
+#
+# Cet en-tete est un arbitrage de securite fin : la geolocalisation DOIT etre permise
+# a la seule origine de l interface (le parcours GPS releve le contour d une parcelle,
+# et « geolocation=() » ferait refuser la permission par le navigateur sans meme
+# demander son avis au producteur), tandis que micro et camera restent interdits — les
+# quatre modalites de capture passent par <input type="file" capture>, qui delegue a
+# l application photo du telephone et n exige aucune de ces deux permissions.
+#
+# Sans ce test, un durcissement bien intentionne casserait le parcours en silence.
+
+
+def test_permissions_policy_autorise_la_geolocalisation_sur_l_origine():
+    from app.core.security import SECURITY_HEADERS
+
+    politique = SECURITY_HEADERS["Permissions-Policy"]
+    assert "geolocation=(self)" in politique
+
+
+def test_permissions_policy_interdit_micro_et_camera():
+    from app.core.security import SECURITY_HEADERS
+
+    politique = SECURITY_HEADERS["Permissions-Policy"]
+    assert "microphone=()" in politique
+    assert "camera=()" in politique

@@ -15,7 +15,13 @@ SECURITY_HEADERS = {
     "Referrer-Policy": "no-referrer",
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cache-Control": "no-store",
-    "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+    # La géolocalisation est autorisée à la SEULE origine de l'interface : l'écran
+    # « Ma parcelle » relève le contour d'une plantation au GPS, et un allowlist vide
+    # (« geolocation=() ») fait refuser la permission par le navigateur sans même
+    # demander son avis au producteur. Micro et caméra restent interdits : les quatre
+    # modalités de capture passent par un <input type="file" capture>, qui délègue à
+    # l'application photo du téléphone et ne requiert aucune de ces deux permissions.
+    "Permissions-Policy": "geolocation=(self), microphone=(), camera=()",
 }
 
 # CSP stricte par défaut : les réponses d'API sont du JSON, elles n'ont aucune
