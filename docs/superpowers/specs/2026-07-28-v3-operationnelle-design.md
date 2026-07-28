@@ -153,7 +153,7 @@ défaut : une erreur de configuration dégrade, elle ne casse pas.
 
 | Capacité | `gpu` | `cpu` |
 |---|---|---|
-| Chat interactif | ~8-10 s pour 400 tokens | ~15-38 s, brouillon spéculatif actif |
+| Chat interactif | ~4 s pour 400 tokens sur A5000/4090, ~8-10 s sur carte à faible bande passante (§4.3) | ~15-38 s, brouillon spéculatif actif |
 | Vision descriptive (VLM) | active | **inactive** — message explicite, pas d'erreur |
 | Cascade de vision (étages 0-3) | active | active |
 | Études de filière | à la demande, quelques minutes | **file nocturne par cron** |
@@ -170,52 +170,90 @@ de scène et au VLM descriptif.
 Conséquence budgétaire : l'exigence GPU porte sur **une fenêtre d'événement**, pas sur le
 produit en régime permanent.
 
-### 4.3 Recommandation matérielle
+### 4.3 Décision matérielle — RunPod, par nécessité
 
-| Option | Matériel | Coût | Verdict |
+*Mise à jour du 28/07/2026 : l'offre Hetzner GPU est **indisponible**.* Le GEX44 était l'option
+préférée (même fournisseur que le cluster, serveur dédié, IP fixe, capable de rejoindre K3s). Elle
+n'est pas disponible ; le GEX131 (RTX PRO 6000 96 Go, 889 €/mois) est hors de proportion avec le
+besoin. **La décision se porte donc sur RunPod secure cloud, en région européenne.**
+
+| Option | Statut | Note |
+|---|---|---|
+| **RunPod secure cloud, région UE** | **retenu** | centre de données, région au choix, facturation horaire ; instance éphémère → mitigations du §4.5 **obligatoires** |
+| Hetzner GEX44 (RTX 4000 SFF Ada 20 Go) | **indisponible** | était l'option préférée : dédié, IP fixe, rejoignait le cluster |
+| Hetzner GEX131 (RTX PRO 6000 96 Go) | écarté | 889 €/mois, surdimensionné |
+| RunPod *community cloud* | **écarté** | machines de particuliers ou instances interruptibles : ni la juridiction ni la disponibilité ne sont garanties |
+| vast.ai | **écarté** | loue les GPU de particuliers ; le modèle et les questions des producteurs transiteraient sur une machine et dans une juridiction inconnues. Indéfendable devant une assemblée institutionnelle, et contraire à la thèse du projet |
+
+**Ce que la contrainte apporte.** Sur RunPod, la carte se choisit — et le décodage est borné par la
+bande passante mémoire, pas par le calcul :
+
+| Carte | VRAM | Bande passante | Débit estimé, 8B en 4 bits |
 |---|---|---|---|
-| **Hetzner GEX44** | RTX 4000 SFF Ada 20 Go, i5-13500, 64 Go, 2×1,92 To NVMe | **184 €/mois + 79 € d'installation**, HT | **retenu** — même fournisseur que le cluster ; 20 Go tiennent le 8B en AWQ (~6 Go) + Qwen3-VL-4B + embeddings, avec marge KV |
-| Hetzner GEX131 | RTX PRO 6000 Blackwell Max-Q 96 Go | 889 €/mois | surdimensionné |
-| Hetzner GEX130 | RTX 6000 Ada 48 Go | 838 €/mois | apparemment retiré du catalogue |
-| Pod horaire (RunPod) | L4 / A5000 | quelques € la journée | insuffisant : pas de persistance ni d'IP stable pour un service |
+| RTX 4000 SFF Ada *(l'option Hetzner perdue)* | 20 Go | ~280 Go/s | ~40-50 tok/s |
+| L4 | 24 Go | ~300 Go/s | ~45-55 tok/s |
+| **RTX A5000** | 24 Go | ~768 Go/s | ~80-100 tok/s |
+| **RTX 4090** | 24 Go | ~1 000 Go/s | ~100-130 tok/s |
 
-**Retenu : un mois de GEX44.** Un pod horaire couvrirait le seul jour J ; le mois achète les
-répétitions, la marge de panne en direct, et la fenêtre nécessaire pour constituer le jeu de
-photos ivoirien via la boucle de revue (§7.6). Retour au CX53 en profil CPU ensuite, sur
-**mesure d'affluence** — pas sur principe. Prolonger d'un mois si la fréquentation
-post-présentation le justifie reste une décision légitime, prise sur chiffres.
+Une A5000 ou une 4090, à coût horaire comparable, offre **3 à 4 fois** la bande passante de la
+carte Hetzner : une réponse de 400 tokens tomberait autour de **4 secondes** au lieu de 8-10.
+Perdre le GEX44 peut donc améliorer la démonstration. **Chiffres à confirmer par mesure**, jamais à
+annoncer avant de les avoir constatés.
 
-*Tarifs relevés le 28/07/2026, hors TVA ; à revérifier avant commande.* **À vérifier également
-avant de s'engager** : le GEX44 est un serveur **dédié**, avec frais d'installation et
-possiblement une durée minimale ou un préavis de résiliation. « Un mois » n'est pas
-nécessairement aussi résiliable qu'une instance cloud.
+**Coût.** À ~0,40-0,70 $/h, les répétitions et le jour J (~30 h) coûtent **15 à 25 €**. Un mois en
+continu approcherait 300-500 € : sans objet, puisque le besoin déclaré est « GPU pour la
+présentation, puis retour au CPU ». Retour au CX53 en profil CPU ensuite, sur mesure d'affluence.
 
-### 4.4 Contraintes concrètes du GEX44
+*Tarifs relevés le 28/07/2026, hors TVA ; à revérifier avant réservation, ainsi que la
+disponibilité effective de la carte choisie dans une région européenne.*
 
-C'est un **serveur dédié root** : accès complet, dépôt des GGUF et lancement de vLLM ou
-llama.cpp en Docker comme aujourd'hui. 64 Go de RAM et 2×1,92 To de NVMe : aucune contrainte de
-ce côté.
+### 4.4 Contraintes de la classe GPU — indépendantes du fournisseur
 
-**Le budget VRAM est la vraie limite : 20 Go.** Le 8B en BF16 occupe ~16 Go, ce qui ne laisse
-rien au modèle de vision. Il faut donc **quantifier le modèle fusionné en AWQ ou GPTQ 4 bits**
-(~5-6 Go), libérant ~13 Go pour Qwen3-VL-4B et le cache KV. Cette quantification est une étape
-de préparation à part entière, à prévoir avant le jour J.
-
-**Débit attendu, sans optimisme.** La RTX 4000 SFF Ada offre ~280 Go/s de bande passante
-mémoire ; un 8B en 4 bits plafonne donc autour de **40-50 tok/s**. Une réponse de 400 tokens
-prend **8 à 10 secondes**, pas 2 ou 3. C'est une transformation face aux ~38 s du CPU, et le
-streaming la rend confortable — mais aucune communication publique ne doit annoncer 3 secondes.
+**Le budget VRAM commande tout.** Avec 24 Go, le 8B en BF16 (~16 Go) ne laisse pas la place au
+modèle de vision. Il faut donc **quantifier le modèle fusionné en AWQ ou GPTQ 4 bits** (~5-6 Go),
+libérant ~18 Go pour Qwen3-VL-4B et le cache KV. Cette quantification est une **étape de
+préparation à part entière**, à réaliser et valider avant le jour J — pas la veille.
 
 **Le gain décisif n'est pas la latence, c'est le débit agrégé.** llama.cpp sur CPU traite **une
 requête à la fois** ; vLLM les **regroupe**, et vingt utilisateurs simultanés partagent la même
-lecture des poids. Pour la phase d'ouverture au public après la présentation, cela compte
-davantage que la latence d'un utilisateur isolé.
+lecture des poids. Pour la phase d'ouverture au public après la présentation, cela compte davantage
+que la latence d'un utilisateur isolé.
 
-**Rattachement au cluster.** Le GEX44 est une machine distincte du nœud CX53. Deux options : la
-**joindre au cluster K3s comme second nœud** (les Deployments `inference` et `vision` reçoivent
-alors un `nodeSelector`), ce qui préserve intact le pipeline GitOps ; ou la laisser autonome et
-faire pointer `inference_url` vers elle par le réseau privé. **La première option est retenue** :
-elle évite de créer un chemin de déploiement parallèle à maintenir dans l'urgence.
+### 4.5 Architecture et mitigations de l'instance éphémère
+
+Une instance RunPod n'a ni IP stable ni disque persistant par défaut, et peut être perdue. **Seule
+l'inférence part sur le GPU** ; le CX53 garde l'API, le web, Redis, les embeddings, l'index RAG et
+le volume `/data` (sessions, parcelles, captures). Le code le permet sans modification :
+`inference_url` est un réglage, et l'API consomme l'inférence en HTTP compatible OpenAI. **Aucune
+donnée de producteur ne réside sur le GPU** — seuls les poids et les prompts en transit.
+
+**Chemin de migration :**
+
+1. Quantifier le modèle fusionné en AWQ et le pousser sur un dépôt privé.
+2. Image conteneur vLLM téléchargeant le modèle au démarrage, poussée sur GHCR (déjà en usage).
+3. **Tunnel privé obligatoire** (Tailscale ou WireGuard) entre le CX53 et le pod. D1 impose que
+   l'inférence ne soit jamais exposée publiquement, et un point de terminaison RunPod l'est par
+   défaut. Ajouter `--api-key` sur vLLM en défense en profondeur.
+4. `INFERENCE_URL` vers l'adresse privée du pod, via ConfigMap et `roll-image.sh`.
+5. **Garder le Deployment CPU à zéro réplique, jamais supprimé** : le retour arrière est un
+   `kubectl scale` plus un revert de ConfigMap, en moins de deux minutes.
+
+Latence ajoutée par le tunnel : 20-40 ms par requête, négligeable devant plusieurs secondes de
+génération. Choisir une région européenne.
+
+**Mitigations obligatoires — sans alternative dédiée, ce sont elles qui portent le risque :**
+
+| # | Mitigation | Pourquoi |
+|---|---|---|
+| M1 | **Volume réseau** pour les poids | un redémarrage ne doit pas retélécharger 6 Go en direct |
+| M2 | **Tailscale rejoint le réseau au démarrage du pod**, par clé d'authentification préprovisionnée | sinon un redémarrage exige une intervention manuelle pendant la présentation |
+| M3 | **Script de démarrage répété au moins trois fois**, avec chronométrage du délai « pod froid → premier token » | c'est le chiffre qui décide s'il est jouable de redémarrer en direct |
+| M4 | **Un second pod en attente chaude, dans un autre centre de données**, le jour J | à ~0,50 $/h, six heures de doublure coûtent ~3 € : une assurance quasi gratuite |
+| M5 | **On-demand uniquement, jamais d'instance interruptible** | une reprise d'instance pendant la présentation est inacceptable |
+| M6 | **Repli CPU armé et chronométré**, bascule scriptée | dernier filet ; doit être exécutable par quelqu'un d'autre que Waopron (§9.5) |
+
+M3 et M4 sont les deux qui comptent vraiment. Elles entrent au runbook du jour J (§9.5) et au
+scénario répété (§9.4).
 
 ---
 
@@ -446,9 +484,13 @@ La console `api/app/curation/` fournit le moule : file de travail, revue, `store
 `jobs.py`. On l'étend plutôt que de créer une seconde console.
 
 Les jeux de données publics (collections Mendeley et Kaggle sur la pourriture brune) servent
-d'amorce, pas de vérité : ils sont biaisés studio. Le jeu ivoirien se construit par cette
-boucle — ce qui est aussi la raison pour laquelle la fenêtre GPU d'un mois (§4.3) a une valeur
-au-delà du jour J.
+d'amorce, pas de vérité : ils sont biaisés studio. Le jeu ivoirien se construit par cette boucle.
+
+**Conséquence du passage à un GPU horaire (§4.3) :** la collecte de photos ne dépend d'aucune
+fenêtre GPU — elle se fait au champ, avec des téléphones, et la revue par les agents ANADER tourne
+sur CPU. **Elle peut donc démarrer immédiatement**, sans attendre quoi que ce soit d'autre. C'est
+même le seul poste du chantier dont le calendrier ne dépend pas de code : il dépend de gens et de
+saisons. À lancer sans délai.
 
 ### 7.7 Service de vision
 
@@ -510,7 +552,7 @@ destiné à un bailleur. Traitement en deux temps :
    d'adresse au lecteur, pas de renvoi ANADER ». La leçon acquise en juillet s'applique : *le
    levier est la consigne, pas le plafond*.
 2. **Après l'événement — 200 à 400 exemples de prose analytique** ajoutés au corpus, puis un
-   rafraîchissement de LoRA (une à deux heures sur le GEX44 déjà loué). **Sans changement de
+   rafraîchissement de LoRA (une à deux heures de GPU horaire, ~1 €). **Sans changement de
    socle** : c'est un enrichissement, pas la migration C5, et il ne remet rien en cause.
 
 ### 8.3 Gabarits déclaratifs

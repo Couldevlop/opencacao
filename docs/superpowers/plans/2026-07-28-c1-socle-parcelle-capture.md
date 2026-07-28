@@ -308,7 +308,7 @@ def anneau_auto_intersecte(points: Sequence[tuple[float, float]]) -> bool:
 - [ ] **Step 4: Lancer les tests pour vérifier qu'ils passent**
 
 Run: `cd api && python -m pytest tests/test_geometrie.py -v --no-cov`
-Expected: PASS — 12 tests
+Expected: PASS — 13 tests (8 fonctions, dont deux `parametrize` qui donnent 3 + 4 cas)
 
 - [ ] **Step 5: Faire consommer les bornes partagées par l'agent Satellite**
 
