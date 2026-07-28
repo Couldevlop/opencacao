@@ -116,3 +116,33 @@ def test_permissions_policy_interdit_micro_et_camera():
     politique = SECURITY_HEADERS["Permissions-Policy"]
     assert "microphone=()" in politique
     assert "camera=()" in politique
+
+
+# ---------------------------------------------------------------- CSP et blob:
+#
+# L echantillonnage video se fait SUR L APPAREIL : le fichier choisi est charge dans
+# un <video> via une URL blob:. Sans media-src 'self' blob:, la directive retombe sur
+# default-src 'self', qui n inclut pas blob:, et le navigateur refuse la lecture
+# (« Media load rejected by URL safety check »). Constate a l emulateur le 28/07/2026 :
+# la modalite video etait structurellement morte. Ce test empeche la regression.
+
+
+def test_csp_ui_autorise_blob_pour_les_medias():
+    from app.core.security import CSP_UI
+
+    assert "media-src 'self' blob:" in CSP_UI
+
+
+def test_csp_ui_autorise_blob_pour_les_images():
+    from app.core.security import CSP_UI
+
+    assert "img-src 'self' data: blob:" in CSP_UI
+
+
+def test_csp_ui_n_ouvre_aucune_origine_distante():
+    """blob: n autorise que des ressources fabriquees par la page, pas un tiers."""
+    from app.core.security import CSP_UI
+
+    assert "default-src 'self'" in CSP_UI
+    assert "object-src 'none'" in CSP_UI
+    assert "frame-ancestors 'none'" in CSP_UI

@@ -34,8 +34,16 @@ CSP_API = "default-src 'none'; frame-ancestors 'none'"
 # CSP « default-src 'none' » ci-dessus bloquerait tout le rendu de l'UI (CSS, modules
 # JS, images, fetch). En production l'UI est servie par nginx, mais ce mode reste
 # valide en local et pour un déploiement mono-conteneur.
+# `blob:` est indispensable à l'écran « Ma parcelle » : l'échantillonnage vidéo se fait
+# SUR L'APPAREIL, en chargeant le fichier choisi dans un <video> via une URL blob:.
+# Sans `media-src 'self' blob:`, la directive retombe sur `default-src 'self'`, qui
+# n'inclut pas blob: — le navigateur refuse alors la lecture
+# (« Media load rejected by URL safety check ») et la modalité vidéo est morte.
+# Constaté à l'émulateur le 28/07/2026. `blob:` n'ouvre aucune origine distante : il
+# n'autorise que des ressources fabriquées par la page elle-même.
 CSP_UI = (
-    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+    "default-src 'self'; script-src 'self'; style-src 'self'; "
+    "img-src 'self' data: blob:; media-src 'self' blob:; "
     "connect-src 'self' http: https:; base-uri 'none'; form-action 'none'; "
     "object-src 'none'; frame-ancestors 'none'"
 )
