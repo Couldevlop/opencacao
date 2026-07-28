@@ -93,7 +93,7 @@ et 3 de la cascade sont explicitement reportés après l'événement.
 | Brouillon spéculatif | auto-distillé, ou `Luciole-1B-Instruct` après C5 | 1 Md | inutile | **essentiel** (1,7-1,9×) |
 | Embeddings RAG & cache sémantique | `Qwen3-Embedding-0.6B` *(en place)* | 0,6 Md | actif | actif |
 | Description visuelle | `Qwen3-VL` (poids ouverts) | 4-8 Md | actif | **éteint** |
-| Recevabilité d'image (étage 0) | aucun modèle — heuristiques `numpy` | — | actif | actif |
+| Recevabilité d'image (étage 0) | aucun modèle — métriques navigateur + en-têtes serveur (§6.2) | — | actif | actif |
 | Organe, lésions, étiologie (étages 1-3) | ViT/DINOv2 affiné + détecteur de lésions | 20-90 M | actif | **actif**, ~100-300 ms/image |
 
 ### 3.1 La conséquence architecturale à retenir
@@ -153,7 +153,7 @@ défaut : une erreur de configuration dégrade, elle ne casse pas.
 
 | Capacité | `gpu` | `cpu` |
 |---|---|---|
-| Chat interactif | ~2-3 s | ~15-38 s, brouillon spéculatif actif |
+| Chat interactif | ~8-10 s pour 400 tokens | ~15-38 s, brouillon spéculatif actif |
 | Vision descriptive (VLM) | active | **inactive** — message explicite, pas d'erreur |
 | Cascade de vision (étages 0-3) | active | active |
 | Études de filière | à la demande, quelques minutes | **file nocturne par cron** |
@@ -185,7 +185,37 @@ photos ivoirien via la boucle de revue (§7.6). Retour au CX53 en profil CPU ens
 **mesure d'affluence** — pas sur principe. Prolonger d'un mois si la fréquentation
 post-présentation le justifie reste une décision légitime, prise sur chiffres.
 
-*Tarifs relevés le 28/07/2026, hors TVA ; à revérifier avant commande.*
+*Tarifs relevés le 28/07/2026, hors TVA ; à revérifier avant commande.* **À vérifier également
+avant de s'engager** : le GEX44 est un serveur **dédié**, avec frais d'installation et
+possiblement une durée minimale ou un préavis de résiliation. « Un mois » n'est pas
+nécessairement aussi résiliable qu'une instance cloud.
+
+### 4.4 Contraintes concrètes du GEX44
+
+C'est un **serveur dédié root** : accès complet, dépôt des GGUF et lancement de vLLM ou
+llama.cpp en Docker comme aujourd'hui. 64 Go de RAM et 2×1,92 To de NVMe : aucune contrainte de
+ce côté.
+
+**Le budget VRAM est la vraie limite : 20 Go.** Le 8B en BF16 occupe ~16 Go, ce qui ne laisse
+rien au modèle de vision. Il faut donc **quantifier le modèle fusionné en AWQ ou GPTQ 4 bits**
+(~5-6 Go), libérant ~13 Go pour Qwen3-VL-4B et le cache KV. Cette quantification est une étape
+de préparation à part entière, à prévoir avant le jour J.
+
+**Débit attendu, sans optimisme.** La RTX 4000 SFF Ada offre ~280 Go/s de bande passante
+mémoire ; un 8B en 4 bits plafonne donc autour de **40-50 tok/s**. Une réponse de 400 tokens
+prend **8 à 10 secondes**, pas 2 ou 3. C'est une transformation face aux ~38 s du CPU, et le
+streaming la rend confortable — mais aucune communication publique ne doit annoncer 3 secondes.
+
+**Le gain décisif n'est pas la latence, c'est le débit agrégé.** llama.cpp sur CPU traite **une
+requête à la fois** ; vLLM les **regroupe**, et vingt utilisateurs simultanés partagent la même
+lecture des poids. Pour la phase d'ouverture au public après la présentation, cela compte
+davantage que la latence d'un utilisateur isolé.
+
+**Rattachement au cluster.** Le GEX44 est une machine distincte du nœud CX53. Deux options : la
+**joindre au cluster K3s comme second nœud** (les Deployments `inference` et `vision` reçoivent
+alors un `nodeSelector`), ce qui préserve intact le pipeline GitOps ; ou la laisser autonome et
+faire pointer `inference_url` vers elle par le réseau privé. **La première option est retenue** :
+elle évite de créer un chemin de déploiement parallèle à maintenir dans l'urgence.
 
 ---
 
@@ -455,7 +485,35 @@ modules `application/` existants. Trois temps :
 3. **Assembler** — sections, tableaux, figures, bibliographie et manifeste de génération dans un
    objet `Document` unique.
 
-### 8.2 Gabarits déclaratifs
+### 8.2 Ce que le corpus permet — et ce qu'il ne permet pas
+
+*Analyse du corpus menée le 28/07/2026, sur question de Waopron.* `corpus/corpus_cacao_rag.jsonl`
+compte 10 000 paires. Réponses : **médiane 583 caractères, maximum 1 201**. Marqueurs de
+structure : **0,0 % de titres markdown, 0,0 % de puces, 0,0 % de listes numérotées, 0,0 % de
+tableaux** — zéro sur les quatre.
+
+**Conséquence favorable, et elle valide l'architecture.** La LoRA sait produire un paragraphe de
+prose française de 600 à 800 caractères. C'est exactement la granularité d'une section. La
+structure — titres, tableaux, numérotation, annexe de provenance — est produite par le **gabarit
+YAML et les adaptateurs de rendu** ; le modèle n'émet jamais un titre. Un 8B qui n'a jamais lu de
+document de 30 000 caractères ne peut pas en écrire un d'un seul jet ; il peut écrire quarante
+paragraphes de 700 caractères, ce qui est le même document. Le découpage par section n'est donc
+pas seulement une parade au time-out Cloudflare : **c'est ce qui rend l'étude possible.**
+
+**Manque réel, à traiter.** Le corpus est intégralement en registre *conseil au producteur*
+(« rendez-vous auprès de l'agent ANADER de votre zone »). Sollicitée sur une section d'étude, la
+LoRA s'adressera au producteur et renverra vers l'ANADER — ce qui est faux dans un document
+destiné à un bailleur. Traitement en deux temps :
+
+1. **Pour l'événement — une consigne de registre.** Le mécanisme existe : `prompts.py::build_messages(consigne=...)`,
+   construit pour le dialogue naturel. Consigne « rédaction analytique, troisième personne, pas
+   d'adresse au lecteur, pas de renvoi ANADER ». La leçon acquise en juillet s'applique : *le
+   levier est la consigne, pas le plafond*.
+2. **Après l'événement — 200 à 400 exemples de prose analytique** ajoutés au corpus, puis un
+   rafraîchissement de LoRA (une à deux heures sur le GEX44 déjà loué). **Sans changement de
+   socle** : c'est un enrichissement, pas la migration C5, et il ne remet rien en cause.
+
+### 8.3 Gabarits déclaratifs
 
 `api/app/data/gabarits/*.yaml`, sur le modèle de `sources_agro.yaml` et
 `sources_officielles.yaml` déjà en place. Trois gabarits :
@@ -469,7 +527,7 @@ modules `application/` existants. Trois temps :
 Ajouter un gabarit doit être un fichier YAML, pas du code. C'est la même discipline
 d'extensibilité que « ajouter un agent = un adaptateur ».
 
-### 8.3 Traçabilité — au centre, pas en annexe
+### 8.4 Traçabilité — au centre, pas en annexe
 
 Deux traçabilités distinctes, et la seconde est celle que personne d'autre ne produit.
 
@@ -491,7 +549,7 @@ dédiée dans l'export Excel.
 Rappel D5 : le dossier de parcelle porte en tête, de façon non contournable, la mention qu'il
 s'agit d'un **dossier préparatoire** et non d'une déclaration de conformité.
 
-### 8.4 Quatre formats, un seul moteur
+### 8.5 Quatre formats, un seul moteur
 
 Le moteur produit un `Document` ; les formats sont des **adaptateurs** dans
 `api/app/services/rendu/` qui ne remontent jamais dans le moteur.
@@ -512,7 +570,7 @@ et `maxminddb` ont été ajoutés selon la même règle, avec justification en c
 Le rendu Word réutilise les conventions typographiques déjà écrites dans
 `scripts/build_doc_agentique.py` plutôt que d'en inventer d'autres.
 
-### 8.5 Jobs asynchrones
+### 8.6 Jobs asynchrones
 
 Une étude représente 10 à 30 générations : le synchrone est exclu, et le time-out edge
 Cloudflare (~100 s) l'interdit de toute façon — la leçon des 524 de juin est acquise.
@@ -535,14 +593,14 @@ octet vite.** Le front ignore les types d'événements inconnus.
 En profil CPU, les études basculent en file nocturne par cron, avec notification par email
 via `api/app/services/notifier.py` (ZeptoMail, expéditeur `waopron@` — `noreply@` renvoie 403).
 
-### 8.6 Le moment de scène
+### 8.7 Le moment de scène
 
 Faire générer par le système, en direct, le **PPTX d'une étude de filière** — la présentation
 que l'assemblée est en train de regarder. Le flux SSE écrit les sections à l'écran, puis le
 fichier se télécharge. Ce moment doit figurer dans le scénario répété (§9.4) et être testé en
 prod avant le jour J, pas improvisé.
 
-### 8.7 Critères d'acceptation C3
+### 8.8 Critères d'acceptation C3
 
 - Une étude en Word, Excel et PPTX, chacune contenant son manifeste de génération.
 - Une section privée de sources rend un constat de lacune ; aucun chiffre sans provenance —
