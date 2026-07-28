@@ -102,3 +102,51 @@ def test_les_dimensions_de_l_entete_priment_sur_celles_declarees():
     verdict = evaluer(_image(largeur=1024, hauteur=768), _jpeg(100, 100))
     assert verdict.recevable is False
     assert verdict.motif is MotifRecevabilite.TROP_PETITE
+
+
+# --------------------------------------------------------- branches defensives
+#
+# Les cas ci-dessous couvrent les chemins d'erreur du parseur d'en-tetes. Ce n'est
+# pas de la couverture de complaisance : ces octets seront ecrits sur disque, et un
+# parseur qui plante ou qui accepte n'importe quoi est une faille, pas un detail.
+
+
+def test_png_tronque_avant_les_dimensions_est_rejete():
+    assert dimensions_depuis_entete(b"\x89PNG\r\n\x1a\n" + b"\x00" * 4) is None
+
+
+def test_png_sans_bloc_ihdr_est_rejete():
+    faux = b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"XXXX" + b"\x00" * 12
+    assert dimensions_depuis_entete(faux) is None
+
+
+def test_png_annoncant_une_dimension_nulle_est_rejete():
+    assert dimensions_depuis_entete(_png(0, 768)) is None
+
+
+def test_jpeg_avec_octets_parasites_avant_le_marqueur_est_lu_quand_meme():
+    """Le parseur avance octet par octet jusqu'au prochain 0xFF (ligne de saut)."""
+    brut = _jpeg(800, 600)
+    bruite = brut[:2] + b"\x00\x00\x00" + brut[2:]
+    assert dimensions_depuis_entete(bruite) == (800, 600)
+
+
+def test_jpeg_dont_le_marqueur_sof_est_tronque_est_rejete():
+    """SOF0 commence a l'octet 20 : il faut 29 octets pour lire ses dimensions."""
+    tronque = _jpeg(800, 600)[:26]
+    assert dimensions_depuis_entete(tronque) is None
+
+
+def test_jpeg_avec_longueur_de_segment_absurde_est_rejete():
+    """Une longueur declaree inferieure a 2 rendrait la progression infinie."""
+    faux = b"\xff\xd8" + b"\xff\xe0" + struct.pack(">H", 0) + b"\x00" * 12
+    assert dimensions_depuis_entete(faux) is None
+
+
+def test_jpeg_sans_aucun_marqueur_sof_est_rejete():
+    sans_sof = b"\xff\xd8" + b"\xff\xe0" + struct.pack(">H", 16) + b"JFIF\x00" + b"\x00" * 9
+    assert dimensions_depuis_entete(sans_sof) is None
+
+
+def test_jpeg_annoncant_une_dimension_nulle_est_rejete():
+    assert dimensions_depuis_entete(_jpeg(0, 600)) is None
