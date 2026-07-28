@@ -9,6 +9,7 @@ import {
   versSession,
   versSessionAvecMessages,
 } from "../domain/models.js";
+import { versCapture, versParcelle } from "../domain/parcelle.js";
 import { lireCompte } from "./auth-store-local.js";
 import { lireDeviceId } from "./device-id.js";
 
@@ -16,7 +17,27 @@ const ERREURS_HTTP = {
   429: ErreurKind.RATE_LIMIT,
   503: ErreurKind.INDISPONIBLE,
   422: ErreurKind.VALIDATION,
+  // Captures de parcelle (V3) : seules routes à transporter des images, donc
+  // seules à pouvoir buter sur le plafond de corps (413) ou sur le disque (507).
+  413: ErreurKind.CHARGE_TROP_LOURDE,
+  507: ErreurKind.STOCKAGE_INSUFFISANT,
 };
+
+/**
+ * Lit le message d'erreur du serveur s'il en fournit un. Les refus métier des
+ * parcelles (géométrie hors Côte d'Ivoire, tracé qui se coupe, quota) portent un
+ * `detail` rédigé en français pour le producteur : on l'affiche tel quel plutôt
+ * que de le remplacer par une formule générique. Les erreurs de validation
+ * Pydantic, elles, rendent une liste : on les ignore.
+ */
+async function detailServeur(resp) {
+  try {
+    const data = await resp.json();
+    return typeof data?.detail === "string" ? data.detail : "";
+  } catch {
+    return "";
+  }
+}
 
 /** Traduit un événement d'erreur SSE en ConseilError. */
 function erreurDepuisKind(kind) {
@@ -302,6 +323,105 @@ export function creerClientApi(lireBaseUrl) {
     return { accountId: data.account_id, email: data.email };
   }
 
+  /* ---------- Parcelles et captures terrain (V3, C1) ---------- */
+
+  /**
+   * Appelle une route de parcelle et traduit les codes HTTP en erreurs de domaine.
+   * @param {string} chemin
+   * @param {RequestInit} init
+   * @param {{tolererAbsence?: boolean, messageAbsence?: string}} options - avec
+   *   `tolererAbsence`, un 404 rend `null` au lieu de lever (lecture d'une parcelle
+   *   supprimée, ou routes absentes quand PARCELLES_ENABLED vaut false).
+   * @returns {Promise<Response|null>}
+   */
+  async function appelParcelle(chemin, init = {}, options = {}) {
+    const { tolererAbsence = false, messageAbsence = "Parcelle inconnue" } = options;
+    let resp;
+    try {
+      resp = await fetch(baseCourante() + chemin, init);
+    } catch {
+      throw new ConseilError(ErreurKind.RESEAU, "API injoignable");
+    }
+    if (resp.status === 404) {
+      if (tolererAbsence) return null;
+      throw new ConseilError(ErreurKind.INTROUVABLE, messageAbsence);
+    }
+    if (ERREURS_HTTP[resp.status]) {
+      // Message vide si le serveur n'en fournit pas de lisible : à l'écran d'y
+      // substituer sa propre phrase, jamais un « Erreur » sec au producteur.
+      throw new ConseilError(ERREURS_HTTP[resp.status], await detailServeur(resp));
+    }
+    if (!resp.ok) throw new ConseilError(ErreurKind.HTTP, "Erreur HTTP " + resp.status);
+    return resp;
+  }
+
+  /** Crée une parcelle rattachée à cet appareil. Renvoie l'entité Parcelle. */
+  async function creerParcelle({ nom, localite }) {
+    const resp = await appelParcelle(
+      "/v1/parcelles",
+      {
+        method: "POST",
+        headers: enTetes({ "Content-Type": "application/json", Accept: "application/json" }),
+        body: JSON.stringify({ nom, localite }),
+      },
+      { messageAbsence: "Les parcelles ne sont pas activées sur ce serveur." }
+    );
+    return versParcelle(await resp.json());
+  }
+
+  /**
+   * Liste les parcelles de cet appareil. Renvoie `null` — et non un tableau vide —
+   * si le serveur ne sert pas les parcelles : l'UI doit pouvoir distinguer
+   * « aucune parcelle » de « fonction absente ».
+   */
+  async function listerParcelles() {
+    const resp = await appelParcelle(
+      "/v1/parcelles",
+      { headers: enTetes({ Accept: "application/json" }) },
+      { tolererAbsence: true }
+    );
+    if (!resp) return null;
+    const data = await resp.json();
+    return Array.isArray(data) ? data.map(versParcelle) : [];
+  }
+
+  /** Récupère une parcelle, ou null si elle n'existe plus pour cet appareil. */
+  async function obtenirParcelle(identifiant) {
+    if (!identifiant) return null;
+    const resp = await appelParcelle(
+      "/v1/parcelles/" + encodeURIComponent(identifiant),
+      { headers: enTetes({ Accept: "application/json" }) },
+      { tolererAbsence: true }
+    );
+    return resp ? versParcelle(await resp.json()) : null;
+  }
+
+  /** Enregistre le contour relevé d'une parcelle. Renvoie la parcelle à jour. */
+  async function enregistrerGeometrie(identifiant, { points, source }) {
+    const resp = await appelParcelle(
+      "/v1/parcelles/" + encodeURIComponent(identifiant) + "/geometrie",
+      {
+        method: "PUT",
+        headers: enTetes({ "Content-Type": "application/json", Accept: "application/json" }),
+        body: JSON.stringify({ points, source }),
+      }
+    );
+    return versParcelle(await resp.json());
+  }
+
+  /** Dépose une capture terrain (images échantillonnées et/ou trace GPS). */
+  async function deposerCapture(identifiant, { modalite, images = [], trace = [] }) {
+    const resp = await appelParcelle(
+      "/v1/parcelles/" + encodeURIComponent(identifiant) + "/captures",
+      {
+        method: "POST",
+        headers: enTetes({ "Content-Type": "application/json", Accept: "application/json" }),
+        body: JSON.stringify({ modalite, images, trace }),
+      }
+    );
+    return versCapture(await resp.json());
+  }
+
   return Object.freeze({
     demander,
     demanderStream,
@@ -314,5 +434,10 @@ export function creerClientApi(lireBaseUrl) {
     rechercherSessions,
     demanderLien,
     verifierAuth,
+    creerParcelle,
+    listerParcelles,
+    obtenirParcelle,
+    enregistrerGeometrie,
+    deposerCapture,
   });
 }

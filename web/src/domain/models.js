@@ -19,6 +19,13 @@ export const ErreurKind = Object.freeze({
   SESSION_INCONNUE: "session_inconnue",
   // L'authentification par lien magique n'est pas activée côté serveur.
   AUTH_INDISPONIBLE: "auth_indisponible",
+  // Le corps de la requête dépasse le plafond du serveur (413) — cas des captures
+  // de parcelle, seules routes à transporter des images.
+  CHARGE_TROP_LOURDE: "charge_trop_lourde",
+  // Le serveur n'a plus assez d'espace disque pour enregistrer (507).
+  STOCKAGE_INSUFFISANT: "stockage_insuffisant",
+  // La ressource visée n'existe plus (parcelle supprimée, purgée, autre appareil).
+  INTROUVABLE: "introuvable",
 });
 
 /** Erreur métier porteuse d'un type, pour un message utilisateur adapté. */
