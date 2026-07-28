@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import struct
 from types import SimpleNamespace
 
@@ -329,3 +330,39 @@ def test_endpoints_absents_quand_le_drapeau_est_off(tmp_path, monkeypatch):
         # Le liveness probe du dépôt est /v1/health (routeur health préfixé "/v1").
         assert client_test.get("/v1/health").status_code == 200
     get_settings.cache_clear()
+
+
+# ------------------------------------------------- taille reelle des televersements
+#
+# Ces deux tests existent parce que le plafond global du corps de requete est de
+# 16 Ko : une seule photo reelle le depasse. Sans plafond propre au prefixe
+# /v1/parcelles, la fonctionnalite serait rejetee en 413 EN PRODUCTION alors que
+# tous les tests unitaires passent (leurs images synthetiques font 39 octets).
+
+
+def _photo_realiste() -> dict:
+    """Une image dont le base64 depasse largement le plafond global de 16 Ko."""
+    octets = _jpeg() + b"\x00" * 300_000
+    return {
+        "contenu_base64": base64.b64encode(octets).decode("ascii"),
+        "largeur": 1024,
+        "hauteur": 768,
+        "score_nettete": 400.0,
+        "luminance_moyenne": 128.0,
+    }
+
+
+def test_une_photo_de_taille_reelle_est_acceptee(client: TestClient):
+    identifiant = _creer(client)
+    charge = {"modalite": "photos", "images": [_photo_realiste()]}
+    assert len(json.dumps(charge)) > 16_384
+    reponse = client.post(f"/v1/parcelles/{identifiant}/captures", json=charge, headers=ENTETES)
+    assert reponse.status_code == 201, reponse.text
+
+
+def test_le_plafond_elargi_ne_vaut_que_pour_les_parcelles(client: TestClient):
+    """Le reste de l API garde la borne stricte : on ouvre une porte, pas un boulevard."""
+    reponse = client.post(
+        "/v1/chat", json={"question": "x" * 20_000, "langue": "fr"}, headers=ENTETES
+    )
+    assert reponse.status_code == 413

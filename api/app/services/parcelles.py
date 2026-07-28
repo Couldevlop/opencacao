@@ -22,6 +22,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import shutil
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -53,6 +54,14 @@ logger = get_logger(__name__)
 
 _CONSEIL_FORMAT = "Ce fichier n'est pas une photo reconnue. Envoyez une image JPEG ou PNG."
 
+# Nombre maximal de captures par appareil. Au-delà, on est face à un usage abusif ou à
+# un besoin qui relève d'un compte encadré, pas d'un dépôt anonyme.
+QUOTA_CAPTURES_DEFAUT = 200
+
+# Espace libre en deçà duquel on cesse d'écrire des images. Le volume /data porte aussi
+# les sessions, l'index RAG et le journal : on préserve leur place avant tout.
+ESPACE_LIBRE_MIN_OCTETS = 100 * 1024 * 1024
+
 
 class GeometrieInvalide(Exception):
     """Une géométrie soumise ne peut pas décrire une parcelle cacaoyère ivoirienne."""
@@ -71,6 +80,27 @@ class ParcelleIntrouvable(Exception):
     """La parcelle visée n'existe pas, ou n'appartient pas à cet appareil."""
 
 
+class QuotaDepasse(Exception):
+    """Le dépôt d'images est refusé faute de ressource disponible.
+
+    OWASP API4:2023 — Unrestricted Resource Consumption. Le volume ``/data`` porte
+    aussi les sessions, l'index RAG et le journal : le saturer de captures ne
+    dégraderait pas seulement les parcelles, il emporterait le RAG.
+
+    Deux causes distinctes, séparées en sous-classes parce qu'elles n'imputent pas la
+    faute au même endroit — au routeur d'en tirer le code HTTP, le service n'en sait
+    rien et n'a pas à en savoir.
+    """
+
+
+class QuotaAppareilDepasse(QuotaDepasse):
+    """L'appareil a atteint son nombre maximal de captures. Faute du client."""
+
+
+class StockageIndisponible(QuotaDepasse):
+    """Le volume n'a plus assez d'espace libre. Condition serveur, pas faute du client."""
+
+
 class ServiceParcelles:
     """Orchestration métier des parcelles et de leurs captures terrain."""
 
@@ -80,6 +110,8 @@ class ServiceParcelles:
         dossier_captures: Path,
         retention_jours: int = 90,
         taille_max_octets: int = TAILLE_MAX_OCTETS,
+        quota_captures: int = QUOTA_CAPTURES_DEFAUT,
+        espace_libre_min_octets: int = ESPACE_LIBRE_MIN_OCTETS,
     ) -> None:
         """Initialise le service.
 
@@ -88,11 +120,15 @@ class ServiceParcelles:
             dossier_captures: Dossier où écrire les images (volume ``/data``).
             retention_jours: Rétention des captures avant purge, en jours.
             taille_max_octets: Plafond de taille par image, après décodage.
+            quota_captures: Nombre maximal de captures par appareil.
+            espace_libre_min_octets: Espace libre en deçà duquel on refuse d'écrire.
         """
         self._store = store
         self._dossier = dossier_captures
         self._retention_jours = retention_jours
         self._taille_max = taille_max_octets
+        self._quota_captures = quota_captures
+        self._espace_libre_min = espace_libre_min_octets
 
     # ------------------------------------------------------------- parcelles
 
@@ -336,6 +372,8 @@ class ServiceParcelles:
                 raise GeometrieInvalide(
                     "Un des points du parcours se trouve hors de la Côte d'Ivoire."
                 )
+        if requete.images:
+            await self._verifier_quotas(proprietaire)
         images = tuple(self._traiter_image(image) for image in requete.images)
         capture = Capture(
             identifiant=uuid4().hex,
@@ -356,6 +394,44 @@ class ServiceParcelles:
             refusees=sum(1 for i in images if not i.recevabilite.recevable),
         )
         return capture
+
+    async def _verifier_quotas(self, proprietaire: str) -> None:
+        """Vérifie le quota d'appareil et l'espace disque avant d'écrire des images.
+
+        N'est appelée que si la capture porte des images : une trace GPS pèse quelques
+        octets, la refuser pour cause de disque serait absurde.
+
+        Args:
+            proprietaire: Identifiant anonyme de l'appareil.
+
+        Raises:
+            QuotaDepasse: Si le quota est atteint ou le volume presque plein.
+        """
+        deja = await self._store.compter_captures(proprietaire)
+        if deja >= self._quota_captures:
+            logger.warning("capture_quota_appareil", proprietaire=proprietaire, captures=deja)
+            raise QuotaAppareilDepasse(
+                "Vous avez atteint le nombre maximal de captures enregistrées. "
+                "Supprimez d'anciennes captures ou contactez votre coopérative."
+            )
+        try:
+            libre = shutil.disk_usage(self._dossier_existant()).free
+        except OSError as exc:  # volume absent : on ne bloque pas sur une sonde
+            logger.warning("capture_espace_indeterminable", error=str(exc))
+            return
+        if libre < self._espace_libre_min:
+            logger.error("capture_espace_insuffisant", libre_octets=libre)
+            raise StockageIndisponible(
+                "L'espace de stockage est insuffisant pour enregistrer de nouvelles "
+                "photos. Réessayez plus tard."
+            )
+
+    def _dossier_existant(self) -> Path:
+        """Retourne le dossier de captures s'il existe, sinon son parent le plus proche."""
+        chemin = self._dossier
+        while not chemin.exists() and chemin != chemin.parent:
+            chemin = chemin.parent
+        return chemin
 
     # ------------------------------------------------------------------ purge
 

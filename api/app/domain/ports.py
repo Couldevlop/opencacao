@@ -232,6 +232,10 @@ class ParcelleStorePort(Protocol):
         """Persiste une capture (images et/ou trace)."""
         ...
 
+    async def compter_captures(self, proprietaire: str) -> int:
+        """Compte les captures d'un appareil (application des quotas)."""
+        ...
+
     async def obtenir_capture(self, identifiant: str, proprietaire: str) -> Capture | None:
         """Retourne une capture de cet appareil, ou None."""
         ...

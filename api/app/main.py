@@ -51,6 +51,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.parcelles,
         dossier_captures=Path(settings.captures_dir),
         retention_jours=settings.captures_retention_jours,
+        quota_captures=settings.captures_quota_par_appareil,
+        espace_libre_min_octets=settings.captures_espace_libre_min_octets,
     )
     app.state.purge_captures_task = None
     if settings.parcelles_enabled:
@@ -241,7 +243,14 @@ def create_app() -> FastAPI:
 
     # --- Middlewares (ordre : le dernier ajouté s'exécute en premier) ---
     app.add_middleware(SecurityHeadersMiddleware)
-    app.add_middleware(BodySizeLimitMiddleware, max_body_bytes=settings.max_body_bytes)
+    app.add_middleware(
+        BodySizeLimitMiddleware,
+        max_body_bytes=settings.max_body_bytes,
+        # Les captures de parcelle transportent des images encodées en base64 : le
+        # plafond global (quelques kilo-octets, taillé pour une question) les
+        # rejetterait toutes en 413. On ouvre une porte étroite sur ce seul préfixe.
+        plafonds_par_prefixe={"/v1/parcelles": settings.captures_max_body_bytes},
+    )
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
 
     if settings.cors_origins:

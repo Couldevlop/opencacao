@@ -176,6 +176,11 @@ class Settings(BaseSettings):
     parcelles_db_path: str = "/data/parcelles.db"
     captures_dir: str = "/data/captures"
     captures_retention_jours: int = 90
+    # Quotas de capture (OWASP API4:2023). Le volume /data porte aussi les sessions,
+    # l'index RAG et le journal : sans borne, des captures le satureraient et
+    # emporteraient le RAG avec elles.
+    captures_quota_par_appareil: int = 200
+    captures_espace_libre_min_octets: int = 104_857_600
 
     # Profil matériel : déclare les capacités disponibles, pas le backend
     # (``inference_backend`` s'en charge). Défaut ``cpu`` : une erreur de
@@ -235,6 +240,11 @@ class Settings(BaseSettings):
     trust_forwarded_for: bool = False
     # Taille maximale du corps de requête, en octets (anti-DoS).
     max_body_bytes: int = 16_384
+    # Plafond propre aux dépôts de capture de parcelle (/v1/parcelles), qui portent
+    # légitimement des images encodées en base64. Le plafond global reste bas : on
+    # ouvre une porte étroite plutôt que de relâcher la borne pour toute l'API.
+    # 8 Mio couvrent 12 vues de ~200 Ko (1024 px, JPEG q0.85) avec large marge.
+    captures_max_body_bytes: int = 8_388_608
     # Exposer la doc OpenAPI/Swagger (à désactiver en production).
     enable_docs: bool = True
 

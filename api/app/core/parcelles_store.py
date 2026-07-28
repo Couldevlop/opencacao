@@ -404,6 +404,28 @@ class ParcelleStore:
             )
             connexion.commit()
 
+    async def compter_captures(self, proprietaire: str) -> int:
+        """Compte les captures d'un appareil (application des quotas).
+
+        Args:
+            proprietaire: Identifiant anonyme de l'appareil.
+
+        Returns:
+            Le nombre de captures persistées, ``0`` si le dépôt n'est pas prêt.
+        """
+        if not self._pret:
+            return 0
+        return await asyncio.to_thread(self._compter_captures, proprietaire)
+
+    def _compter_captures(self, proprietaire: str) -> int:
+        """Compte les captures d'un appareil (appelé dans un thread)."""
+        with closing(self._connexion()) as connexion:
+            ligne = connexion.execute(
+                "SELECT COUNT(*) AS n FROM captures WHERE proprietaire = ?",
+                (proprietaire,),
+            ).fetchone()
+        return int(ligne["n"])
+
     async def obtenir_capture(self, identifiant: str, proprietaire: str) -> Capture | None:
         """Retourne une capture de cet appareil, ou None."""
         if not self._pret:

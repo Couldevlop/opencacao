@@ -6,6 +6,7 @@ import base64
 import struct
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -23,6 +24,7 @@ from app.models.parcelle import (
 from app.services.parcelles import (
     GeometrieInvalide,
     ParcelleIntrouvable,
+    QuotaDepasse,
     ServiceParcelles,
 )
 
@@ -245,3 +247,73 @@ async def test_purger_supprime_les_fichiers_des_captures_expirees(
     supprimes = await service.purger(maintenant=datetime.now(UTC) + timedelta(days=400))
     assert supprimes == 1
     assert not fichier.exists()
+
+
+# ------------------------------------------------------- quotas et espace disque
+#
+# Le volume /data fait 1 Gio et porte AUSSI sessions.db, l index RAG et le journal.
+# Sans borne, une trentaine de captures le remplissent et emportent le RAG avec
+# elles. OWASP API4:2023 — Unrestricted Resource Consumption.
+
+
+async def test_quota_de_captures_par_appareil(tmp_path: Path):
+    store = ParcelleStore(tmp_path / "parcelles.db")
+    await store.initialiser()
+    service = ServiceParcelles(store, dossier_captures=tmp_path / "captures", quota_captures=2)
+    parcelle = await service.creer(DEVICE, CreerParcelleRequest(nom="Bloc", localite="Daloa"))
+    charge = CaptureRequest(modalite=Modalite.PHOTOS, images=[_image_request()])
+    for _ in range(2):
+        await service.deposer_capture(parcelle.identifiant, DEVICE, charge)
+    with pytest.raises(QuotaDepasse):
+        await service.deposer_capture(parcelle.identifiant, DEVICE, charge)
+
+
+async def test_le_quota_est_cloisonne_par_appareil(tmp_path: Path):
+    store = ParcelleStore(tmp_path / "parcelles.db")
+    await store.initialiser()
+    service = ServiceParcelles(store, dossier_captures=tmp_path / "captures", quota_captures=1)
+    a = await service.creer(DEVICE, CreerParcelleRequest(nom="A", localite="Daloa"))
+    b = await service.creer("appareil-b", CreerParcelleRequest(nom="B", localite="Daloa"))
+    charge = CaptureRequest(modalite=Modalite.PHOTOS, images=[_image_request()])
+    await service.deposer_capture(a.identifiant, DEVICE, charge)
+    await service.deposer_capture(b.identifiant, "appareil-b", charge)
+    with pytest.raises(QuotaDepasse):
+        await service.deposer_capture(a.identifiant, DEVICE, charge)
+
+
+async def test_disque_presque_plein_refuse_la_capture(tmp_path: Path, monkeypatch):
+    """Garde le volume habitable pour l index RAG et les sessions, pas seulement
+    pour les parcelles : on refuse AVANT de saturer."""
+    store = ParcelleStore(tmp_path / "parcelles.db")
+    await store.initialiser()
+    service = ServiceParcelles(store, dossier_captures=tmp_path / "captures")
+    parcelle = await service.creer(DEVICE, CreerParcelleRequest(nom="Bloc", localite="Daloa"))
+
+    import shutil
+
+    monkeypatch.setattr(shutil, "disk_usage", lambda _: SimpleNamespace(total=1, used=1, free=1024))
+    with pytest.raises(QuotaDepasse) as info:
+        await service.deposer_capture(
+            parcelle.identifiant,
+            DEVICE,
+            CaptureRequest(modalite=Modalite.PHOTOS, images=[_image_request()]),
+        )
+    assert "espace" in str(info.value).lower()
+
+
+async def test_une_trace_seule_n_est_pas_soumise_au_garde_disque(tmp_path: Path, monkeypatch):
+    """Une trace GPS pese quelques octets : la refuser pour cause de disque serait absurde."""
+    store = ParcelleStore(tmp_path / "parcelles.db")
+    await store.initialiser()
+    service = ServiceParcelles(store, dossier_captures=tmp_path / "captures")
+    parcelle = await service.creer(DEVICE, CreerParcelleRequest(nom="Bloc", localite="Daloa"))
+
+    import shutil
+
+    monkeypatch.setattr(shutil, "disk_usage", lambda _: SimpleNamespace(total=1, used=1, free=1024))
+    capture = await service.deposer_capture(
+        parcelle.identifiant,
+        DEVICE,
+        CaptureRequest(modalite=Modalite.PARCOURS, trace=_carre()),
+    )
+    assert len(capture.trace) == 4

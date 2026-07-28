@@ -21,7 +21,13 @@ from app.models.parcelle import (
     GeometrieRequest,
     ParcelleReponse,
 )
-from app.services.parcelles import GeometrieInvalide, ParcelleIntrouvable, ServiceParcelles
+from app.services.parcelles import (
+    GeometrieInvalide,
+    ParcelleIntrouvable,
+    QuotaAppareilDepasse,
+    ServiceParcelles,
+    StockageIndisponible,
+)
 
 router = APIRouter(prefix="/v1", tags=["parcelles"])
 
@@ -140,6 +146,12 @@ async def deposer_capture(
     except GeometrieInvalide as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.motif
+        ) from exc
+    except QuotaAppareilDepasse as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
+    except StockageIndisponible as exc:
+        raise HTTPException(
+            status_code=status.HTTP_507_INSUFFICIENT_STORAGE, detail=str(exc)
         ) from exc
     return CaptureReponse.model_validate(capture, from_attributes=True)
 

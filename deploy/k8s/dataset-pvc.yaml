@@ -1,8 +1,21 @@
 # Volume persistant de l'API, conservé entre redéploiements :
 #  - jeu de données d'amélioration (interactions.jsonl / feedback.jsonl) ;
 #  - index RAG (rag_index.jsonl) ;
-#  - conversations V2 (opencacao_sessions.db, SQLite + WAL).
+#  - conversations V2 (opencacao_sessions.db, SQLite + WAL) ;
+#  - parcelles et captures terrain (parcelles.db, captures/, V3 chantier C1).
 # ReadWriteOnce convient : l'API tourne en réplica unique (SQLite mono-écrivain).
+#
+# ⚠ Porté de 1 Gi à 10 Gi le 28/07/2026, à l'arrivée des captures terrain. À 1 Gi, une
+# trentaine de captures photo suffisaient à saturer le volume — et comme l'index RAG et
+# les conversations y vivent aussi, la saturation ne dégradait pas seulement les
+# parcelles : elle emportait le RAG. Le quota par appareil et le garde d'espace libre
+# (CAPTURES_* dans api.yaml) sont la seconde ligne ; ce volume est la première.
+#
+# L'extension d'un PVC existant exige que la StorageClass autorise
+# `allowVolumeExpansion: true`. Avec `local-path` (K3s), vérifier avant d'appliquer :
+#   kubectl get storageclass local-path -o jsonpath='{.allowVolumeExpansion}'
+# Si l'extension n'est pas permise, il faut recréer le PVC — sauvegarder /data d'abord :
+#   kubectl -n opencacao exec deploy/api -- tar czf - /data > sauvegarde-data.tgz
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -13,4 +26,4 @@ spec:
   storageClassName: local-path
   resources:
     requests:
-      storage: 1Gi
+      storage: 10Gi

@@ -99,6 +99,25 @@ data:
   # courte et complète, ~5-6 s de décodage CPU par tour vs scripté instantané.
   # Rollback : repasser à "false" + redémarrage API (~15 s).
   DIALOGUE_NATUREL_ENABLED: "true"
+  # Parcelles & captures terrain (V3, chantier C1). OFF au premier déploiement : on
+  # vérifie que le schéma SQLite se crée bien sur /data avant d'ouvrir les routes.
+  PARCELLES_ENABLED: "false"
+  PARCELLES_DB_PATH: "/data/parcelles.db"
+  CAPTURES_DIR: "/data/captures"
+  CAPTURES_RETENTION_JOURS: "90"
+  # Quotas de capture (OWASP API4:2023). /data porte AUSSI sessions.db, l'index RAG et
+  # le journal : sans borne, des captures satureraient le volume et emporteraient le
+  # RAG. Le garde d'espace libre refuse d'écrire avant d'en arriver là.
+  CAPTURES_QUOTA_PAR_APPAREIL: "200"
+  CAPTURES_ESPACE_LIBRE_MIN_OCTETS: "104857600"
+  # Plafond de corps de requête propre aux dépôts de capture (8 Mio). Le plafond
+  # global MAX_BODY_BYTES (16 Ko, taillé pour une question) rejetterait toute photo
+  # en 413 : on ouvre une porte étroite sur /v1/parcelles, sans relâcher le reste.
+  CAPTURES_MAX_BODY_BYTES: "8388608"
+  # Profil matériel : déclare les capacités disponibles, pas le backend
+  # (INFERENCE_BACKEND s'en charge). Défaut "cpu" : une erreur de configuration
+  # dégrade le service, elle ne le casse pas.
+  PROFIL_MATERIEL: "cpu"
 ---
 apiVersion: apps/v1
 kind: Deployment
