@@ -7,9 +7,11 @@ concrets (httpx, redis). C'est l'inversion de dépendance de la clean architectu
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from datetime import datetime
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from app.models.parcelle import Capture, Geometrie, Parcelle
     from app.models.session import ConversationMessage, Session, SessionAvecMessages
 
 
@@ -194,4 +196,50 @@ class SessionStorePort(Protocol):
     async def purger_anciennes(self, jours: int) -> int:
         """Supprime les conversations inactives depuis plus de ``jours`` (RGPD). Renvoie
         le nombre supprimé."""
+        ...
+
+
+@runtime_checkable
+class ParcelleStorePort(Protocol):
+    """Contrat d'un dépôt de parcelles et de leurs captures terrain."""
+
+    @property
+    def pret(self) -> bool:
+        """Indique si le schéma a pu être initialisé (parcelles disponibles)."""
+        ...
+
+    async def creer_parcelle(
+        self, proprietaire: str, nom: str, localite: str, direction_regionale: str
+    ) -> Parcelle:
+        """Crée une parcelle rattachée à un appareil."""
+        ...
+
+    async def obtenir_parcelle(self, identifiant: str, proprietaire: str) -> Parcelle | None:
+        """Retourne une parcelle de cet appareil, ou None."""
+        ...
+
+    async def lister_parcelles(self, proprietaire: str, limite: int = ...) -> list[Parcelle]:
+        """Liste les parcelles de cet appareil, les plus récemment modifiées d'abord."""
+        ...
+
+    async def enregistrer_geometrie(
+        self, identifiant: str, proprietaire: str, geometrie: Geometrie
+    ) -> Parcelle | None:
+        """Remplace la géométrie d'une parcelle. None si elle n'existe pas."""
+        ...
+
+    async def enregistrer_capture(self, capture: Capture) -> Capture:
+        """Persiste une capture (images et/ou trace)."""
+        ...
+
+    async def obtenir_capture(self, identifiant: str, proprietaire: str) -> Capture | None:
+        """Retourne une capture de cet appareil, ou None."""
+        ...
+
+    async def lister_captures(self, parcelle: str, proprietaire: str) -> list[Capture]:
+        """Liste les captures d'une parcelle, les plus récentes d'abord."""
+        ...
+
+    async def purger_captures(self, avant: datetime) -> list[str]:
+        """Supprime les captures antérieures et retourne les empreintes à effacer."""
         ...
