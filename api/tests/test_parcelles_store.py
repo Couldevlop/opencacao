@@ -196,3 +196,61 @@ async def test_les_operations_sur_un_depot_non_pret_ne_levent_pas(tmp_path: Path
     depot = ParcelleStore(tmp_path / "jamais-initialise.db")
     assert await depot.lister_parcelles(DEVICE) == []
     assert await depot.obtenir_parcelle("x", DEVICE) is None
+
+
+# ------------------------------------------------- contrat de tolerance aux pannes
+#
+# La spec exige que /data inaccessible n empeche jamais l API de demarrer : les
+# parcelles deviennent indisponibles, le chat continue. Concretement, CHAQUE operation
+# doit rendre une valeur neutre sur un depot non pret, sans jamais lever. Le test
+# ci-dessous verifie ce contrat sur toutes les operations, pas seulement deux.
+
+
+async def _depot_non_pret(tmp_path: Path) -> ParcelleStore:
+    """Un depot dont l initialisation a echoue (chemin impossible a creer)."""
+    impasse = tmp_path / "fichier"
+    impasse.write_text("je ne suis pas un dossier", encoding="utf-8")
+    depot = ParcelleStore(impasse / "parcelles.db")
+    await depot.initialiser()
+    assert depot.pret is False
+    return depot
+
+
+async def test_creer_sur_depot_non_pret_rend_la_parcelle_sans_persister(tmp_path: Path):
+    """On rend un objet coherent : l appelant n a pas a distinguer les deux cas."""
+    depot = await _depot_non_pret(tmp_path)
+    parcelle = await depot.creer_parcelle(DEVICE, "Bloc Est", "Daloa", "Daloa")
+    assert parcelle.nom == "Bloc Est"
+    assert await depot.obtenir_parcelle(parcelle.identifiant, DEVICE) is None
+
+
+async def test_enregistrer_geometrie_sur_depot_non_pret_rend_none(tmp_path: Path):
+    depot = await _depot_non_pret(tmp_path)
+    geometrie = Geometrie.depuis_points(
+        (Coordonnee(latitude=6.85, longitude=-5.28),), SourceGeometrie.SAISIE_MANUELLE
+    )
+    assert await depot.enregistrer_geometrie("x", DEVICE, geometrie) is None
+
+
+async def test_captures_sur_depot_non_pret_ne_levent_pas(tmp_path: Path):
+    depot = await _depot_non_pret(tmp_path)
+    capture = Capture(
+        identifiant="cap-1",
+        parcelle="p-1",
+        proprietaire=DEVICE,
+        modalite=Modalite.PHOTOS,
+        cree_le=datetime.now(UTC),
+    )
+    assert await depot.enregistrer_capture(capture) is capture
+    assert await depot.obtenir_capture("cap-1", DEVICE) is None
+    assert await depot.lister_captures("p-1", DEVICE) == []
+
+
+async def test_purger_sur_depot_non_pret_rend_une_liste_vide(tmp_path: Path):
+    depot = await _depot_non_pret(tmp_path)
+    assert await depot.purger_captures(datetime.now(UTC)) == []
+
+
+async def test_retention_par_defaut_exposee(tmp_path: Path):
+    depot = ParcelleStore(tmp_path / "parcelles.db", captures_retention_jours=42)
+    assert depot.retention_jours == 42
