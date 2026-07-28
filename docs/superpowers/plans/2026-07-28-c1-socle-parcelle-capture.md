@@ -2644,6 +2644,11 @@ def client(tmp_path, monkeypatch) -> TestClient:
     monkeypatch.setenv("PARCELLES_ENABLED", "true")
     monkeypatch.setenv("PARCELLES_DB_PATH", str(tmp_path / "parcelles.db"))
     monkeypatch.setenv("CAPTURES_DIR", str(tmp_path / "captures"))
+    # Indispensable : le pre-chauffage est actif par defaut et lancerait de vrais
+    # appels HTTP vers l inference (aucun appel reseau n est tolere en test), et le
+    # depot de sessions s ecrirait hors du dossier temporaire.
+    monkeypatch.setenv("PREWARM_ENABLED", "false")
+    monkeypatch.setenv("SESSIONS_DB_PATH", str(tmp_path / "sessions.db"))
     from app.core.config import get_settings
     from app.main import create_app
 
@@ -2815,7 +2820,9 @@ def test_endpoints_absents_quand_le_drapeau_est_off(tmp_path, monkeypatch):
     get_settings.cache_clear()
     with TestClient(create_app()) as client_test:
         assert client_test.get("/v1/parcelles", headers=ENTETES).status_code == 404
-        assert client_test.get("/health").status_code == 200
+        # Le routeur health porte le prefixe /v1 ; "/health" tombe sur le StaticFiles
+        # monte a la racine et rend toujours 404.
+        assert client_test.get("/v1/health").status_code == 200
     get_settings.cache_clear()
 ```
 
