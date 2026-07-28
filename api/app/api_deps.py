@@ -23,8 +23,10 @@ from app.domain.ports import (
     InferencePort,
     JournalPort,
     LienNotifierPort,
+    ParcelleStorePort,
     SessionStorePort,
 )
+from app.services.parcelles import ServiceParcelles
 
 
 def get_app_settings() -> Settings:
@@ -50,6 +52,16 @@ def get_journal(request: Request) -> JournalPort:
 def get_session_store(request: Request) -> SessionStorePort:
     """Retourne le dépôt de sessions de conversation stocké dans l'état de l'application."""
     return request.app.state.sessions
+
+
+def get_parcelle_store(request: Request) -> ParcelleStorePort:
+    """Retourne le dépôt de parcelles stocké dans l'état de l'application."""
+    return request.app.state.parcelles
+
+
+def get_service_parcelles(request: Request) -> ServiceParcelles:
+    """Retourne le service métier des parcelles stocké dans l'état de l'application."""
+    return request.app.state.service_parcelles
 
 
 def get_auth_store(request: Request) -> AuthStorePort:

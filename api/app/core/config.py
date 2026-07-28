@@ -25,6 +25,11 @@ class Settings(BaseSettings):
         sessions_enabled: Active la persistance des sessions de conversation (V2).
         sessions_db_path: Chemin du fichier SQLite des sessions (volume /data).
         sessions_max_messages: Plafond de messages par session (anti-abus).
+        parcelles_enabled: Active les parcelles et les captures terrain (V3, C1).
+        parcelles_db_path: Chemin du fichier SQLite des parcelles (volume /data).
+        captures_dir: Dossier des images de capture (volume /data).
+        captures_retention_jours: Rétention des captures avant purge, en jours.
+        profil_materiel: Capacités disponibles ("gpu" ou "cpu").
         log_level: Niveau de log.
         log_questions: Journaliser (anonymisé) les questions pour le corpus.
         cors_origins: Origines CORS autorisées en production.
@@ -165,6 +170,17 @@ class Settings(BaseSettings):
     # elles sont purgées automatiquement (au démarrage puis une fois par jour). 0
     # désactive la purge (conservation indéfinie).
     sessions_retention_jours: int = 365
+
+    # --- Parcelles & captures terrain (V3, chantier C1) ---
+    parcelles_enabled: bool = False
+    parcelles_db_path: str = "/data/parcelles.db"
+    captures_dir: str = "/data/captures"
+    captures_retention_jours: int = 90
+
+    # Profil matériel : déclare les capacités disponibles, pas le backend
+    # (``inference_backend`` s'en charge). Défaut ``cpu`` : une erreur de
+    # configuration dégrade le service, elle ne le casse pas.
+    profil_materiel: Literal["gpu", "cpu"] = "cpu"
 
     # --- Authentification légère par lien magique (D2, optionnelle) ---
     # Désactivée par défaut : l'usage anonyme par appareil (D1) reste la norme.

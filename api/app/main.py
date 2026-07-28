@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -19,11 +20,13 @@ from app.core.config import Settings, get_settings
 from app.core.journal import JournalFichier
 from app.core.logging import configure_logging, get_logger
 from app.core.parametres import ParametresStore
+from app.core.parcelles_store import ParcelleStore
 from app.core.security import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 from app.core.sessions import SessionStore
-from app.routers import auth, chat, feedback, health, sessions
+from app.routers import auth, chat, feedback, health, parcelles, sessions
 from app.services.inference import InferenceClient
 from app.services.notifier import construire_notifier
+from app.services.parcelles import ServiceParcelles
 
 logger = get_logger(__name__)
 
@@ -42,6 +45,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.sessions_enabled:
         await app.state.sessions.initialiser()
         app.state.purge_task = _lancer_purge_sessions(app, settings)
+
+    app.state.parcelles = ParcelleStore.from_settings(settings)
+    app.state.service_parcelles = ServiceParcelles(
+        app.state.parcelles,
+        dossier_captures=Path(settings.captures_dir),
+        retention_jours=settings.captures_retention_jours,
+    )
+    app.state.purge_captures_task = None
+    if settings.parcelles_enabled:
+        await app.state.parcelles.initialiser()
+        app.state.purge_captures_task = _lancer_purge_captures(app)
 
     app.state.auth_store = AuthStore.from_settings(settings)
     app.state.parametres = ParametresStore.from_settings(settings)
@@ -74,6 +88,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             app.state.keepalive_task.cancel()
         if app.state.purge_task is not None:
             app.state.purge_task.cancel()
+        if app.state.purge_captures_task is not None:
+            app.state.purge_captures_task.cancel()
         await app.state.inference.close()
         await app.state.cache.close()
         if app.state.embeddings is not None:
@@ -111,6 +127,29 @@ def _lancer_purge_sessions(app: FastAPI, settings: Settings) -> object | None:
             except Exception as exc:  # purge best-effort : ne jamais propager
                 logger.warning("purge_sessions_echouee", error=str(exc))
             await asyncio.sleep(86_400)
+
+    return asyncio.create_task(boucle())
+
+
+def _lancer_purge_captures(app: FastAPI) -> asyncio.Task[None]:
+    """Lance la purge périodique des captures expirées (moule des sessions).
+
+    Args:
+        app: Application dont l'état porte le service des parcelles.
+
+    Returns:
+        La tâche asyncio créée, annulée à la fermeture de l'application.
+    """
+
+    async def boucle() -> None:
+        while True:
+            await asyncio.sleep(24 * 3600)
+            try:
+                nombre = await app.state.service_parcelles.purger()
+                if nombre:
+                    logger.info("captures_purgees_disque", nombre=nombre)
+            except Exception as exc:  # noqa: BLE001 - la purge ne doit jamais tuer l'app
+                logger.warning("purge_captures_echouee", error=str(exc))
 
     return asyncio.create_task(boucle())
 
@@ -230,6 +269,8 @@ def create_app() -> FastAPI:
     app.include_router(feedback.router)
     app.include_router(sessions.router)
     app.include_router(auth.router)
+    if settings.parcelles_enabled:
+        app.include_router(parcelles.router)
     _monter_interface(app, settings)
     return app
 
