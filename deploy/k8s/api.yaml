@@ -125,7 +125,12 @@ data:
   VISION_ENABLED: "false"
   VISION_URL: "http://vision:8000"
   VISION_MODELE: "qwen3-vl"
-  VISION_TIMEOUT_S: "60"
+  # AVANT DE PASSER VISION_ENABLED À "true", lire ceci. Le constat est SYNCHRONE et
+  # enchaîne deux générations : vision (ce timeout) puis rédaction
+  # (REQUEST_TIMEOUT_S). Cloudflare coupe une réponse d'origine vers 100 s — c'est
+  # l'origine du 524 rencontré en juillet 2026 sur la composition multi-agents.
+  # Vérifier le budget CUMULÉ, ou passer le constat en flux avant d'activer.
+  VISION_TIMEOUT_S: "30"
 ---
 apiVersion: apps/v1
 kind: Deployment

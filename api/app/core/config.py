@@ -197,7 +197,13 @@ class Settings(BaseSettings):
     vision_enabled: bool = False
     vision_url: str = "http://vision:8000"
     vision_modele: str = "qwen3-vl"
-    vision_timeout_s: float = 60.0
+    # Plafond volontairement bas. L'endpoint de constat est SYNCHRONE et enchaîne deux
+    # générations : vision (ce timeout) puis rédaction (``request_timeout_s``). Le
+    # domaine est derrière Cloudflare, qui coupe une réponse d'origine vers 100 s — le
+    # 524 de la composition multi-agents (juillet 2026) est venu exactement de là.
+    # Avant d'activer ``vision_enabled``, vérifier le budget CUMULÉ : soit il tient
+    # sous 100 s, soit le constat passe en flux (ou 202 + polling) comme /chat/stream.
+    vision_timeout_s: float = 30.0
 
     # --- Authentification légère par lien magique (D2, optionnelle) ---
     # Désactivée par défaut : l'usage anonyme par appareil (D1) reste la norme.

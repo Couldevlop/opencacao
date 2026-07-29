@@ -55,7 +55,19 @@ def test_le_service_de_vision_est_interne_par_defaut() -> None:
     settings = Settings(_env_file=None)
 
     assert settings.vision_url == "http://vision:8000"
-    assert settings.vision_timeout_s == 60.0
+
+
+def test_le_budget_de_vision_reste_sous_le_plafond_cloudflare() -> None:
+    """L endpoint de constat est synchrone : vision PUIS redaction, sur un seul appel.
+
+    Cloudflare coupe une reponse d origine vers 100 s (524 vecu en juillet 2026 sur la
+    composition multi-agents). Ce test fige l intention : le timeout de vision doit
+    rester une petite part du budget, pas la moitie.
+    """
+    settings = Settings(_env_file=None)
+
+    assert settings.vision_timeout_s == 30.0
+    assert settings.vision_timeout_s < settings.request_timeout_s
 
 
 def test_les_reglages_de_vision_se_lisent_dans_l_environnement(monkeypatch) -> None:
