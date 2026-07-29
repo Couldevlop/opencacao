@@ -30,13 +30,18 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from app.application.provenance import construire_manifeste
+from app.application.provenance import construire_manifeste, source_absente
 from app.core.logging import get_logger
 from app.domain.ports import InferencePort
 from app.models.rapport import Affirmation, Document, Section
 from app.services import guardrails
 from app.services.gabarits import Gabarit, SectionGabarit
-from app.services.prompts_redaction import SYSTEM_PROMPT_REDACTION, consigne_section
+from app.services.prompts_redaction import (
+    ENTETE_CONTEXTE_ANALYTIQUE,
+    LIBELLE_SECTION,
+    SYSTEM_PROMPT_REDACTION,
+    consigne_section,
+)
 
 logger = get_logger(__name__)
 
@@ -46,6 +51,12 @@ MAX_TOKENS_SECTION = 320
 
 # Température basse : un document d'analyse doit être reproductible, pas créatif.
 TEMPERATURE_SECTION = 0.3
+
+# Bornes du contexte injecté par section. Sans elles, un collecteur verbeux ferait
+# préremplir des milliers de tokens par section, sur CPU. Alignées sur les plafonds
+# déjà retenus pour le RAG (``rag_top_k``, ``rag_passage_max_chars``).
+MAX_AFFIRMATIONS_SECTION = 12
+MAX_CARACTERES_AFFIRMATION = 480
 
 _LACUNE = (
     "Aucune source mobilisable n'a été trouvée pour cette section. Elle est laissée "
@@ -62,6 +73,19 @@ _LACUNE_REFUSEE = (
 ProgressionRappel = Callable[[int, int, str], Awaitable[None]]
 
 
+class SujetRefuse(Exception):
+    """Le sujet demandé franchit un garde-fou métier.
+
+    Attributes:
+        message: Message de redirection destiné au demandeur.
+    """
+
+    def __init__(self, message: str) -> None:
+        """Initialise l'exception avec le message de redirection."""
+        super().__init__(message)
+        self.message = message
+
+
 @runtime_checkable
 class CollecteurPort(Protocol):
     """Contrat d'une source mobilisable par une section."""
@@ -69,6 +93,23 @@ class CollecteurPort(Protocol):
     async def collecter(self, sujet: str) -> tuple[Affirmation, ...]:
         """Retourne les affirmations sourcées disponibles pour ce sujet."""
         ...
+
+
+def _ligne_de_contexte(affirmation: Affirmation) -> str:
+    """Rend une affirmation en une ligne bornée, sans consigne exécutable.
+
+    Le texte vient du RAG ou d'un outil externe : on l'aplatit sur une ligne et on le
+    tronque, pour qu'un passage verbeux ou mis en forme comme une instruction ne
+    passe pas pour une consigne.
+
+    Args:
+        affirmation: Affirmation à présenter au modèle.
+
+    Returns:
+        La ligne de contexte, source comprise.
+    """
+    texte = " ".join(affirmation.texte.split())[:MAX_CARACTERES_AFFIRMATION]
+    return f"- {texte} (source : {affirmation.source})"
 
 
 @dataclass(frozen=True)
@@ -123,10 +164,16 @@ class MoteurRedaction:
             try:
                 recoltees.extend(await collecteur.collecter(sujet))
             except Exception as exc:  # noqa: BLE001 — une source ne fait pas tomber le document
-                logger.warning("collecteur_echoue", source=nom, error=str(exc))
+                # Le type suffit au diagnostic ; le message d'une exception peut
+                # embarquer une URL ou le sujet, qui n'ont rien à faire dans un log.
+                logger.warning("collecteur_echoue", source=nom, error=type(exc).__name__)
         # Défense en profondeur : une affirmation sans source ne rentre pas, même si
-        # un collecteur en produisait une par erreur.
-        return tuple(affirmation for affirmation in recoltees if affirmation.source.strip())
+        # un collecteur en produisait une par erreur. On applique la règle CANONIQUE
+        # du projet, pas un ``strip()`` plus faible : une source « n/a » traverserait,
+        # entrerait au manifeste et ferait échouer ``affirmations_sans_source``.
+        return tuple(
+            affirmation for affirmation in recoltees if not source_absente(affirmation.source)
+        )
 
     async def _rediger_section(
         self, section: SectionGabarit, sujet: str, affirmations: tuple[Affirmation, ...]
@@ -146,12 +193,19 @@ class MoteurRedaction:
             return Section(titre=section.titre, corps=_LACUNE, affirmations=(), lacune=True)
 
         contexte = "\n".join(
-            f"- {affirmation.texte} (source : {affirmation.source})" for affirmation in affirmations
+            _ligne_de_contexte(affirmation)
+            for affirmation in affirmations[:MAX_AFFIRMATIONS_SECTION]
         )
         corps = await self._inference.generer(
             question=consigne_section(section, sujet),
             contexte=contexte,
             system_prompt=SYSTEM_PROMPT_REDACTION,
+            # Sans ces deux-là, l'en-tête par défaut réinstallerait dans le tour
+            # utilisateur ce que le prompt système vient d'interdire : « oriente vers
+            # l'ANADER » et le cadrage « Question : ». Le tour utilisateur étant plus
+            # proche de la génération, c'est lui que le modèle aurait suivi.
+            entete_contexte=ENTETE_CONTEXTE_ANALYTIQUE,
+            libelle_question=LIBELLE_SECTION,
             temperature=TEMPERATURE_SECTION,
             max_tokens=MAX_TOKENS_SECTION,
         )
@@ -178,7 +232,20 @@ class MoteurRedaction:
 
         Returns:
             Le document assemblé, manifeste compris.
+
+        Raises:
+            SujetRefuse: Le sujet franchit un garde-fou métier.
         """
+        # Le sujet vient d'une requête HTTP et atterrit dans le TITRE du document,
+        # sans jamais passer par le modèle : il échapperait donc à tout garde-fou de
+        # sortie. Un sujet portant un dosage produirait un livrable dont le titre le
+        # porte ; un sujet hors filière produirait une étude sur l'anacarde signée
+        # OpenCacao. Les deux sont non négociables (CLAUDE.md).
+        refus = guardrails.evaluer(sujet) or guardrails.verifier_reponse(sujet)
+        if refus is not None:
+            logger.warning("sujet_refuse", categorie=refus.categorie.value)
+            raise SujetRefuse(refus.message)
+
         sections: list[Section] = []
         total = len(gabarit.sections)
         for index, declaree in enumerate(gabarit.sections, start=1):
@@ -187,9 +254,12 @@ class MoteurRedaction:
             if progression is not None:
                 await progression(index, total, declaree.titre)
 
+        # (source, empreinte) — le contrat du manifeste. L'empreinte identifie
+        # l'extrait mobilisé, pas seulement son émetteur : c'est ce qui permet de
+        # rejouer la sélection documentaire, et donc le document.
         sources = tuple(
             dict.fromkeys(
-                (affirmation.source, affirmation.date)
+                (affirmation.source, affirmation.empreinte)
                 for section in sections
                 for affirmation in section.affirmations
             )

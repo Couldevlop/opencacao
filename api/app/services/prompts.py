@@ -116,6 +116,8 @@ def build_messages(
     *,
     system_prompt: str = SYSTEM_PROMPT,
     consigne: str | None = None,
+    entete_contexte: str = CONTEXTE_PROMPT,
+    libelle_question: str = "Question",
 ) -> list[dict[str, str]]:
     """Construit la liste de messages pour l'API d'inférence.
 
@@ -127,6 +129,12 @@ def build_messages(
         system_prompt: Message système à utiliser (réchauffé ou strict).
         consigne: Consigne de clarification. Si fournie, elle REMPLACE le contexte
             RAG : le modèle doit poser une question, pas répondre (pas de RAG).
+        entete_contexte: En-tête encadrant le contexte, avec un champ ``{contexte}``.
+            Le défaut oriente vers l'ANADER quand les extraits ne suffisent pas, ce
+            qui est juste pour un producteur et **faux** dans un document d'étude :
+            la rédaction de livrables passe donc le sien (C3).
+        libelle_question: Mot introduisant la demande. « Question » réinstalle un
+            registre questions-réponses, à éviter pour une section d'étude.
 
     Returns:
         Liste de messages au format chat : system + dialogue à rôles alternés finissant
@@ -137,8 +145,10 @@ def build_messages(
     if consigne is not None:
         contenu_user = f"{consigne}\n\nMessage du producteur : {question}"
     elif contexte:
-        contenu_user = f"{CONTEXTE_PROMPT.format(contexte=contexte)}\n\nQuestion : {question}"
+        contenu_user = (
+            f"{entete_contexte.format(contexte=contexte)}\n\n{libelle_question} : {question}"
+        )
     else:
-        contenu_user = f"{FALLBACK_SANS_CONTEXTE}\n\nQuestion : {question}"
+        contenu_user = f"{FALLBACK_SANS_CONTEXTE}\n\n{libelle_question} : {question}"
     dialogue = _dialogue_alternant(historique or [], contenu_user)
     return [{"role": "system", "content": system_prompt}, *dialogue]

@@ -91,6 +91,8 @@ class InferenceClient:
         historique: list[dict[str, str]] | None = None,
         consigne: str | None = None,
         system_prompt: str | None = None,
+        entete_contexte: str | None = None,
+        libelle_question: str | None = None,
     ) -> str:
         """Génère une réponse agronomique pour la question donnée.
 
@@ -120,6 +122,8 @@ class InferenceClient:
                 # d'étude n'a de toute façon rien en commun avec un tour de chat.
                 system_prompt=system_prompt or self._system_prompt,
                 consigne=consigne,
+                **({"entete_contexte": entete_contexte} if entete_contexte else {}),
+                **({"libelle_question": libelle_question} if libelle_question else {}),
             ),
             "max_tokens": max_tokens if max_tokens is not None else self._max_tokens,
             # Réutilise le KV du préfixe commun (message système constant) d'une requête

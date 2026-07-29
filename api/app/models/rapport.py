@@ -29,6 +29,10 @@ class Affirmation:
         date: Date de la donnée au format ISO, ou chaîne vide si la source n'en porte pas.
         methode: Comment elle a été obtenue (« rag », « outil:prix », « parcelle »).
         confiance: Niveau de confiance déclaré.
+        empreinte: Empreinte du passage documentaire d'origine, ou chaîne vide pour
+            une source qui n'en a pas (un outil interrogé en direct). C'est elle qui
+            rend la sélection documentaire **rejouable** : sans elle, le manifeste
+            dirait de quelles sources vient le document, mais pas de quels extraits.
     """
 
     texte: str
@@ -36,6 +40,7 @@ class Affirmation:
     date: str
     methode: str
     confiance: NiveauConfiance
+    empreinte: str = ""
 
 
 @dataclass(frozen=True)

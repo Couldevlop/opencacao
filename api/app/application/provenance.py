@@ -27,7 +27,7 @@ _LONGUEUR_EMPREINTE = 12
 _SOURCES_VIDES = frozenset({"", "-", "--", "n/a", "na", "nc", "inconnu", "source inconnue"})
 
 
-def _source_absente(source: str | None) -> bool:
+def source_absente(source: str | None) -> bool:
     """Indique si une source est absente, blanche, ou vide de sens.
 
     Args:
@@ -114,7 +114,7 @@ def affirmations_sans_source(document: Document) -> tuple[Affirmation, ...]:
         affirmation
         for section in document.sections
         for affirmation in section.affirmations
-        if _source_absente(affirmation.source)
+        if source_absente(affirmation.source)
     )
 
 

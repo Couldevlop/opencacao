@@ -35,6 +35,18 @@ SYSTEM_PROMPT_REDACTION = (
 )
 
 
+ENTETE_CONTEXTE_ANALYTIQUE = (
+    "Voici les éléments sourcés à mobiliser pour cette section. N'écris que ce qu'ils "
+    "établissent. Ne les présente pas comme des extraits, ne t'adresse pas au lecteur, "
+    "et n'oriente vers aucun interlocuteur.\n\n"
+    "{contexte}"
+)
+
+# Remplace « Question : » devant la demande. Le mot compte : il réinstallerait le
+# registre questions-réponses que le prompt système vient précisément de quitter.
+LIBELLE_SECTION = "Section à rédiger"
+
+
 def consigne_section(section: SectionGabarit, sujet: str) -> str:
     """Construit la demande de rédaction d'une section.
 

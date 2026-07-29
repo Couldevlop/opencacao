@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.application.provenance import affirmations_sans_source
-from app.application.redaction import ContexteGeneration, MoteurRedaction
+from app.application.redaction import ContexteGeneration, MoteurRedaction, SujetRefuse
 from app.models.constat import NiveauConfiance
 from app.models.rapport import Affirmation
 from app.services.gabarits import Gabarit, SectionGabarit
@@ -49,6 +49,7 @@ def _affirmation(source: str = "CNRA") -> Affirmation:
         date="2025-10-01",
         methode="rag",
         confiance=NiveauConfiance.MOYENNE,
+        empreinte="e3b0c44298fc",
     )
 
 
@@ -224,7 +225,7 @@ async def test_aucune_affirmation_ne_sort_sans_source():
 
 async def test_le_manifeste_recense_les_sources_mobilisees():
     document = await _moteur().rediger(_gabarit(), "le cacao", "appareil-a")
-    assert document.manifeste.documents_rag == (("CNRA", "2025-10-01"),)
+    assert document.manifeste.documents_rag == (("CNRA", "e3b0c44298fc"),)
 
 
 async def test_le_manifeste_ne_repete_pas_deux_fois_la_meme_source():
@@ -234,7 +235,7 @@ async def test_le_manifeste_ne_repete_pas_deux_fois_la_meme_source():
         SectionGabarit("Marché", ("rag",), ""),
     )
     document = await _moteur().rediger(gabarit, "le cacao", "appareil-a")
-    assert document.manifeste.documents_rag == (("CNRA", "2025-10-01"),)
+    assert document.manifeste.documents_rag == (("CNRA", "e3b0c44298fc"),)
 
 
 async def test_le_manifeste_porte_le_profil_et_une_empreinte_de_demandeur():
@@ -272,3 +273,102 @@ async def test_un_sujet_hostile_ne_casse_pas_la_substitution(sujet):
     """Le sujet vient d une requete HTTP : il ne doit pas etre interprete comme format."""
     document = await _moteur().rediger(_gabarit(), sujet, "appareil-a")
     assert sujet in document.titre
+
+
+# ------------------------------------------------- garde-fou sur le sujet
+
+
+@pytest.mark.parametrize(
+    "sujet",
+    [
+        "la lutte anti-mirides a 2 l/ha de bouillie bordelaise",
+        "la culture de l anacarde en Cote d Ivoire",
+        "la production de manioc",
+    ],
+)
+async def test_un_sujet_qui_franchit_un_garde_fou_est_refuse(sujet):
+    """Le sujet atterrit dans le TITRE sans passer par le modele : il echapperait
+    a tout garde-fou de sortie. Un livrable OpenCacao ne porte ni dosage ni
+    filiere etrangere dans son titre — regles non negociables (CLAUDE.md)."""
+    with pytest.raises(SujetRefuse):
+        await _moteur().rediger(_gabarit(), sujet, "appareil-a")
+
+
+async def test_un_sujet_refuse_n_appelle_pas_le_modele():
+    inference = FausseInference()
+    moteur = MoteurRedaction(inference, {"rag": FauxCollecteur(_affirmation())}, _contexte())
+    with pytest.raises(SujetRefuse):
+        await moteur.rediger(_gabarit(), "la culture de l anacarde", "appareil-a")
+    assert inference.appels == []
+
+
+async def test_un_sujet_cacao_legitime_passe():
+    document = await _moteur().rediger(_gabarit(), "la campagne cacao 2025-2026", "appareil-a")
+    assert document.sections
+
+
+# ------------------------------------------------- registre et bornes
+
+
+async def test_le_tour_utilisateur_n_oriente_pas_vers_l_anader():
+    """L en-tete de contexte par defaut dit « oriente vers l ANADER » — ce que le
+    prompt systeme interdit. Le tour utilisateur etant plus proche de la generation,
+    c est lui que le modele suivrait."""
+    inference = FausseInference()
+    moteur = MoteurRedaction(inference, {"rag": FauxCollecteur(_affirmation())}, _contexte())
+    await moteur.rediger(_gabarit(), "le cacao", "appareil-a")
+
+    from app.services.prompts import build_messages
+
+    messages = build_messages(
+        inference.appels[0]["question"],
+        inference.appels[0]["contexte"],
+        system_prompt=inference.appels[0]["system_prompt"],
+        entete_contexte=inference.appels[0]["entete_contexte"],
+        libelle_question=inference.appels[0]["libelle_question"],
+    )
+    assert "ANADER" not in messages[-1]["content"]
+    assert "Question :" not in messages[-1]["content"]
+
+
+async def test_le_contexte_injecte_est_borne_en_nombre():
+    """Un collecteur verbeux ferait preremplir des milliers de tokens par section."""
+    from app.application.redaction import MAX_AFFIRMATIONS_SECTION
+
+    nombreuses = tuple(_affirmation(f"Source {index}") for index in range(40))
+    inference = FausseInference()
+    moteur = MoteurRedaction(inference, {"rag": FauxCollecteur(*nombreuses)}, _contexte())
+    await moteur.rediger(_gabarit(), "le cacao", "appareil-a")
+    assert inference.appels[0]["contexte"].count("\n") + 1 == MAX_AFFIRMATIONS_SECTION
+
+
+async def test_une_affirmation_trop_longue_est_tronquee():
+    from app.application.redaction import MAX_CARACTERES_AFFIRMATION
+
+    longue = Affirmation(
+        texte="x" * 5000,
+        source="CNRA",
+        date="",
+        methode="rag",
+        confiance=NiveauConfiance.MOYENNE,
+    )
+    inference = FausseInference()
+    moteur = MoteurRedaction(inference, {"rag": FauxCollecteur(longue)}, _contexte())
+    await moteur.rediger(_gabarit(), "le cacao", "appareil-a")
+    assert len(inference.appels[0]["contexte"]) < MAX_CARACTERES_AFFIRMATION + 100
+
+
+async def test_une_source_vide_de_sens_est_ecartee_par_le_moteur():
+    """Le moteur doit appliquer la MEME regle que affirmations_sans_source, sinon
+    une source « n/a » entre au manifeste et fait echouer le critere d acceptation."""
+    moteur = _moteur(rag=FauxCollecteur(_affirmation(source="n/a"), _affirmation()))
+    document = await moteur.rediger(_gabarit(), "le cacao", "appareil-a")
+    assert document.sections[0].affirmations == (_affirmation(),)
+
+
+async def test_les_affirmations_d_une_section_refusee_ne_vont_pas_au_manifeste():
+    """Une section ecartee par le garde-fou ne doit pas laisser ses sources derriere."""
+    inference = FausseInference(reponse="Appliquer 2 l/ha de bouillie.")
+    moteur = MoteurRedaction(inference, {"rag": FauxCollecteur(_affirmation())}, _contexte())
+    document = await moteur.rediger(_gabarit(), "le cacao", "appareil-a")
+    assert document.manifeste.documents_rag == ()
