@@ -365,3 +365,75 @@ async def test_le_rendu_binaire_ne_bloque_pas_la_boucle_d_evenements(store: Rapp
 
     ecart_max = max(suivant - precedent for precedent, suivant in pairwise(battements))
     assert ecart_max < 0.2, f"boucle gelee {ecart_max:.2f} s pendant le rendu"
+
+
+async def test_une_generation_concurrente_recoit_sa_position(store: RapportStore):
+    """« Le pire scenario n est pas la lenteur, c est la lenteur muette. »
+
+    Deux etudes en meme temps sur un profil CPU : la seconde doit savoir qu elle
+    attend, et combien de temps a peu pres.
+    """
+    import asyncio
+
+    from app.application.file_attente import FileAttente
+
+    file = FileAttente(places=1, duree_moyenne_s=40.0)
+    lent = asyncio.Event()
+    liberer = asyncio.Event()
+
+    class InferenceLente:
+        async def generer(self, question: str, **_: object) -> str:
+            lent.set()
+            await liberer.wait()
+            return "Prose."
+
+        def generer_stream(self, *_: object, **__: object):
+            raise NotImplementedError
+
+        async def ready(self) -> bool:
+            return True
+
+    premier = _service(store, InferenceLente())
+    premier._file = file
+    second = _service(store)
+    second._file = file
+
+    job_lent = await premier.creer("bulletin_regional", "Daloa", DEVICE)
+    job_rapide = await second.creer("bulletin_regional", "Soubré", DEVICE)
+
+    async def _consommer(service, identifiant) -> list[dict]:
+        return [evenement async for evenement in service.executer(identifiant, DEVICE)]
+
+    tache_lente = asyncio.create_task(_consommer(premier, job_lent.identifiant))
+    await lent.wait()
+
+    # On consomme le flux du second SANS liberer le premier : l annonce doit arriver
+    # PENDANT l attente, pas apres. Sinon le client a regarde une page blanche.
+    flux = second.executer(job_rapide.identifiant, DEVICE)
+    recus = [await anext(flux), await anext(flux)]
+
+    attentes = [e for e in recus if e["type"] == "attente"]
+    assert attentes, "l annonce d attente n est pas arrivee pendant l attente"
+    assert attentes[0]["position"] == 1
+    assert attentes[0]["attente_s"] > 0
+    assert "Position" in attentes[0]["message"] or "avant la vôtre" in attentes[0]["message"]
+
+    liberer.set()
+    reste = [evenement async for evenement in flux]
+    assert reste[-1]["type"] == "final"
+    await tache_lente
+
+
+async def test_une_file_saturee_est_refusee_proprement(store: RapportStore):
+    """Accumuler produirait un 524 : le client attendrait derriere un edge coupe."""
+    from app.application.file_attente import FileAttente
+
+    service = _service(store)
+    service._file = FileAttente(places=1, attente_max=0)
+    rapport = await service.creer("bulletin_regional", "Daloa", DEVICE)
+
+    evenements = [evenement async for evenement in service.executer(rapport.identifiant, DEVICE)]
+    assert evenements[-1]["type"] == "error"
+    relu = await store.obtenir(rapport.identifiant, DEVICE)
+    assert relu is not None
+    assert relu.etat is EtatRapport.ECHOUE

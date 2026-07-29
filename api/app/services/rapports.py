@@ -18,6 +18,7 @@ import asyncio
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable
 
+from app.application.file_attente import FileAttente, FileSaturee, message_attente
 from app.application.redaction import MoteurRedaction, SujetRefuse
 from app.core.logging import get_logger
 from app.core.rapports_store import EtatRapport, Rapport, RapportStore
@@ -52,6 +53,10 @@ _ECHEC = "La génération n'a pas abouti."
 # Ce document est déjà pris : rechargement d'onglet, ou deux clients sur le même lien.
 _DEJA_PRIS = "Ce document est déjà en cours de génération ou terminé."
 
+# File pleine : on refuse franchement plutôt que de laisser attendre derrière un edge
+# qui aura déjà coupé.
+_FILE_PLEINE = "Trop de documents sont en cours de génération. Réessayez dans quelques minutes."
+
 # Documents gardés en mémoire pour l'export binaire. Un document au plafond de gabarit
 # pèse ~400 Kio : sans borne, le pod (1 Gio, partagé avec l'index RAG) finit par tomber.
 # L'éviction rend l'export binaire indisponible exactement comme après un redémarrage —
@@ -66,15 +71,24 @@ class RapportIntrouvable(Exception):
 class ServiceRapports:
     """Crée, exécute et exporte les rapports."""
 
-    def __init__(self, store: RapportStore, moteur: Callable[[], MoteurRedaction]) -> None:
+    def __init__(
+        self,
+        store: RapportStore,
+        moteur: Callable[[], MoteurRedaction],
+        file: FileAttente | None = None,
+    ) -> None:
         """Initialise le service.
 
         Args:
             store: Dépôt de persistance des jobs.
             moteur: Fabrique du moteur de rédaction (une instance par exécution).
+            file: File d'attente bornant les générations simultanées. Par défaut, une
+                seule à la fois : le profil CPU ne tient pas deux études en parallèle,
+                et les laisser se disputer les cœurs les ralentit toutes les deux.
         """
         self._store = store
         self._moteur = moteur
+        self._file = file or FileAttente()
         self._documents: OrderedDict[str, Document] = OrderedDict()
 
     async def creer(self, gabarit: str, sujet: str, demandeur: str) -> Rapport:
@@ -136,11 +150,31 @@ class ServiceRapports:
             await self._store.avancer(identifiant, faites, total)
             evenements.append({"type": "section", "titre": titre, "faites": faites, "total": total})
 
+        # La position part AVANT l'attente. C'est tout l'objet : une attente muette de
+        # plusieurs minutes est un échec public, une attente annoncée est tolérée. La
+        # position peut être légèrement périmée si une place se libère entre-temps —
+        # assumé, mieux vaut approximatif tout de suite qu'exact trop tard.
+        position = self._file.position()
+        if position:
+            attente_s = self._file.attente_estimee(position)
+            yield {
+                "type": "attente",
+                "position": position,
+                "attente_s": round(attente_s),
+                "message": message_attente(position, attente_s),
+            }
+
         try:
             gabarit = charger_gabarit(rapport.gabarit)
-            document = await self._moteur().rediger(
-                gabarit, rapport.sujet, demandeur, progression=_progression
-            )
+            async with self._file.place():
+                document = await self._moteur().rediger(
+                    gabarit, rapport.sujet, demandeur, progression=_progression
+                )
+        except FileSaturee:
+            await self._store.echouer(identifiant, "file d'attente saturée")
+            logger.warning("rapport_file_saturee", rapport=identifiant)
+            yield {"type": "error", "message": _FILE_PLEINE}
+            return
         except SujetRefuse as refus:
             await self._store.echouer(identifiant, refus.message)
             logger.info("rapport_sujet_refuse", rapport=identifiant)
