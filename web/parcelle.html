@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- OWASP : durcissement navigateur, strictement aligné sur index.html.
+         Aucun script ni style inline sur cette page. img-src autorise data:
+         uniquement pour d'éventuelles vignettes locales — aucune image distante. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' http: https:; base-uri 'none'; form-action 'none'; object-src 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
+
+    <title>Ma parcelle — OpenCacao</title>
+    <meta
+      name="description"
+      content="Enregistrez votre parcelle de cacao : photos, vidéo, tour de la parcelle au GPS. Les photos sont vérifiées avant envoi et un conseil de reprise est donné si elles ne sont pas exploitables."
+    />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="theme-color" content="#4a3424" />
+
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+    <link rel="apple-touch-icon" href="assets/cacao.png" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="page-parcelle">
+    <div class="flag-strip" aria-hidden="true"></div>
+
+    <header class="app-header">
+      <div class="brand-side left">
+        <img
+          class="logo logo-ci"
+          src="assets/armoirie-ci.png"
+          alt="Armoiries de la République de Côte d'Ivoire"
+        />
+        <p class="logo-caption">République de Côte d'Ivoire</p>
+      </div>
+
+      <div class="brand-center">
+        <h1 class="wordmark">Ma parcelle</h1>
+        <p class="tagline">Photos, vidéo et tour de la parcelle</p>
+      </div>
+
+      <div class="brand-side right">
+        <a class="lien-retour" href="index.html">Conversation</a>
+        <img class="logo logo-openlab" src="assets/openlab.png" alt="OpenLab Consulting" />
+        <button id="settingsBtn" class="icon-btn" title="Paramètres de connexion" aria-label="Paramètres">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="parcelle-page">
+      <p class="statut" id="statut" role="status" aria-live="polite" hidden></p>
+
+      <section class="carte" aria-labelledby="titreCreation">
+        <h2 id="titreCreation">Enregistrer une parcelle</h2>
+        <form class="form-parcelle" id="formCreation" autocomplete="off">
+          <label for="champNom">Nom de la parcelle</label>
+          <input
+            id="champNom"
+            type="text"
+            maxlength="120"
+            placeholder="Bloc Est, derrière la case"
+            required
+          />
+          <label for="champLocalite">Localité</label>
+          <input
+            id="champLocalite"
+            type="text"
+            maxlength="120"
+            placeholder="Daloa, Soubré, Divo…"
+            required
+          />
+          <p class="aide">
+            La localité sert à situer la parcelle et à retrouver votre direction
+            régionale ANADER. Si la localisation du téléphone ne fonctionne pas,
+            elle suffit : rien ne vous bloque.
+          </p>
+          <button class="btn-primary" id="btnCreer" type="submit">Enregistrer la parcelle</button>
+        </form>
+      </section>
+
+      <section class="carte" aria-labelledby="titreListe">
+        <h2 id="titreListe">Mes parcelles</h2>
+        <ul class="parcelles" id="listeParcelles"></ul>
+      </section>
+
+      <section class="carte" id="panneauCapture" aria-labelledby="titreParcelle" hidden>
+        <h2 id="titreParcelle"></h2>
+        <div class="meta-parcelle" id="metaParcelle"></div>
+
+        <h3 class="sous-titre">Documenter la parcelle</h3>
+        <div class="modalites">
+          <button class="btn-modalite" id="btnPhotos" type="button">
+            <span class="modalite-icone" aria-hidden="true">📷</span>
+            <span class="modalite-nom">Photos</span>
+            <span class="modalite-aide">Jusqu'à 12 vues</span>
+          </button>
+          <button class="btn-modalite" id="btnVideo" type="button">
+            <span class="modalite-icone" aria-hidden="true">🎬</span>
+            <span class="modalite-nom">Vidéo</span>
+            <span class="modalite-aide">Découpée sur le téléphone</span>
+          </button>
+          <button class="btn-modalite" id="btnParcours" type="button">
+            <span class="modalite-icone" aria-hidden="true">🧭</span>
+            <span class="modalite-nom">Parcours</span>
+            <span class="modalite-aide">Tour de la parcelle</span>
+          </button>
+          <button class="btn-modalite" id="btnParcoursVideo" type="button">
+            <span class="modalite-icone" aria-hidden="true">🎥</span>
+            <span class="modalite-nom">Parcours + vidéo</span>
+            <span class="modalite-aide">Le tour, en filmant</span>
+          </button>
+        </div>
+
+        <!-- Sélecteurs de fichier : l'attribut capture ouvre directement l'appareil
+             photo du téléphone. La vidéo n'est JAMAIS téléversée telle quelle :
+             elle est découpée en images sur l'appareil (1 image / 2 s, 12 maximum). -->
+        <input
+          class="fichier-cache"
+          id="fichierPhotos"
+          type="file"
+          accept="image/*"
+          capture="environment"
+          multiple
+        />
+        <input
+          class="fichier-cache"
+          id="fichierVideo"
+          type="file"
+          accept="video/*"
+          capture="environment"
+        />
+
+        <div class="parcours" id="zoneParcours" hidden>
+          <p class="parcours-etat" id="parcoursEtat"></p>
+          <button class="btn-primary" id="btnArreter" type="button">Terminer le tour</button>
+        </div>
+
+        <!-- Second temps de « Parcours + vidéo » : le tour est déjà enregistré, la
+             vidéo se demande par une NOUVELLE action du producteur. Ouvrir le
+             sélecteur de fichier tout seul après l'envoi du parcours ne marcherait
+             pas : le navigateur exige un geste récent pour ouvrir la caméra. -->
+        <div class="parcours" id="zoneVideoTour" hidden>
+          <p class="parcours-etat">
+            Le tour est enregistré. Ajoutez maintenant la vidéo filmée pendant le tour :
+            elle sera découpée en images sur votre téléphone.
+          </p>
+          <button class="btn-primary" id="btnVideoTour" type="button">
+            Ajouter la vidéo du tour
+          </button>
+        </div>
+
+        <div class="resultats" id="resultats"></div>
+      </section>
+
+      <section class="carte alerte" id="geoAide" hidden>
+        <h2>Localisation indisponible</h2>
+        <p id="geoAideTexte"></p>
+        <button class="btn-ghost" id="btnSaisieManuelle" type="button">
+          Saisir ma localité à la main
+        </button>
+      </section>
+
+      <p class="note-bas">
+        Vos photos servent à documenter votre parcelle. OpenCacao est un outil d'aide à
+        la décision — il ne remplace ni l'ANADER ni le Conseil du Café-Cacao.
+      </p>
+    </main>
+
+    <div class="modal-overlay" id="modal" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <h3 id="modalTitle">Connexion à l'API</h3>
+        <label for="apiUrl">URL de l'API OpenCacao</label>
+        <input id="apiUrl" type="url" placeholder="http://localhost:8080" />
+        <p class="modal-hint">
+          Exemple local : <code>http://localhost:8080</code>. Cet écran appelle
+          <code>/v1/parcelles</code>.
+        </p>
+        <div class="modal-actions">
+          <button class="btn-ghost" id="modalCancel" type="button">Annuler</button>
+          <button class="btn-primary" id="modalSave" type="button">Enregistrer</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="src/parcelle-main.js"></script>
+  </body>
+</html>

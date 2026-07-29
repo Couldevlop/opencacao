@@ -25,6 +25,15 @@ class Settings(BaseSettings):
         sessions_enabled: Active la persistance des sessions de conversation (V2).
         sessions_db_path: Chemin du fichier SQLite des sessions (volume /data).
         sessions_max_messages: Plafond de messages par session (anti-abus).
+        parcelles_enabled: Active les parcelles et les captures terrain (V3, C1).
+        parcelles_db_path: Chemin du fichier SQLite des parcelles (volume /data).
+        captures_dir: Dossier des images de capture (volume /data).
+        captures_retention_jours: Rétention des captures avant purge, en jours.
+        profil_materiel: Capacités disponibles ("gpu" ou "cpu").
+        vision_enabled: Active l'analyse visuelle des captures (V3, C2).
+        vision_url: URL interne du service de vision (jamais exposé publiquement).
+        vision_modele: Nom du modèle de vision servi.
+        vision_timeout_s: Timeout des appels au modèle de vision, en secondes.
         log_level: Niveau de log.
         log_questions: Journaliser (anonymisé) les questions pour le corpus.
         cors_origins: Origines CORS autorisées en production.
@@ -166,6 +175,36 @@ class Settings(BaseSettings):
     # désactive la purge (conservation indéfinie).
     sessions_retention_jours: int = 365
 
+    # --- Parcelles & captures terrain (V3, chantier C1) ---
+    parcelles_enabled: bool = False
+    parcelles_db_path: str = "/data/parcelles.db"
+    captures_dir: str = "/data/captures"
+    captures_retention_jours: int = 90
+    # Quotas de capture (OWASP API4:2023). Le volume /data porte aussi les sessions,
+    # l'index RAG et le journal : sans borne, des captures le satureraient et
+    # emporteraient le RAG avec elles.
+    captures_quota_par_appareil: int = 200
+    captures_espace_libre_min_octets: int = 104_857_600
+
+    # Profil matériel : déclare les capacités disponibles, pas le backend
+    # (``inference_backend`` s'en charge). Défaut ``cpu`` : une erreur de
+    # configuration dégrade le service, elle ne le casse pas.
+    profil_materiel: Literal["gpu", "cpu"] = "cpu"
+
+    # --- Analyse visuelle (V3, chantier C2) ---
+    # OFF par défaut : sans VLM joignable, l'API le dit (503 + consigne ANADER),
+    # elle n'invente aucune description.
+    vision_enabled: bool = False
+    vision_url: str = "http://vision:8000"
+    vision_modele: str = "qwen3-vl"
+    # Plafond volontairement bas. L'endpoint de constat est SYNCHRONE et enchaîne deux
+    # générations : vision (ce timeout) puis rédaction (``request_timeout_s``). Le
+    # domaine est derrière Cloudflare, qui coupe une réponse d'origine vers 100 s — le
+    # 524 de la composition multi-agents (juillet 2026) est venu exactement de là.
+    # Avant d'activer ``vision_enabled``, vérifier le budget CUMULÉ : soit il tient
+    # sous 100 s, soit le constat passe en flux (ou 202 + polling) comme /chat/stream.
+    vision_timeout_s: float = 30.0
+
     # --- Authentification légère par lien magique (D2, optionnelle) ---
     # Désactivée par défaut : l'usage anonyme par appareil (D1) reste la norme.
     # Activée, un email vérifié donne un identifiant de compte stable qui rattache
@@ -219,6 +258,11 @@ class Settings(BaseSettings):
     trust_forwarded_for: bool = False
     # Taille maximale du corps de requête, en octets (anti-DoS).
     max_body_bytes: int = 16_384
+    # Plafond propre aux dépôts de capture de parcelle (/v1/parcelles), qui portent
+    # légitimement des images encodées en base64. Le plafond global reste bas : on
+    # ouvre une porte étroite plutôt que de relâcher la borne pour toute l'API.
+    # 8 Mio couvrent 12 vues de ~200 Ko (1024 px, JPEG q0.85) avec large marge.
+    captures_max_body_bytes: int = 8_388_608
     # Exposer la doc OpenAPI/Swagger (à désactiver en production).
     enable_docs: bool = True
 

@@ -6,7 +6,7 @@ Centraliser ces accès permet de les surcharger en test via
 
 from __future__ import annotations
 
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request, status
 
 from app.application.auth_service import AuthService
 from app.application.cache_semantique import CacheSemantique
@@ -23,8 +23,11 @@ from app.domain.ports import (
     InferencePort,
     JournalPort,
     LienNotifierPort,
+    ParcelleStorePort,
     SessionStorePort,
 )
+from app.services.constats import ServiceConstats
+from app.services.parcelles import ServiceParcelles
 
 
 def get_app_settings() -> Settings:
@@ -50,6 +53,21 @@ def get_journal(request: Request) -> JournalPort:
 def get_session_store(request: Request) -> SessionStorePort:
     """Retourne le dépôt de sessions de conversation stocké dans l'état de l'application."""
     return request.app.state.sessions
+
+
+def get_parcelle_store(request: Request) -> ParcelleStorePort:
+    """Retourne le dépôt de parcelles stocké dans l'état de l'application."""
+    return request.app.state.parcelles
+
+
+def get_service_parcelles(request: Request) -> ServiceParcelles:
+    """Retourne le service métier des parcelles stocké dans l'état de l'application."""
+    return request.app.state.service_parcelles
+
+
+def get_service_constats(request: Request) -> ServiceConstats:
+    """Retourne le service du constat visuel stocké dans l'état de l'application."""
+    return request.app.state.service_constats
 
 
 def get_auth_store(request: Request) -> AuthStorePort:
@@ -233,6 +251,30 @@ def get_device_id(request: Request) -> str:
     l'espace « hérité » partagé. Borné en longueur (anti-abus).
     """
     return (request.headers.get("x-device-id") or "").strip()[:64]
+
+
+def get_device_id_obligatoire(request: Request) -> str:
+    """Identifiant d'appareil **exigé**, pour les ressources rattachées à un producteur.
+
+    ``get_device_id`` retombe sur ``""`` quand l'en-tête est absent : c'est l'espace
+    « hérité » partagé, un choix de compatibilité assumé pour les conversations V2.
+
+    Appliqué aux **parcelles**, cet espace deviendrait une fuite : tout appelant
+    omettant l'en-tête verrait — et pourrait modifier — les parcelles de tous les
+    autres appelants sans en-tête, alors qu'une parcelle porte le polygone GPS exact
+    de la plantation d'un producteur. Les parcelles sont récentes : aucun client
+    hérité à ménager, on exige donc l'identifiant.
+
+    Raises:
+        HTTPException: 400 si l'en-tête est absent ou vide.
+    """
+    identifiant = get_device_id(request)
+    if not identifiant:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="En-tête X-Device-Id requis pour accéder aux parcelles.",
+        )
+    return identifiant
 
 
 def get_client_ip(request: Request) -> str:

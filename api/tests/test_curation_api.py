@@ -39,6 +39,7 @@ def console(tmp_path: Path, monkeypatch) -> tuple[TestClient, Path]:
     _seed(tmp_path)
     monkeypatch.setattr(cur, "_store", CurationStore(tmp_path, tmp_path / "corpus_cure.jsonl"))
     monkeypatch.setattr(cur, "_MOT_DE_PASSE", "")
+    monkeypatch.setattr(cur, "_AUTH_DESACTIVEE", True)
     return TestClient(cur.app), tmp_path
 
 
@@ -121,6 +122,7 @@ def test_erreur_interne_renvoie_500(monkeypatch) -> None:
 
     monkeypatch.setattr(cur, "_store", Casse())
     monkeypatch.setattr(cur, "_MOT_DE_PASSE", "")
+    monkeypatch.setattr(cur, "_AUTH_DESACTIVEE", True)
     client = TestClient(cur.app, raise_server_exceptions=False)
     assert client.get("/api/a-curer").status_code == 500
 
@@ -277,6 +279,7 @@ def pipeline_console(tmp_path: Path, monkeypatch) -> tuple[TestClient, FakePipel
     monkeypatch.setattr(cur, "_pipeline", faux)
     monkeypatch.setattr(cur, "_documents", DocumentStore(tmp_path / "documents"))
     monkeypatch.setattr(cur, "_MOT_DE_PASSE", "")
+    monkeypatch.setattr(cur, "_AUTH_DESACTIVEE", True)
     return TestClient(cur.app), faux
 
 

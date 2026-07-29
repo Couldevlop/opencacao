@@ -1,0 +1,75 @@
+# Modèle de vision (VLM) servant la cascade d'analyse visuelle (V3, chantier C2).
+# JAMAIS exposé publiquement (ClusterIP, aucun Ingress) : l'API le consomme en
+# interne, exactement comme `inference`. C'est ce qui permet d'appliquer les
+# garde-fous et la journalisation sur CHAQUE description produite.
+#
+# Ce manifeste n'est appliqué que sur un nœud GPU. Sur le CX53 (CPU), il n'est pas
+# déployé et VISION_ENABLED reste "false" : l'API répond alors 503 avec une consigne
+# qui oriente vers l'ANADER — elle n'invente jamais de description.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vision
+  labels: { app: vision }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: vision }
+  strategy: { type: Recreate }   # volume RWO mono-attache, comme l'inférence
+  template:
+    metadata:
+      labels: { app: vision }
+    spec:
+      containers:
+        - name: vlm
+          image: ghcr.io/ggml-org/llama.cpp:server
+          args:
+            - "-m"
+            - "/models/qwen3-vl-8b-Q4_K_M.gguf"    # poids déposés sur le nœud (hostPath)
+            - "--mmproj"
+            - "/models/qwen3-vl-8b-mmproj-f16.gguf"  # projecteur multimodal (vision)
+            - "--alias"
+            - "qwen3-vl"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8000"
+            - "-c"
+            - "8192"       # une image occupe beaucoup de contexte : plus large qu'en texte
+            - "-ngl"
+            - "99"         # toutes les couches sur le GPU — le VLM ne tient que là
+            - "-fa"
+            - "on"
+            # Cache de prompt borné, même raison qu'en inférence : sans ce drapeau
+            # llama.cpp applique 8192 Mio par défaut et remplit jusqu'à saturation.
+            - "--cache-ram"
+            - "1024"
+          ports:
+            - containerPort: 8000
+          volumeMounts:
+            - name: modele
+              mountPath: /models
+              readOnly: true
+          resources:
+            requests: { cpu: "2", memory: "8Gi", nvidia.com/gpu: "1" }
+            limits: { cpu: "6", memory: "16Gi", nvidia.com/gpu: "1" }
+          readinessProbe:
+            httpGet: { path: /v1/models, port: 8000 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 30   # le 1er chargement des poids peut être long
+      volumes:
+        - name: modele
+          hostPath:
+            path: /opt/opencacao/models
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vision
+spec:
+  selector: { app: vision }
+  ports:
+    - port: 8000
+      targetPort: 8000

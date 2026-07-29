@@ -38,13 +38,23 @@ def url_publique_sure(url: str) -> bool:
     Returns:
         True si toutes les IP résolues sont publiques et le schéma http/https.
     """
+    # Garde-fou de sécurité : on échoue FERMÉ sur toute erreur d'analyse, quelle qu'elle
+    # soit. Deux pièges rendaient la version précédente contournable en pratique :
+    #   * ``httpx.InvalidURL`` **n'hérite pas** de ``ValueError`` — une URL syntaxiquement
+    #     invalide (``http://x:port/``, hôte IPv6 malformé…) remontait l'exception au lieu
+    #     d'être refusée ;
+    #   * ``httpx.URL`` est **paresseux** : c'est la lecture de ``.host`` qui déclenche le
+    #     décodage IDNA, donc une exception échappait même en analysant l'URL dans le try.
+    # Conséquence vécue : un seul lien malformé récolté sur un site tiers faisait échouer
+    # TOUTE une campagne de découverte de sources.
     try:
         u = httpx.URL(url)
-    except (ValueError, TypeError):
+        schema = u.scheme
+        hote = u.host
+    except Exception:
         return False
-    if u.scheme not in ("http", "https") or not u.host:
+    if schema not in ("http", "https") or not hote:
         return False
-    hote = u.host
     # Noms internes au cluster Kubernetes (sans domaine public).
     if hote in {"localhost"} or hote.endswith((".local", ".svc", ".cluster.local", ".internal")):
         return False

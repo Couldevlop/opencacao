@@ -201,6 +201,84 @@ Le router POST passe par `get_dialogue_service` (sessions V2), qui appelle `cons
 
 ---
 
+## 10. La parcelle — `models/parcelle.py`, `core/parcelles_store.py`, `services/parcelles.py`
+
+*Chantier C1, livré le 28/07/2026. Spec : `docs/superpowers/specs/2026-07-28-v3-operationnelle-design.md` §5-6.*
+
+### Le concept
+
+Jusqu'ici, l'objet central de la plateforme était **la question**. Un producteur demandait, un agent répondait, et le fil s'effaçait. La V3 introduit un objet qui **persiste et s'enrichit** : la **parcelle**. Elle a une géométrie, une superficie, une direction régionale de rattachement, un historique de captures. Les agents cessent de répondre dans le vide : ils répondront *à propos de quelque chose*.
+
+C'est le basculement de l'assistant vers l'instrument. Un chat n'a pas de mémoire du terrain ; une parcelle en est la mémoire.
+
+### Les décisions
+
+**Quatre modalités de capture, deux contrats serveur.** Photos, vidéo, parcours GPS, parcours + vidéo. L'API n'expose pourtant que **deux** contrats — un jeu d'images géoréférencées, une trace de points — et le navigateur fait le reste : il échantillonne la vidéo (1 image / 2 s, plafond 12) et redimensionne à 1024 px **avant** tout envoi. Ce n'est pas une optimisation, c'est une contrainte de terrain : téléverser une vidéo de 100 Mo sur un réseau mobile ivoirien échouera, et une photo de téléphone moderne fait 4000 px.
+
+**L'étage 0 de la cascade de vision ne mobilise aucun modèle.** Netteté (variance du laplacien) et exposition sont calculées par le navigateur, qui possède déjà les pixels décodés ; le serveur valide **les en-têtes** PNG/JPEG en Python pur — ce qui donne les dimensions réelles *et* sert de contrôle de sécurité, puisque ces octets partent sur le disque. Une image refusée reçoit un **conseil de reprise en français simple** (« approchez-vous de la cabosse », « tournez-vous dos au soleil »), jamais un code d'erreur.
+
+**Le nom de fichier dérive du SHA-256 du contenu**, jamais d'une donnée du client : aucune traversée de chemin n'est possible, et deux téléversements identiques ne consomment qu'un fichier. Une image refusée est **quand même consignée** en métadonnées avec son motif — le producteur doit voir ce qui a été rejeté — mais ses octets ne touchent pas le disque.
+
+**La superficie est calculée, jamais saisie**, sur coordonnées projetées localement (`services/geometrie.py`) — jamais en degrés bruts : un degré de longitude ne vaut pas un degré de latitude. Une géométrie est refusée, avec un motif lisible, si un point sort de la Côte d'Ivoire, si le tracé se coupe lui-même, ou si la superficie sort de l'intervalle 0,1–50 ha.
+
+**Persistance sur le moule de `core/sessions.py`** : `sqlite3` de la bibliothèque standard, migrations par `PRAGMA user_version`, `asyncio.to_thread`, mode WAL, et surtout **initialisation tolérante aux pannes** — si `/data` est inaccessible, l'API démarre quand même, les parcelles sont indisponibles et le chat continue. Les images ne sont pas en base : seule leur empreinte l'est.
+
+**Cloisonnement plus strict que celui des sessions.** Les conversations V2 tolèrent un `X-Device-Id` absent et retombent dans un espace « hérité » partagé — compatibilité assumée. Les parcelles l'**exigent** (400 sinon) : une parcelle porte le polygone GPS exact de la plantation d'un producteur, et cet espace partagé serait une fuite. Les parcelles sont neuves, aucun client hérité à ménager.
+
+### Modèle mental
+
+> Le chat répond à une question et l'oublie. La parcelle, elle, **accumule**. C'est sur elle que se grefferont l'analyse visuelle (C2) et le dossier de traçabilité (C3) — deux chantiers qui n'auraient aucun objet sans elle.
+
+---
+
+## 11. La cascade de vision — `models/constat.py`, `application/constat_visuel.py`, `curation/revue_constats.py`
+
+*Chantier C2, livré le 29/07/2026. Spec : `docs/superpowers/specs/2026-07-28-v3-operationnelle-design.md` §7.*
+
+### Le concept
+
+Un producteur photographie une cabosse tachetée et demande ce qu'elle a. La réponse honnête n'est pas un diagnostic : c'est un **constat**. Le système décrit ce qu'il observe, dit à quel point il en est sûr, croise avec ce qu'il sait de la parcelle — puis renvoie vers un agent ANADER.
+
+La distinction n'est pas de la prudence rhétorique. Nommer une maladie sur photo, c'est engager un traitement ; se tromper, c'est faire pulvériser un produit inutile sur une plantation qui n'en a pas les moyens. Tant qu'aucun jeu de données ivoirien n'existe pour mesurer le taux de rappel par classe, l'étiologie reste fermée. **Constat, pas diagnostic** — et ce n'est pas une consigne au modèle, c'est la structure du code : le module `models/constat.py` ne porte aucun nom de maladie, aucun produit, aucune posologie.
+
+La cascade compte sept étages, dont **cinq sont livrés** : recevabilité de l'image (étage 0, livré en C1), tri d'organe (1), fusion contextuelle (4), rédaction du constat (5), file de revue (6). Les étages 2 (localisation des lésions) et 3 (étiologie) sont **délibérément absents**.
+
+### Les décisions
+
+**Le port de vision est mockable, donc tout C2 se teste sans GPU.** `VisionPort` (`domain/ports.py`) déclare `decrire(images, consigne) -> str | None`. Seul le service du modèle a besoin d'une carte graphique ; la cascade, ses garde-fous et son endpoint se construisent et se vérifient sur un poste ordinaire. C'est ce qui a permis d'attaquer le chantier le plus risqué **en premier**, plutôt que de le repousser jusqu'au moment où il aurait été trop tard pour en sortir.
+
+**Vision indisponible → aucun constat.** Pas une description approximative, pas un « il semblerait que » : `None`, et l'API répond 503 avec une phrase qui oriente vers l'ANADER. Le pattern « contexte vide → fabrication » a déjà coûté un correctif sur les agents (v0.6.48) ; il ne revient pas par la vision. En profil CPU — celui de la production actuelle — c'est la source neutre `VisionIndisponible` qui est branchée, et elle se déclare telle quelle.
+
+**Sortie compromise → rejet, jamais réécriture.** `guardrails.contient_diagnostic` vérifie la description du modèle de vision **et** le constat rédigé. S'il y trouve un nom de maladie, un produit ou un dosage, le constat est jeté. On ne rafistole pas une sortie qui a franchi un interdit : une réécriture laisserait croire que la consigne a tenu. Le vocabulaire phytosanitaire existant est réutilisé tel quel — « appliquez un fongicide » est déjà une prescription, même sans chiffre.
+
+**Le levier est la consigne, pas le plafond de tokens** — leçon acquise en juillet sur le dialogue naturel. Mais on ne fait pas confiance au modèle pour la respecter : la consigne interdit explicitement, **et** le garde-fou de sortie vérifie. Ceinture et bretelles, parce que le coût d'une seule sortie fautive est un producteur qui traite à tort.
+
+**La météo dégrade la confiance, elle ne la conforte jamais sans donnée.** Une observation évoquant une atteinte humide après trois semaines sèches est douteuse : l'étage 4 ne conclut rien, il **descend d'un cran** et écrit pourquoi. Relevé de pluie absent ? Dégradation aussi — l'absence de donnée n'est pas une confirmation. Les facteurs rédigés n'emploient jamais un nom de maladie ; un test le vérifie.
+
+**Analyser est idempotent.** Produire un constat coûte une génération de vision *et* une génération de conseil, soit des dizaines de secondes de CPU. Une capture déjà analysée se relit au lieu d'être recalculée, et la route porte un quota dédié (3/min/appareil) distinct du débit général : partager le budget d'un simple `GET` laisserait une poignée de requêtes saturer l'inférence.
+
+**Le disclaimer ANADER est structurel.** Il est porté par le schéma de réponse, pas par la consigne au modèle. Un constat qui « oublierait » d'orienter vers l'agent n'existe pas.
+
+### L'étage 6 — ce qui fait vraiment la différence
+
+Chaque constat part en **file de revue**. Un agent ANADER confirme, corrige ou rejette ; la correction est persistée et alimente un export JSONL. C'est ce fichier qui deviendra le jeu de données ivoirien — celui qui, un jour, ouvrira les étages 2 et 3.
+
+Le retournement mérite d'être vu : la faiblesse du système — un modèle qui peut se tromper — devient son moteur. Il s'améliore **parce qu'il est utilisé**, et la précision annoncée cesse d'être une promesse pour devenir une mesure, puis une publication.
+
+Deux conséquences de sécurité, toutes deux traitées : ces routes voient les constats de **tous** les producteurs, elles vivent donc derrière l'authentification de la console (fail-closed — un mot de passe vide rend la console indisponible, il ne l'ouvre pas). Et la correction saisie par l'agent passe **les mêmes garde-fous que tout le reste** : elle devient une étiquette d'entraînement, une correction qui nomme une maladie empoisonnerait le jeu de données à sa source. L'export est minimisé : ce qui est observé, jamais chez qui — ni appareil, ni parcelle, ni coordonnée.
+
+### Ce que ce chantier ne livre pas, délibérément
+
+**Étages 2 et 3.** Ils exigent un jeu de données ivoirien qui n'existe pas encore — c'est précisément l'étage 6 qui va le construire. Le pré-diagnostic s'ouvrira au franchissement d'un seuil de rappel par classe (0,90 proposé sur pourriture brune et swollen shoot), **jamais à une date**.
+
+**La porte de sortie reste ouverte.** Si le VLM se révèle inutilisable sur des photos ivoiriennes, `VISION_ENABLED` reste à `false`, C1, C3 et C4 se présentent sans lui, et la démonstration tient debout. La décision se prend une semaine avant l'événement, sur essai réel — pas la veille, et pas sans avoir essayé.
+
+### Modèle mental
+
+> La cascade ne cherche pas à savoir **ce qu'a** la plante. Elle cherche à dire **ce qu'elle voit**, avec quelle confiance, et à qui s'adresser ensuite. Chaque étage peut refuser de conclure ; aucun ne peut inventer. Ce qu'un agent humain corrige aujourd'hui est ce que le modèle saura demain.
+
+---
+
 ## Recette — Ajouter un agent en 4 étapes (appliquée à l'agent EUDR)
 
 C'est l'aboutissement du socle : l'extensibilité prouvée. L'**agent n°5 — Réglementation EUDR** a été ajouté en suivant exactement cette recette :
@@ -244,4 +322,5 @@ La plateforme est **active en production** (`AGENTS_ENABLED=ON` depuis la v0.6.4
 - Périmètre **cacao uniquement** : vivier/anacarde/médical/dosages → redirection ANADER. Décision Waopron juin 2026.
 - Garde-fous **dans l'orchestrateur**, jamais par agent.
 - **Aucun service externe** (OpenAI/Anthropic/Cohere) en production. Les outils appellent des *sources de données*, pas des LLM tiers, toujours derrière un port mockable.
-- Disclaimer ANADER systématique (porté par l'entité `Conseil`).
+- Disclaimer ANADER systématique (porté par l'entité `Conseil`, et par le schéma `ConstatReponse` côté vision).
+- **Constat, pas diagnostic** : aucune sortie ne nomme une maladie, un ravageur, un produit ni une dose. Vaut pour le modèle de vision, pour le constat rédigé **et** pour la correction saisie par un agent ANADER en revue — même garde-fou, mêmes tests. Une sortie fautive est **rejetée**, jamais réécrite. L'étiologie s'ouvrira sur un seuil de rappel mesuré, jamais sur une date.

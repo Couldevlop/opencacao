@@ -59,6 +59,7 @@ class CacheClient:
     _SEMIDX_PREFIX = "semidx:chat:"
     _OUTIL_PREFIX = "outil:"
     _RATE_PREFIX = "rate:"
+    _QUOTA_PREFIX = "quota:"
     _CACHE_TTL_S = 604_800  # 7 jours : les conseils agronomiques sont stables.
 
     def __init__(
@@ -234,6 +235,30 @@ class CacheClient:
             if count == 1:
                 await self._redis.expire(key, 60)
             return count > self._rate_limit
+        except redis.RedisError:
+            return False
+
+    async def hit_quota(self, cle: str, limite: int, fenetre_s: int) -> bool:
+        """Incrémente un compteur nommé et indique si son quota est dépassé.
+
+        Budget distinct du rate-limit général : les endpoints très coûteux (analyse
+        visuelle) ne peuvent pas partager le budget d'un simple GET, sans quoi une
+        poignée de requêtes suffit à saturer l'inférence (OWASP API4).
+
+        Args:
+            cle: Clé du compteur (déjà cloisonnée par l'appelant).
+            limite: Nombre d'appels tolérés dans la fenêtre.
+            fenetre_s: Durée de la fenêtre, en secondes.
+
+        Returns:
+            True si la requête doit être rejetée (quota atteint).
+        """
+        key = f"{self._QUOTA_PREFIX}{cle}"
+        try:
+            count = await self._redis.incr(key)
+            if count == 1:
+                await self._redis.expire(key, fenetre_s)
+            return count > limite
         except redis.RedisError:
             return False
 

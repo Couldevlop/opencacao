@@ -7,9 +7,12 @@ concrets (httpx, redis). C'est l'inversion de dépendance de la clean architectu
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from datetime import datetime
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from app.models.constat import Constat, EtatRevue
+    from app.models.parcelle import Capture, Geometrie, Parcelle
     from app.models.session import ConversationMessage, Session, SessionAvecMessages
 
 
@@ -68,6 +71,10 @@ class CachePort(Protocol):
 
     async def hit_rate_limit(self, client_ip: str) -> bool:
         """Incrémente le compteur et indique si la limite est dépassée."""
+        ...
+
+    async def hit_quota(self, cle: str, limite: int, fenetre_s: int) -> bool:
+        """Incrémente un compteur nommé et indique si son quota est dépassé."""
         ...
 
     async def ping(self) -> bool:
@@ -194,4 +201,100 @@ class SessionStorePort(Protocol):
     async def purger_anciennes(self, jours: int) -> int:
         """Supprime les conversations inactives depuis plus de ``jours`` (RGPD). Renvoie
         le nombre supprimé."""
+        ...
+
+
+@runtime_checkable
+class ParcelleStorePort(Protocol):
+    """Contrat d'un dépôt de parcelles et de leurs captures terrain."""
+
+    @property
+    def pret(self) -> bool:
+        """Indique si le schéma a pu être initialisé (parcelles disponibles)."""
+        ...
+
+    async def creer_parcelle(
+        self, proprietaire: str, nom: str, localite: str, direction_regionale: str
+    ) -> Parcelle:
+        """Crée une parcelle rattachée à un appareil."""
+        ...
+
+    async def obtenir_parcelle(self, identifiant: str, proprietaire: str) -> Parcelle | None:
+        """Retourne une parcelle de cet appareil, ou None."""
+        ...
+
+    async def lister_parcelles(self, proprietaire: str, limite: int = ...) -> list[Parcelle]:
+        """Liste les parcelles de cet appareil, les plus récemment modifiées d'abord."""
+        ...
+
+    async def enregistrer_geometrie(
+        self, identifiant: str, proprietaire: str, geometrie: Geometrie
+    ) -> Parcelle | None:
+        """Remplace la géométrie d'une parcelle. None si elle n'existe pas."""
+        ...
+
+    async def enregistrer_capture(self, capture: Capture) -> Capture:
+        """Persiste une capture (images et/ou trace)."""
+        ...
+
+    async def compter_captures(self, proprietaire: str) -> int:
+        """Compte les captures d'un appareil (application des quotas)."""
+        ...
+
+    async def obtenir_capture(self, identifiant: str, proprietaire: str) -> Capture | None:
+        """Retourne une capture de cet appareil, ou None."""
+        ...
+
+    async def lister_captures(self, parcelle: str, proprietaire: str) -> list[Capture]:
+        """Liste les captures d'une parcelle, les plus récentes d'abord."""
+        ...
+
+    async def purger_captures(self, avant: datetime) -> list[str]:
+        """Supprime les captures antérieures et retourne les empreintes à effacer."""
+        ...
+
+    async def enregistrer_constat(self, constat: Constat) -> Constat:
+        """Persiste un constat visuel."""
+        ...
+
+    async def obtenir_constat(self, identifiant: str, proprietaire: str) -> Constat | None:
+        """Retourne un constat de cet appareil, ou None."""
+        ...
+
+    async def obtenir_constat_par_capture(
+        self, capture_id: str, proprietaire: str
+    ) -> Constat | None:
+        """Retourne le constat déjà produit pour cette capture, ou None."""
+        ...
+
+    async def lister_constats_en_attente(self, limite: int = ...) -> list[Constat]:
+        """Liste les constats en attente de revue ANADER, les plus anciens d'abord."""
+        ...
+
+    async def lister_constats_revus(self, limite: int = ..., decalage: int = ...) -> list[Constat]:
+        """Liste une page de constats déjà revus, les plus anciens d'abord."""
+        ...
+
+    async def reviser_constat(
+        self, identifiant: str, etat: EtatRevue, revu_par: str, correction: str
+    ) -> Constat | None:
+        """Enregistre la décision d'un agent ANADER sur un constat."""
+        ...
+
+
+@runtime_checkable
+class VisionPort(Protocol):
+    """Contrat d'un modèle de vision décrivant des images de plantation.
+
+    **Descripteur, pas diagnosticien.** L'implémentation ne nomme jamais une maladie :
+    la consigne le lui interdit et le garde-fou de sortie le vérifie. Toujours
+    mockable — aucun appel réseau en test.
+    """
+
+    async def decrire(self, images: tuple[bytes, ...], consigne: str) -> str | None:
+        """Décrit les images, ou retourne None si la vision est indisponible."""
+        ...
+
+    async def disponible(self) -> bool:
+        """Indique si le modèle de vision est joignable."""
         ...

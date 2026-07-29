@@ -99,6 +99,38 @@ data:
   # courte et complète, ~5-6 s de décodage CPU par tour vs scripté instantané.
   # Rollback : repasser à "false" + redémarrage API (~15 s).
   DIALOGUE_NATUREL_ENABLED: "true"
+  # Parcelles & captures terrain (V3, chantier C1). OFF au premier déploiement : on
+  # vérifie que le schéma SQLite se crée bien sur /data avant d'ouvrir les routes.
+  PARCELLES_ENABLED: "false"
+  PARCELLES_DB_PATH: "/data/parcelles.db"
+  CAPTURES_DIR: "/data/captures"
+  CAPTURES_RETENTION_JOURS: "90"
+  # Quotas de capture (OWASP API4:2023). /data porte AUSSI sessions.db, l'index RAG et
+  # le journal : sans borne, des captures satureraient le volume et emporteraient le
+  # RAG. Le garde d'espace libre refuse d'écrire avant d'en arriver là.
+  CAPTURES_QUOTA_PAR_APPAREIL: "200"
+  CAPTURES_ESPACE_LIBRE_MIN_OCTETS: "104857600"
+  # Plafond de corps de requête propre aux dépôts de capture (8 Mio). Le plafond
+  # global MAX_BODY_BYTES (16 Ko, taillé pour une question) rejetterait toute photo
+  # en 413 : on ouvre une porte étroite sur /v1/parcelles, sans relâcher le reste.
+  CAPTURES_MAX_BODY_BYTES: "8388608"
+  # Profil matériel : déclare les capacités disponibles, pas le backend
+  # (INFERENCE_BACKEND s'en charge). Défaut "cpu" : une erreur de configuration
+  # dégrade le service, elle ne le casse pas.
+  PROFIL_MATERIEL: "cpu"
+  # Analyse visuelle (V3, chantier C2). OFF tant que le service de vision n'est pas
+  # déployé : l'API répond alors 503 avec une consigne qui oriente vers l'ANADER,
+  # jamais une description inventée. Le VLM ne tient que sur GPU — même à "true",
+  # un PROFIL_MATERIEL "cpu" laisse la source neutre branchée.
+  VISION_ENABLED: "false"
+  VISION_URL: "http://vision:8000"
+  VISION_MODELE: "qwen3-vl"
+  # AVANT DE PASSER VISION_ENABLED À "true", lire ceci. Le constat est SYNCHRONE et
+  # enchaîne deux générations : vision (ce timeout) puis rédaction
+  # (REQUEST_TIMEOUT_S). Cloudflare coupe une réponse d'origine vers 100 s — c'est
+  # l'origine du 524 rencontré en juillet 2026 sur la composition multi-agents.
+  # Vérifier le budget CUMULÉ, ou passer le constat en flux avant d'activer.
+  VISION_TIMEOUT_S: "30"
 ---
 apiVersion: apps/v1
 kind: Deployment
