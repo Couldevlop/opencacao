@@ -30,6 +30,7 @@ from app.services.inference import InferenceClient
 from app.services.notifier import construire_notifier
 from app.services.parcelles import ServiceParcelles
 from app.services.vision.indisponible import VisionIndisponible
+from app.services.vision.vlm import ClientVLM
 
 logger = get_logger(__name__)
 
@@ -62,11 +63,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await app.state.parcelles.initialiser()
         app.state.purge_captures_task = _lancer_purge_captures(app)
 
-    # Cascade d'analyse visuelle (V3, chantier C2). La source de vision est branchée
-    # selon le profil matériel par la tâche de câblage ; par défaut elle est neutre et
-    # se déclare indisponible, ce qui fait répondre 503 avec une consigne ANADER
-    # plutôt que d'inventer une description.
-    app.state.vision = VisionIndisponible()
+    # Cascade d'analyse visuelle (V3, chantier C2). Le VLM ne tient que sur GPU
+    # (spec §3) : en profil CPU on branche la source neutre, qui se déclare
+    # indisponible. L'API répond alors 503 avec une consigne qui oriente vers
+    # l'ANADER — aucune description n'est jamais inventée.
+    if settings.vision_enabled and settings.profil_materiel == "gpu":
+        app.state.vision = ClientVLM.from_settings(settings)
+    else:
+        app.state.vision = VisionIndisponible()
     app.state.service_constats = ServiceConstats(
         app.state.parcelles,
         ServiceConstatVisuel(app.state.vision, app.state.inference),
@@ -112,6 +116,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await app.state.embeddings.close()
         if hasattr(app.state.notifier, "close"):
             await app.state.notifier.close()
+        if hasattr(app.state.vision, "close"):
+            await app.state.vision.close()
         logger.info("arret")
 
 

@@ -30,6 +30,10 @@ class Settings(BaseSettings):
         captures_dir: Dossier des images de capture (volume /data).
         captures_retention_jours: Rétention des captures avant purge, en jours.
         profil_materiel: Capacités disponibles ("gpu" ou "cpu").
+        vision_enabled: Active l'analyse visuelle des captures (V3, C2).
+        vision_url: URL interne du service de vision (jamais exposé publiquement).
+        vision_modele: Nom du modèle de vision servi.
+        vision_timeout_s: Timeout des appels au modèle de vision, en secondes.
         log_level: Niveau de log.
         log_questions: Journaliser (anonymisé) les questions pour le corpus.
         cors_origins: Origines CORS autorisées en production.
@@ -186,6 +190,14 @@ class Settings(BaseSettings):
     # (``inference_backend`` s'en charge). Défaut ``cpu`` : une erreur de
     # configuration dégrade le service, elle ne le casse pas.
     profil_materiel: Literal["gpu", "cpu"] = "cpu"
+
+    # --- Analyse visuelle (V3, chantier C2) ---
+    # OFF par défaut : sans VLM joignable, l'API le dit (503 + consigne ANADER),
+    # elle n'invente aucune description.
+    vision_enabled: bool = False
+    vision_url: str = "http://vision:8000"
+    vision_modele: str = "qwen3-vl"
+    vision_timeout_s: float = 60.0
 
     # --- Authentification légère par lien magique (D2, optionnelle) ---
     # Désactivée par défaut : l'usage anonyme par appareil (D1) reste la norme.
