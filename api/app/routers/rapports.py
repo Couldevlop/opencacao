@@ -34,6 +34,28 @@ _RAPPORTS_PAR_FENETRE = 3
 _RAPPORTS_FENETRE_S = 300
 _TROP_DE_RAPPORTS = "Trop de documents demandés. Patientez quelques minutes avant le suivant."
 
+# Budget de l'export. Moins cher qu'une génération, mais loin d'être gratuit : rendre
+# un document coûte de 0,3 à 1,3 s de CPU, et la route est rappelable en boucle sur un
+# rapport déjà produit. Plus généreux que la génération — on télécharge légitimement
+# les quatre formats — mais borné.
+_EXPORTS_PAR_FENETRE = 20
+_EXPORTS_FENETRE_S = 300
+_TROP_D_EXPORTS = "Trop de téléchargements. Patientez quelques minutes."
+
+
+async def _garde_export(cache: CachePort, device_id: str) -> None:
+    """Applique le quota de téléchargement, par appareil.
+
+    Args:
+        cache: Port de cache portant les compteurs.
+        device_id: Identifiant anonyme de l'appareil appelant.
+
+    Raises:
+        HTTPException: 429 si le quota est dépassé.
+    """
+    if await cache.hit_quota(f"export:{device_id}", _EXPORTS_PAR_FENETRE, _EXPORTS_FENETRE_S):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=_TROP_D_EXPORTS)
+
 
 async def _garde_generation(cache: CachePort, device_id: str) -> None:
     """Applique le quota de génération de livrables, par appareil.
@@ -168,14 +190,16 @@ async def exporter_rapport(
     identifiant: str,
     format: str = Query(default="md", max_length=8),
     device_id: str = Depends(get_device_id_obligatoire),
+    cache: CachePort = Depends(get_cache_client),
     service: ServiceRapports = Depends(get_service_rapports),
 ) -> Response:
     """Exporte un rapport terminé.
 
     Raises:
         HTTPException: 422 si le format est inconnu, 404 si le rapport est inconnu,
-            d'un autre appareil, ou pas encore terminé.
+            d'un autre appareil, ou pas encore terminé, 429 si le quota est dépassé.
     """
+    await _garde_export(cache, device_id)
     try:
         octets, nom, type_mime = await service.exporter(identifiant, device_id, format)
     except ValueError as exc:

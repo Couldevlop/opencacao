@@ -260,3 +260,39 @@ def test_un_gabarit_malforme_donne_un_503_lisible(client: TestClient):
         client.app.dependency_overrides.clear()
     assert reponse.status_code == 503
     assert "indisponible" in reponse.json()["detail"]
+
+
+def test_l_export_a_son_propre_quota(client: TestClient):
+    """Rendre un document coute de 0,3 a 1,3 s de CPU, et la route est rappelable en
+    boucle sur un rapport deja produit. Moins cher qu une generation, pas gratuit."""
+    from app.api_deps import get_cache_client
+    from app.routers.rapports import _EXPORTS_PAR_FENETRE
+
+    class _CacheCompteur:
+        def __init__(self) -> None:
+            self.compteurs: dict[str, int] = {}
+
+        async def hit_rate_limit(self, client_ip: str) -> bool:
+            return False
+
+        async def hit_quota(self, cle: str, limite: int, fenetre_s: int) -> bool:
+            self.compteurs[cle] = self.compteurs.get(cle, 0) + 1
+            return self.compteurs[cle] > limite
+
+    cache = _CacheCompteur()
+    _service_mocke(client)
+    try:
+        identifiant = _creer(client).json()["identifiant"]
+        with client.stream("GET", f"/v1/rapports/{identifiant}/stream", headers=ENTETES) as flux:
+            list(flux.iter_lines())
+        client.app.dependency_overrides[get_cache_client] = lambda: cache
+        statuts = [
+            client.get(f"/v1/rapports/{identifiant}/export?format=md", headers=ENTETES).status_code
+            for _ in range(_EXPORTS_PAR_FENETRE + 1)
+        ]
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert statuts[:_EXPORTS_PAR_FENETRE] == [200] * _EXPORTS_PAR_FENETRE
+    assert statuts[-1] == 429
+    assert list(cache.compteurs) == ["export:appareil-a"]

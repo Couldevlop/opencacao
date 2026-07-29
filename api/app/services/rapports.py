@@ -14,6 +14,7 @@ identifiant — un manifeste doit désigner le document qu'il accompagne.
 
 from __future__ import annotations
 
+import asyncio
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable
 
@@ -211,4 +212,9 @@ class ServiceRapports:
             # sous le même identifiant, que son manifeste ne décrirait plus.
             logger.info("rapport_document_absent", rapport=identifiant, format=format_demande)
             raise RapportIntrouvable(identifiant)
-        return _RENDUS_BINAIRES[format_demande](document), nom, type_mime
+        # Rendre un document coûte de 0,3 à 1,3 s de CPU sur un gabarit réel, et
+        # davantage sur le profil CPU de production. Synchrone, cela gèlerait TOUTES
+        # les requêtes en cours — le chat compris. On déporte donc en thread, comme
+        # le fait déjà la couche de persistance.
+        octets = await asyncio.to_thread(_RENDUS_BINAIRES[format_demande], document)
+        return octets, nom, type_mime

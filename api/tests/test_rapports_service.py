@@ -322,3 +322,46 @@ async def test_un_document_evince_se_comporte_comme_apres_un_redemarrage(store: 
     assert octets.startswith(b"# ")  # le Markdown reste servi depuis la base
     with pytest.raises(RapportIntrouvable):
         await service.exporter(premier.identifiant, DEVICE, "docx")
+
+
+async def test_le_rendu_binaire_ne_bloque_pas_la_boucle_d_evenements(store: RapportStore):
+    """Mesure de la revue : jusqu a 1,3 s de rendu docx sur un gabarit reel, davantage
+    sur le CX53. Synchrone, cela gele TOUTES les autres requetes — chat compris.
+
+    On le prouve : pendant l export, une autre coroutine doit continuer d avancer.
+    """
+    import asyncio
+    import time
+
+    from app.services import rapports as module
+
+    service = _service(store)
+    rapport = await service.creer("bulletin_regional", "Daloa", DEVICE)
+    async for _ in service.executer(rapport.identifiant, DEVICE):
+        pass
+
+    def _rendu_lent(document) -> bytes:
+        time.sleep(0.3)  # rendu synchrone realiste
+        return b"PK-faux"
+
+    battements: list[float] = []
+
+    async def _autre_requete() -> None:
+        """Bat toutes les 10 ms. Un ecart long trahit une boucle gelee."""
+        for _ in range(60):
+            battements.append(time.perf_counter())
+            await asyncio.sleep(0.01)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setitem(module._RENDUS_BINAIRES, "docx", _rendu_lent)
+        _, resultat = await asyncio.gather(
+            _autre_requete(), service.exporter(rapport.identifiant, DEVICE, "docx")
+        )
+
+    assert resultat[0] == b"PK-faux"
+    # On mesure le plus grand SILENCE, pas le compte final : un compteur rattrape
+    # apres le degel, un trou de 300 ms dans les battements ne se rattrape pas.
+    from itertools import pairwise
+
+    ecart_max = max(suivant - precedent for precedent, suivant in pairwise(battements))
+    assert ecart_max < 0.2, f"boucle gelee {ecart_max:.2f} s pendant le rendu"
