@@ -5,6 +5,8 @@ Le service d'inférence est simulé via httpx.MockTransport — aucun appel rés
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 
@@ -229,4 +231,39 @@ async def test_cache_prompt_envoye_dans_le_payload_stream() -> None:
     client = InferenceClient("http://inference:8000", "opencacao-8b", 10.0, client=http)
     _ = [m async for m in client.generer_stream("Question ?")]
     assert vu.get("cache_prompt") is True
+    await client.close()
+
+
+async def test_generer_accepte_un_prompt_systeme_dedie() -> None:
+    """Les livrables imposent un registre analytique, sans perdre le contexte RAG.
+
+    ``consigne`` ne convient pas : elle REMPLACE le contexte. Le prompt système, lui,
+    compose — c'est par là que passe la rédaction d'une section d'étude.
+    """
+    vus: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        charge = json.loads(request.content)
+        vus["system"] = charge["messages"][0]["content"]
+        return httpx.Response(200, json={"choices": [{"message": {"content": "Prose."}}]})
+
+    client = _client(handler)
+    await client.generer("Rédige la section.", system_prompt="REGISTRE ANALYTIQUE")
+    assert vus["system"] == "REGISTRE ANALYTIQUE"
+    await client.close()
+
+
+async def test_generer_conserve_le_prompt_systeme_par_defaut() -> None:
+    """Non-régression : sans surcharge, le prompt système du client est utilisé."""
+    vus: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        charge = json.loads(request.content)
+        vus["system"] = charge["messages"][0]["content"]
+        return httpx.Response(200, json={"choices": [{"message": {"content": "Prose."}}]})
+
+    client = _client(handler)
+    await client.generer("Une question ?")
+    assert vus["system"] != "REGISTRE ANALYTIQUE"
+    assert vus["system"]
     await client.close()

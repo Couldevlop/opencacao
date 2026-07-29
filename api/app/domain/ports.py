@@ -27,6 +27,7 @@ class InferencePort(Protocol):
         max_tokens: int = ...,
         contexte: str | None = ...,
         historique: list[dict[str, str]] | None = ...,
+        system_prompt: str | None = ...,
     ) -> str:
         """Génère une réponse pour la question. Lève InferenceUnavailable si KO."""
         ...
