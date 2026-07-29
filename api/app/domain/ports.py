@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from app.models.constat import Constat, EtatRevue
     from app.models.parcelle import Capture, Geometrie, Parcelle
     from app.models.session import ConversationMessage, Session, SessionAvecMessages
 
@@ -70,6 +71,10 @@ class CachePort(Protocol):
 
     async def hit_rate_limit(self, client_ip: str) -> bool:
         """Incrémente le compteur et indique si la limite est dépassée."""
+        ...
+
+    async def hit_quota(self, cle: str, limite: int, fenetre_s: int) -> bool:
+        """Incrémente un compteur nommé et indique si son quota est dépassé."""
         ...
 
     async def ping(self) -> bool:
@@ -246,6 +251,30 @@ class ParcelleStorePort(Protocol):
 
     async def purger_captures(self, avant: datetime) -> list[str]:
         """Supprime les captures antérieures et retourne les empreintes à effacer."""
+        ...
+
+    async def enregistrer_constat(self, constat: Constat) -> Constat:
+        """Persiste un constat visuel."""
+        ...
+
+    async def obtenir_constat(self, identifiant: str, proprietaire: str) -> Constat | None:
+        """Retourne un constat de cet appareil, ou None."""
+        ...
+
+    async def obtenir_constat_par_capture(
+        self, capture_id: str, proprietaire: str
+    ) -> Constat | None:
+        """Retourne le constat déjà produit pour cette capture, ou None."""
+        ...
+
+    async def lister_constats_en_attente(self, limite: int = ...) -> list[Constat]:
+        """Liste les constats en attente de revue ANADER, les plus anciens d'abord."""
+        ...
+
+    async def reviser_constat(
+        self, identifiant: str, etat: EtatRevue, revu_par: str, correction: str
+    ) -> Constat | None:
+        """Enregistre la décision d'un agent ANADER sur un constat."""
         ...
 
 

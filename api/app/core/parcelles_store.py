@@ -27,6 +27,7 @@ from uuid import uuid4
 
 from app.core.config import Settings
 from app.core.logging import get_logger
+from app.models.constat import Constat, EtatRevue, NiveauConfiance, Observation, Organe
 from app.models.parcelle import (
     Capture,
     Coordonnee,
@@ -78,6 +79,29 @@ class ParcelleStore:
             ON captures(parcelle_id, cree_le DESC);
         CREATE INDEX IF NOT EXISTS idx_captures_cree
             ON captures(cree_le);
+        """,
+        # Migration 2 (V3, chantier C2) : constats visuels et leur cycle de revue.
+        # Les observations et les facteurs de contexte sont sérialisés en JSON, comme
+        # les images d'une capture : le dépôt reste à deux tables métier.
+        """
+        CREATE TABLE IF NOT EXISTS constats (
+            id                 TEXT PRIMARY KEY,
+            capture_id         TEXT NOT NULL,
+            parcelle_id        TEXT NOT NULL,
+            proprietaire       TEXT NOT NULL,
+            observations_json  TEXT NOT NULL,
+            facteurs_json      TEXT NOT NULL,
+            texte              TEXT NOT NULL,
+            confiance          TEXT NOT NULL,
+            etat_revue         TEXT NOT NULL,
+            revu_par           TEXT NOT NULL DEFAULT '',
+            correction         TEXT NOT NULL DEFAULT '',
+            cree_le            TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_constats_revue
+            ON constats(etat_revue, cree_le);
+        CREATE INDEX IF NOT EXISTS idx_constats_proprio
+            ON constats(proprietaire, cree_le DESC);
         """,
     )
 
@@ -266,6 +290,52 @@ class ParcelleStore:
             cree_le=datetime.fromisoformat(ligne["cree_le"]),
             images=cls._images_depuis_json(ligne["images_json"]),
             trace=tuple(cls._coordonnee_depuis_dict(p) for p in json.loads(ligne["trace_json"])),
+        )
+
+    @classmethod
+    def _observations_en_json(cls, observations: tuple[Observation, ...]) -> str:
+        """Sérialise les observations d'un constat."""
+        return json.dumps(
+            [
+                {
+                    "organe": o.organe.value,
+                    "description": o.description,
+                    "confiance": o.confiance.value,
+                    "empreinte_image": o.empreinte_image,
+                }
+                for o in observations
+            ]
+        )
+
+    @classmethod
+    def _observations_depuis_json(cls, brut: str) -> tuple[Observation, ...]:
+        """Reconstruit les observations d'un constat."""
+        return tuple(
+            Observation(
+                organe=Organe(charge["organe"]),
+                description=charge["description"],
+                confiance=NiveauConfiance(charge["confiance"]),
+                empreinte_image=charge["empreinte_image"],
+            )
+            for charge in json.loads(brut)
+        )
+
+    @classmethod
+    def _ligne_en_constat(cls, ligne: sqlite3.Row) -> Constat:
+        """Reconstruit un constat depuis une ligne SQL."""
+        return Constat(
+            identifiant=ligne["id"],
+            capture=ligne["capture_id"],
+            parcelle=ligne["parcelle_id"],
+            proprietaire=ligne["proprietaire"],
+            observations=cls._observations_depuis_json(ligne["observations_json"]),
+            texte=ligne["texte"],
+            confiance=NiveauConfiance(ligne["confiance"]),
+            cree_le=datetime.fromisoformat(ligne["cree_le"]),
+            etat_revue=EtatRevue(ligne["etat_revue"]),
+            revu_par=ligne["revu_par"],
+            correction=ligne["correction"],
+            facteurs_contexte=tuple(json.loads(ligne["facteurs_json"])),
         )
 
     # -------------------------------------------------------------------- CRUD
@@ -492,3 +562,143 @@ class ParcelleStore:
         if empreintes:
             logger.info("captures_purgees", nombre=len(empreintes))
         return empreintes
+
+    # ---------------------------------------------------------------- constats
+
+    async def enregistrer_constat(self, constat: Constat) -> Constat:
+        """Persiste un constat visuel."""
+        if not self._pret:
+            return constat
+        async with self._verrou:
+            await asyncio.to_thread(self._inserer_constat, constat)
+        return constat
+
+    def _inserer_constat(self, constat: Constat) -> None:
+        """Insère un constat (appelé dans un thread)."""
+        with closing(self._connexion()) as connexion:
+            connexion.execute(
+                "INSERT INTO constats (id, capture_id, parcelle_id, proprietaire, "
+                "observations_json, facteurs_json, texte, confiance, etat_revue, "
+                "revu_par, correction, cree_le) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    constat.identifiant,
+                    constat.capture,
+                    constat.parcelle,
+                    constat.proprietaire,
+                    self._observations_en_json(constat.observations),
+                    json.dumps(list(constat.facteurs_contexte)),
+                    constat.texte,
+                    constat.confiance.value,
+                    constat.etat_revue.value,
+                    constat.revu_par,
+                    constat.correction,
+                    constat.cree_le.isoformat(),
+                ),
+            )
+            connexion.commit()
+
+    async def obtenir_constat(self, identifiant: str, proprietaire: str) -> Constat | None:
+        """Retourne un constat de cet appareil, ou None."""
+        if not self._pret:
+            return None
+        return await asyncio.to_thread(self._lire_constat, identifiant, proprietaire)
+
+    def _lire_constat(self, identifiant: str, proprietaire: str) -> Constat | None:
+        """Lit un constat (appelé dans un thread)."""
+        with closing(self._connexion()) as connexion:
+            ligne = connexion.execute(
+                "SELECT * FROM constats WHERE id = ? AND proprietaire = ?",
+                (identifiant, proprietaire),
+            ).fetchone()
+        return self._ligne_en_constat(ligne) if ligne else None
+
+    async def obtenir_constat_par_capture(
+        self, capture_id: str, proprietaire: str
+    ) -> Constat | None:
+        """Retourne le constat déjà produit pour cette capture, ou None.
+
+        Sert l'idempotence de l'analyse : produire un constat coûte une génération de
+        vision **et** une génération de conseil, soit des dizaines de secondes de CPU.
+        Un second appel sur la même capture relit au lieu de recalculer.
+
+        Args:
+            capture_id: Identifiant de la capture analysée.
+            proprietaire: Identifiant anonyme de l'appareil.
+
+        Returns:
+            Le constat le plus récent de cette capture, ou ``None``.
+        """
+        if not self._pret:
+            return None
+        return await asyncio.to_thread(self._lire_constat_par_capture, capture_id, proprietaire)
+
+    def _lire_constat_par_capture(self, capture_id: str, proprietaire: str) -> Constat | None:
+        """Lit le constat d'une capture (appelé dans un thread)."""
+        with closing(self._connexion()) as connexion:
+            ligne = connexion.execute(
+                "SELECT * FROM constats WHERE capture_id = ? AND proprietaire = ? "
+                "ORDER BY cree_le DESC LIMIT 1",
+                (capture_id, proprietaire),
+            ).fetchone()
+        return self._ligne_en_constat(ligne) if ligne else None
+
+    async def lister_constats_en_attente(self, limite: int = 50) -> list[Constat]:
+        """Liste les constats en attente de revue ANADER, les plus anciens d'abord."""
+        if not self._pret:
+            return []
+        return await asyncio.to_thread(self._lire_en_attente, limite)
+
+    def _lire_en_attente(self, limite: int) -> list[Constat]:
+        """Lit la file de revue (appelé dans un thread)."""
+        with closing(self._connexion()) as connexion:
+            lignes = connexion.execute(
+                "SELECT * FROM constats WHERE etat_revue = ? ORDER BY cree_le ASC LIMIT ?",
+                (EtatRevue.EN_ATTENTE.value, limite),
+            ).fetchall()
+        return [self._ligne_en_constat(ligne) for ligne in lignes]
+
+    async def reviser_constat(
+        self, identifiant: str, etat: EtatRevue, revu_par: str, correction: str
+    ) -> Constat | None:
+        """Enregistre la décision d'un agent ANADER sur un constat.
+
+        Args:
+            identifiant: Identifiant du constat révisé.
+            etat: Décision de l'agent (confirmé, corrigé, rejeté).
+            revu_par: Identifiant de l'agent ayant revu le constat.
+            correction: Texte de correction, vide si le constat est confirmé.
+
+        Returns:
+            Le constat révisé, ou ``None`` s'il n'existe pas.
+        """
+        if not self._pret:
+            return None
+        async with self._verrou:
+            await asyncio.to_thread(self._ecrire_revue, identifiant, etat, revu_par, correction)
+        return await asyncio.to_thread(self._lire_constat_sans_proprietaire, identifiant)
+
+    def _ecrire_revue(
+        self, identifiant: str, etat: EtatRevue, revu_par: str, correction: str
+    ) -> None:
+        """Écrit la décision de revue (appelé dans un thread)."""
+        with closing(self._connexion()) as connexion:
+            connexion.execute(
+                "UPDATE constats SET etat_revue = ?, revu_par = ?, correction = ? WHERE id = ?",
+                (etat.value, revu_par, correction, identifiant),
+            )
+            connexion.commit()
+
+    def _lire_constat_sans_proprietaire(self, identifiant: str) -> Constat | None:
+        """Lit un constat par son seul identifiant — réservé à la revue ANADER.
+
+        Contourne délibérément le cloisonnement par appareil : un agent ANADER doit
+        voir les constats de tous les producteurs. Méthode **privée**, appelée
+        uniquement depuis ``reviser_constat``, elle-même réservée à la console de
+        curation authentifiée. Ne jamais l'exposer sur une route publique.
+        """
+        with closing(self._connexion()) as connexion:
+            ligne = connexion.execute(
+                "SELECT * FROM constats WHERE id = ?", (identifiant,)
+            ).fetchone()
+        return self._ligne_en_constat(ligne) if ligne else None

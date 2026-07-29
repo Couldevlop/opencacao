@@ -16,15 +16,22 @@ from app.api_deps import (
     get_cache_client,
     get_client_ip,
     get_device_id_obligatoire,
+    get_service_constats,
     get_service_parcelles,
 )
 from app.domain.ports import CachePort
+from app.models.constat import ConstatReponse
 from app.models.parcelle import (
     CaptureReponse,
     CaptureRequest,
     CreerParcelleRequest,
     GeometrieRequest,
     ParcelleReponse,
+)
+from app.services.constats import (
+    CaptureIntrouvable,
+    ServiceConstats,
+    VisionIndisponibleErreur,
 )
 from app.services.parcelles import (
     GeometrieInvalide,
@@ -51,6 +58,30 @@ async def _garde_debit(cache: CachePort, client_ip: str) -> None:
     """
     if await cache.hit_rate_limit(client_ip):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=_TROP_DE_REQUETES)
+
+
+# Budget propre à l'analyse visuelle. Une génération de vision suivie d'une génération
+# de conseil occupe le CPU des dizaines de secondes : partager le budget d'un simple
+# GET laisserait une poignée de requêtes saturer l'inférence (OWASP API4). Compté par
+# appareil, et non par IP : derrière un partage de connexion, une IP porte plusieurs
+# producteurs légitimes.
+_CONSTATS_PAR_FENETRE = 3
+_CONSTATS_FENETRE_S = 60
+_TROP_D_ANALYSES = "Trop d'analyses d'images demandées. Patientez une minute avant la suivante."
+
+
+async def _garde_analyse(cache: CachePort, device_id: str) -> None:
+    """Applique le quota d'analyses visuelles, par appareil.
+
+    Args:
+        cache: Port de cache portant les compteurs.
+        device_id: Identifiant anonyme de l'appareil appelant.
+
+    Raises:
+        HTTPException: 429 si le quota d'analyses est dépassé.
+    """
+    if await cache.hit_quota(f"constat:{device_id}", _CONSTATS_PAR_FENETRE, _CONSTATS_FENETRE_S):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=_TROP_D_ANALYSES)
 
 
 @router.post("/parcelles", response_model=ParcelleReponse, status_code=status.HTTP_201_CREATED)
@@ -177,3 +208,37 @@ async def obtenir_capture(
     if capture is None or capture.parcelle != identifiant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Capture inconnue.")
     return CaptureReponse.model_validate(capture, from_attributes=True)
+
+
+@router.post(
+    "/parcelles/{identifiant}/captures/{capture_id}/constat",
+    response_model=ConstatReponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def produire_constat(
+    identifiant: str,
+    capture_id: str,
+    client_ip: str = Depends(get_client_ip),
+    device_id: str = Depends(get_device_id_obligatoire),
+    cache: CachePort = Depends(get_cache_client),
+    service: ServiceConstats = Depends(get_service_constats),
+) -> ConstatReponse:
+    """Produit le constat visuel d'une capture.
+
+    Raises:
+        HTTPException: 404 si la capture est inconnue, 503 si la vision est
+            indisponible (profil CPU ou VLM absent), 429 si le débit est dépassé.
+    """
+    await _garde_debit(cache, client_ip)
+    await _garde_analyse(cache, device_id)
+    try:
+        constat = await service.produire(identifiant, capture_id, device_id)
+    except CaptureIntrouvable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Capture inconnue."
+        ) from exc
+    except VisionIndisponibleErreur as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+    return ConstatReponse.model_validate(constat, from_attributes=True)

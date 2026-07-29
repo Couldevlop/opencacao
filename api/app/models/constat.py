@@ -17,6 +17,8 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
+from app.models.chat import DISCLAIMER
+
 
 class Organe(str, Enum):
     """Partie du cacaoyer identifiée sur une image (étage 1 de la cascade)."""
@@ -99,7 +101,12 @@ class ObservationReponse(BaseModel):
 
 
 class ConstatReponse(BaseModel):
-    """Constat exposé au client."""
+    """Constat exposé au client.
+
+    Le ``disclaimer`` est porté par le schéma, pas par la consigne au modèle : un
+    constat qui oublierait d'orienter vers l'ANADER n'existe pas, puisque la mention
+    est structurelle. Même parti pris que ``ChatResponse``.
+    """
 
     identifiant: str
     capture: str
@@ -110,3 +117,4 @@ class ConstatReponse(BaseModel):
     etat_revue: EtatRevue
     observations: list[ObservationReponse] = Field(default_factory=list)
     facteurs_contexte: list[str] = Field(default_factory=list)
+    disclaimer: str = DISCLAIMER

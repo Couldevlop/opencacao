@@ -57,6 +57,10 @@ class FakeCache:
         self._counts[client_ip] = self._counts.get(client_ip, 0) + 1
         return self._counts[client_ip] > self._rate_limit
 
+    async def hit_quota(self, cle: str, limite: int, fenetre_s: int) -> bool:
+        self._counts[cle] = self._counts.get(cle, 0) + 1
+        return self._counts[cle] > limite
+
     async def ping(self) -> bool:
         return True
 

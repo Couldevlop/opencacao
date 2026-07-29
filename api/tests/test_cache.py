@@ -118,6 +118,27 @@ async def test_rate_limit_declenche_au_dela_du_seuil() -> None:
     assert resultats == [False, False, True]
 
 
+async def test_quota_nomme_pose_sa_propre_fenetre() -> None:
+    """Le quota dédié porte sa clé et sa fenêtre, distinctes du rate-limit général."""
+    fake = FakeRedis()
+    cache = CacheClient(fake, rate_limit_per_min=20)
+    assert await cache.hit_quota("constat:appareil-a", 3, 60) is False
+    assert fake.expirations["quota:constat:appareil-a"] == 60
+
+
+async def test_quota_nomme_declenche_au_dela_du_seuil() -> None:
+    """Un endpoint coûteux se borne bien plus tôt que le rate-limit général."""
+    cache = CacheClient(FakeRedis(), rate_limit_per_min=20)
+    resultats = [await cache.hit_quota("constat:appareil-a", 2, 60) for _ in range(3)]
+    assert resultats == [False, False, True]
+
+
+async def test_quota_nomme_tolere_panne_laisse_passer() -> None:
+    """Fail-open, comme le rate-limit : Redis absent ne doit pas casser le service."""
+    cache = CacheClient(BrokenRedis(), rate_limit_per_min=20)
+    assert await cache.hit_quota("constat:appareil-a", 1, 60) is False
+
+
 async def test_ping_ok() -> None:
     """ping renvoie True quand Redis répond."""
     cache = CacheClient(FakeRedis(), rate_limit_per_min=20)

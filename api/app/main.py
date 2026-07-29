@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app import __version__
+from app.application.constat_visuel import ServiceConstatVisuel
 from app.core.auth_store import AuthStore
 from app.core.cache import CacheClient
 from app.core.config import Settings, get_settings
@@ -24,9 +25,11 @@ from app.core.parcelles_store import ParcelleStore
 from app.core.security import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 from app.core.sessions import SessionStore
 from app.routers import auth, chat, feedback, health, parcelles, sessions
+from app.services.constats import ServiceConstats
 from app.services.inference import InferenceClient
 from app.services.notifier import construire_notifier
 from app.services.parcelles import ServiceParcelles
+from app.services.vision.indisponible import VisionIndisponible
 
 logger = get_logger(__name__)
 
@@ -58,6 +61,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.parcelles_enabled:
         await app.state.parcelles.initialiser()
         app.state.purge_captures_task = _lancer_purge_captures(app)
+
+    # Cascade d'analyse visuelle (V3, chantier C2). La source de vision est branchée
+    # selon le profil matériel par la tâche de câblage ; par défaut elle est neutre et
+    # se déclare indisponible, ce qui fait répondre 503 avec une consigne ANADER
+    # plutôt que d'inventer une description.
+    app.state.vision = VisionIndisponible()
+    app.state.service_constats = ServiceConstats(
+        app.state.parcelles,
+        ServiceConstatVisuel(app.state.vision, app.state.inference),
+        dossier_captures=Path(settings.captures_dir),
+    )
 
     app.state.auth_store = AuthStore.from_settings(settings)
     app.state.parametres = ParametresStore.from_settings(settings)

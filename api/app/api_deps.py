@@ -26,6 +26,7 @@ from app.domain.ports import (
     ParcelleStorePort,
     SessionStorePort,
 )
+from app.services.constats import ServiceConstats
 from app.services.parcelles import ServiceParcelles
 
 
@@ -62,6 +63,11 @@ def get_parcelle_store(request: Request) -> ParcelleStorePort:
 def get_service_parcelles(request: Request) -> ServiceParcelles:
     """Retourne le service métier des parcelles stocké dans l'état de l'application."""
     return request.app.state.service_parcelles
+
+
+def get_service_constats(request: Request) -> ServiceConstats:
+    """Retourne le service du constat visuel stocké dans l'état de l'application."""
+    return request.app.state.service_constats
 
 
 def get_auth_store(request: Request) -> AuthStorePort:
