@@ -394,11 +394,23 @@ class RagRecuperateur:
         self._hybride = hybride
         self._passage_max_chars = passage_max_chars
 
-    async def contexte_pour(self, question: str) -> str | None:
-        """Retourne le bloc de contexte pour la question, ou None si rien de pertinent."""
+    async def passages_pour(self, question: str) -> list[Passage]:
+        """Retourne les passages pertinents, sources comprises.
+
+        Le formatage en bloc de contexte détruit la source de chaque passage ; la
+        provenance d'un livrable en a besoin (C3). On sépare donc la récupération du
+        formatage, sans changer le comportement de l'une ni de l'autre.
+
+        Args:
+            question: Question du producteur, ou sujet d'une section de livrable.
+
+        Returns:
+            Les passages retenus, ``[]`` si le service d'embeddings est absent ou si
+            rien ne passe le seuil.
+        """
         vecteurs = await self._embeddings.embed([question])
         if not vecteurs:
-            return None
+            return []
         if self._hybride:
             viviers = self._index.vivier_hybride(vecteurs[0], question, self._candidats)
         else:
@@ -411,12 +423,18 @@ class RagRecuperateur:
             seuil_dense=self._seuil,
             seuil_lexical=self._seuil_lexical,
         )
+        if passages:
+            logger.info(
+                "rag_contexte",
+                passages=len(passages),
+                meilleur=round(passages[0].score, 3),
+                viviers=len(viviers),
+            )
+        return passages
+
+    async def contexte_pour(self, question: str) -> str | None:
+        """Retourne le bloc de contexte pour la question, ou None si rien de pertinent."""
+        passages = await self.passages_pour(question)
         if not passages:
             return None
-        logger.info(
-            "rag_contexte",
-            passages=len(passages),
-            meilleur=round(passages[0].score, 3),
-            viviers=len(viviers),
-        )
         return formater_contexte(passages, self._passage_max_chars or None)
