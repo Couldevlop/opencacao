@@ -392,3 +392,31 @@ async def test_un_sujet_d_analyse_legitime_n_est_pas_refuse(sujet):
     """
     document = await _moteur().rediger(_gabarit(), sujet, "appareil-a")
     assert sujet in document.titre
+
+
+@pytest.mark.parametrize(
+    "sujet,corps",
+    [
+        (
+            "la transformation locale du cacao en chocolat",
+            "La transformation locale represente une part faible de la valeur ajoutee.",
+        ),
+        (
+            "la filiere cacao dans la direction regionale de Korhogo",
+            "La ceinture cacaoyere s arrete au sud de cette zone, ou la filiere est marginale.",
+        ),
+    ],
+)
+async def test_une_etude_sur_la_transformation_ou_le_nord_produit_du_contenu(sujet, corps):
+    """Exigence V3 : ces livrables doivent EXISTER, pas sortir en lacunes.
+
+    Le sujet doit passer le garde-fou d entree, ET le corps produit doit passer celui
+    de sortie. Verifier seulement le premier laisserait une etude entierement vide.
+    """
+    inference = FausseInference(reponse=corps)
+    moteur = MoteurRedaction(inference, {"rag": FauxCollecteur(_affirmation())}, _contexte())
+    document = await moteur.rediger(_gabarit(), sujet, "appareil-a")
+
+    assert document.sections[0].lacune is False
+    assert document.sections[0].corps == corps
+    assert sujet in document.titre

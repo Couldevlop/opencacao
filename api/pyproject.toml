@@ -19,6 +19,12 @@ dependencies = [
     # Géolocalisation IP -> pays EN LOCAL (base GeoLite2), pour l'analytique des
     # visites. L'IP n'est jamais stockée : on ne garde que le code pays.
     "maxminddb==2.*",
+    # Rendu des livrables V3 (chantier C3) en Word, Excel et PowerPoint. Trois
+    # bibliothèques pures Python, sans dépendance système. Dépendances hors spec §2.1
+    # autorisées par Waopron le 28/07/2026 (demande explicite de ces trois formats).
+    "python-docx==1.1.*",
+    "openpyxl==3.1.*",
+    "python-pptx==1.0.*",
 ]
 
 [project.optional-dependencies]
