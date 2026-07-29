@@ -30,6 +30,8 @@ class Settings(BaseSettings):
         captures_dir: Dossier des images de capture (volume /data).
         captures_retention_jours: Rétention des captures avant purge, en jours.
         profil_materiel: Capacités disponibles ("gpu" ou "cpu").
+        rapports_enabled: Active l'atelier de livrables (V3, C3).
+        rapports_db_path: Chemin du fichier SQLite des rapports (volume /data).
         vision_enabled: Active l'analyse visuelle des captures (V3, C2).
         vision_url: URL interne du service de vision (jamais exposé publiquement).
         vision_modele: Nom du modèle de vision servi.
@@ -190,6 +192,12 @@ class Settings(BaseSettings):
     # (``inference_backend`` s'en charge). Défaut ``cpu`` : une erreur de
     # configuration dégrade le service, elle ne le casse pas.
     profil_materiel: Literal["gpu", "cpu"] = "cpu"
+
+    # --- Atelier de livrables (V3, chantier C3) ---
+    # OFF par défaut : les routes ne sont montées que si le drapeau est levé, comme
+    # pour les parcelles — on vérifie d'abord que le schéma se crée bien sur /data.
+    rapports_enabled: bool = False
+    rapports_db_path: str = "/data/rapports.db"
 
     # --- Analyse visuelle (V3, chantier C2) ---
     # OFF par défaut : sans VLM joignable, l'API le dit (503 + consigne ANADER),
