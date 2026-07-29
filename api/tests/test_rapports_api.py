@@ -241,3 +241,22 @@ def test_le_flux_consomme_le_quota_de_generation(client: TestClient):
 
     assert cache.compteurs["rapport:appareil-a"] == 4
     assert statuts[3] == 429
+
+
+def test_un_gabarit_malforme_donne_un_503_lisible(client: TestClient):
+    """Montage ConfigMap rate : erreur d exploitation, pas faute du client — et
+    surtout pas une trace."""
+    from app.api_deps import get_service_rapports
+    from app.services.gabarits import GabaritInvalide
+
+    class _ServiceCasse:
+        async def creer(self, gabarit: str, sujet: str, demandeur: str):
+            raise GabaritInvalide("sections mal formées")
+
+    client.app.dependency_overrides[get_service_rapports] = _ServiceCasse
+    try:
+        reponse = _creer(client)
+    finally:
+        client.app.dependency_overrides.clear()
+    assert reponse.status_code == 503
+    assert "indisponible" in reponse.json()["detail"]

@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 from datetime import UTC, datetime
 
+import pytest
 from pptx import Presentation
 
 from app.models.constat import NiveauConfiance
@@ -117,3 +118,19 @@ def test_un_caractere_de_controle_ne_corrompt_pas_la_presentation():
 
 def test_un_document_d_une_seule_section_reste_valide():
     assert len(_presentation(rendu_pptx(_document(sections=1))).slides) == 3
+
+
+@pytest.mark.parametrize("hostile", ["\ud800", "\udfff", "\ufffe", "\uffff"])
+def test_un_caractere_refuse_par_xml_ne_casse_pas_la_presentation(hostile):
+    assert rendu_pptx(_document(corps=f"corps {hostile} suite"))[:2] == b"PK"
+
+
+def test_le_manifeste_ne_porte_jamais_l_identifiant_du_demandeur():
+    assert "appareil-a" not in " ".join(_textes(rendu_pptx(_document())))
+
+
+def test_les_metadonnees_du_fichier_sont_celles_du_projet():
+    """python-pptx laisse « Steve Canny » dans lastModifiedBy par defaut."""
+    proprietes = _presentation(rendu_pptx(_document())).core_properties
+    assert "OpenCacao" in proprietes.author
+    assert "Canny" not in (proprietes.last_modified_by or "")

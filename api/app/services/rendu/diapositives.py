@@ -12,12 +12,15 @@ rien, et un fichier illisible se découvre au pire moment.
 from __future__ import annotations
 
 import io
-import re
 
 from pptx import Presentation
 from pptx.util import Pt
 
 from app.models.rapport import Document
+from app.services.rendu.ooxml import texte_xml_sur
+
+# Auteur inscrit dans les métadonnées du fichier livré.
+_AUTEUR = "OpenCacao — OpenLab Consulting"
 
 # Dispositions du thème par défaut de python-pptx.
 _DISPOSITION_TITRE = 0
@@ -30,12 +33,10 @@ CORPS_MAX = 600
 # Corps de texte lisible depuis le fond d'une salle.
 _TAILLE_CORPS = 16
 
-_CONTROLES = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
-
 
 def _propre(texte: str) -> str:
-    """Retire les caractères de contrôle interdits par OOXML."""
-    return _CONTROLES.sub("", texte)
+    """Retire ce que XML 1.0 refuse (contrôles, surrogates isolés, non-caractères)."""
+    return texte_xml_sur(texte)
 
 
 def _tronquer(texte: str) -> str:
@@ -63,6 +64,13 @@ def rendu_pptx(document: Document) -> bytes:
         Les octets du fichier ``.pptx``.
     """
     presentation = Presentation()
+    proprietes = presentation.core_properties
+    proprietes.author = _AUTEUR
+    # python-pptx laisse « Steve Canny » — le nom de son auteur — dans ce champ.
+    proprietes.last_modified_by = _AUTEUR
+    proprietes.title = _propre(document.titre)
+    proprietes.created = document.manifeste.genere_le
+    proprietes.modified = document.manifeste.genere_le
 
     ouverture = presentation.slides.add_slide(presentation.slide_layouts[_DISPOSITION_TITRE])
     ouverture.shapes.title.text = _propre(document.titre)

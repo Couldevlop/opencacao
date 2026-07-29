@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 from datetime import UTC, datetime
 
+import pytest
 from docx import Document as DocxDocument
 
 from app.models.constat import NiveauConfiance
@@ -116,3 +117,30 @@ def test_un_caractere_de_controle_ne_corrompt_pas_le_fichier():
     textes = _textes(octets)
     assert any("Texte" in texte for texte in textes)
     assert "\x00" not in "".join(textes)
+
+
+def test_le_manifeste_ne_porte_jamais_l_identifiant_du_demandeur():
+    """Ce test doit ECHOUER si l identifiant est ecrit en plus de l empreinte."""
+    assert "appareil-a" not in " ".join(_textes(rendu_word(_document())))
+
+
+@pytest.mark.parametrize("hostile", ["\ud800", "\udfff", "\ufffe", "\uffff"])
+def test_un_caractere_refuse_par_xml_ne_casse_pas_le_fichier(hostile):
+    """Sans purge, l echec remonte en ValueError et le routeur rend « format inconnu »."""
+    document = _document()
+    sale = Document(
+        titre=f"Titre {hostile}",
+        sous_titre=document.sous_titre,
+        sections=(Section(titre=f"Une {hostile}", corps=f"corps {hostile} suite"),),
+        tableaux=(Tableau(titre="T", entetes=("A",), lignes=((f"x{hostile}y",),)),),
+        manifeste=document.manifeste,
+    )
+    assert rendu_word(sale)[:2] == b"PK"
+
+
+def test_les_metadonnees_du_fichier_sont_celles_du_projet():
+    """Sans cela, le livrable part chez le bailleur signe « python-docx »."""
+    proprietes = DocxDocument(io.BytesIO(rendu_word(_document()))).core_properties
+    assert "OpenCacao" in proprietes.author
+    assert proprietes.title == "Étude de filière — le cacao"
+    assert "python-docx" not in (proprietes.comments or "")

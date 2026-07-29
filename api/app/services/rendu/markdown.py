@@ -6,8 +6,29 @@ manquera partout ailleurs.
 
 from __future__ import annotations
 
+import re
+
 from app.application.provenance import tableau_de_provenance
 from app.models.rapport import Document, Tableau
+from app.services.rendu.ooxml import texte_xml_sur
+
+# Une clôture de bloc de code émise par le modèle avalerait TOUT le reste du
+# document — annexe de provenance et manifeste compris, c'est-à-dire précisément ce
+# qui rend le livrable défendable devant un auditeur. On désamorce par un caractère
+# invisible plutôt que de retirer le texte du modèle.
+_CLOTURE = re.compile(r"(?m)^(\s{0,3})(`{3,}|~{3,})")
+
+
+def _corps(texte: str) -> str:
+    """Désamorce une clôture de bloc de code, qui avalerait la suite du document.
+
+    Args:
+        texte: Corps de section, issu du modèle.
+
+    Returns:
+        Le texte, ses clôtures rendues inoffensives.
+    """
+    return _CLOTURE.sub(lambda trouve: f"{trouve.group(1)}​{trouve.group(2)}", texte)
 
 
 def _cellule(valeur: str) -> str:
@@ -53,7 +74,7 @@ def rendu_markdown(document: Document) -> str:
     Returns:
         Le document complet, mention et manifeste compris.
     """
-    lignes = [f"# {document.titre}", ""]
+    lignes = [f"# {texte_xml_sur(document.titre)}", ""]
     if document.sous_titre:
         lignes += [f"*{document.sous_titre}*", ""]
     if document.mention:
@@ -64,7 +85,7 @@ def rendu_markdown(document: Document) -> str:
         lignes += [f"## {section.titre}", ""]
         if section.lacune:
             lignes += ["*Section en lacune — aucune source mobilisable.*", ""]
-        lignes += [section.corps, ""]
+        lignes += [_corps(texte_xml_sur(section.corps)), ""]
 
     for tableau in document.tableaux:
         lignes += _tableau(tableau)

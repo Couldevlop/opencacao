@@ -134,3 +134,49 @@ def test_un_document_sans_tableau_reste_valide():
     rendu = rendu_markdown(_document(tableaux=()))
     assert "# Étude de filière" in rendu
     assert "Provenance des affirmations" in rendu
+
+
+def test_une_cloture_de_bloc_de_code_n_avale_pas_la_suite_du_document():
+    """C est la garantie meme du livrable qui etait annulee.
+
+    Un « ``` » non ferme, artefact banal d une generation, mettait l annexe de
+    provenance ET le manifeste a l interieur d un bloc de code — c est-a-dire
+    exactement ce qui rend le document defendable devant un auditeur.
+    """
+    document = _document()
+    piege = Document(
+        titre=document.titre,
+        sous_titre=document.sous_titre,
+        sections=(
+            Section(titre="Une", corps="Voici un exemple :\n```python", affirmations=()),
+            Section(titre="Deux", corps="Suite.", affirmations=()),
+        ),
+        tableaux=(),
+        manifeste=document.manifeste,
+    )
+    rendu = rendu_markdown(piege)
+    # Une cloture n ouvre un bloc que si elle DEBUTE une ligne : le desamorcage pose
+    # un caractere invisible devant, ce qui la rend inoffensive sans retirer le texte
+    # du modele. On verifie la propriete structurelle, pas la presence des backticks.
+    assert not any(ligne.lstrip().startswith(("```", "~~~")) for ligne in rendu.splitlines())
+    assert "Provenance des affirmations" in rendu
+    assert "manifeste de génération" in rendu
+    assert "```python" in rendu  # le texte du modele est conserve, pas censure
+
+
+def test_le_manifeste_ne_porte_jamais_l_identifiant_du_demandeur():
+    """Ce test doit ECHOUER si l identifiant est ecrit en plus de l empreinte."""
+    assert "appareil-a" not in rendu_markdown(_document())
+
+
+def test_un_surrogate_isole_n_empeche_pas_l_encodage():
+    """json.loads accepte un surrogate isole : c est la voie de la sortie modele."""
+    document = _document()
+    sale = Document(
+        titre=document.titre,
+        sous_titre=document.sous_titre,
+        sections=(Section(titre="Une", corps="texte \ud800 suite", affirmations=()),),
+        tableaux=(),
+        manifeste=document.manifeste,
+    )
+    rendu_markdown(sale).encode("utf-8")

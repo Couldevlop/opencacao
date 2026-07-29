@@ -121,23 +121,98 @@ def test_deux_tableaux_de_meme_titre_ne_se_percutent_pas():
     assert len(feuilles) == 2
 
 
-@pytest.mark.parametrize("valeur", ["=1+1", "+1", "-1", "@SUM(A1)", "\t=cmd", "\r=cmd"])
-def test_une_valeur_ressemblant_a_une_formule_est_neutralisee(valeur):
+def _xml_des_feuilles(octets: bytes) -> bytes:
+    """Concatene le XML brut de toutes les feuilles du classeur.
+
+    On verifie la garantie LA OU elle se joue : dans le fichier livre. Une assertion
+    sur l objet openpyxl survivrait a un refactor qui casserait le rendu.
+    """
+    import zipfile
+
+    with zipfile.ZipFile(io.BytesIO(octets)) as archive:
+        return b"".join(
+            archive.read(nom) for nom in archive.namelist() if nom.startswith("xl/worksheets/")
+        )
+
+
+_CHARGES_FORMULE = [
+    "=1+1",
+    "+1",
+    "-1",
+    "@SUM(A1)",
+    "\t=cmd",
+    "\r=cmd",
+    "\x0b=1+1",
+    "\x00=1+1",
+    '=HYPERLINK("http://x","c")',
+    "=cmd|'/c calc'!A1",
+]
+
+
+@pytest.mark.parametrize("valeur", _CHARGES_FORMULE)
+def test_une_valeur_ressemblant_a_une_formule_n_est_jamais_une_formule(valeur):
     """CWE-1236 : openpyxl n echappe rien, et le contenu vient du modele.
 
     A l ouverture, une cellule commencant par = + - @ est evaluee comme une formule.
-    Un livrable transmis a un bailleur ne doit pas executer quoi que ce soit chez lui.
+    Un livrable transmis a un bailleur ne doit rien executer chez lui. Les charges
+    prefixees d un caractere de controle verifient l ORDRE des operations : la purge
+    doit preceder le test d amorce, sans quoi la valeur redevient une formule.
     """
     piege = _document(tableaux=(Tableau(titre="T", entetes=("A",), lignes=((valeur,),)),))
-    cellule = _classeur(rendu_excel(piege))["T"].cell(row=2, column=1)
-    assert cellule.data_type == "s"
-    assert not str(cellule.value).startswith(("=", "+", "-", "@"))
+    octets = rendu_excel(piege)
+    assert b"<f>" not in _xml_des_feuilles(octets)
+    assert _classeur(octets)["T"].cell(row=2, column=1).data_type == "s"
+
+
+@pytest.mark.parametrize("valeur", _CHARGES_FORMULE)
+def test_une_formule_dans_une_affirmation_est_neutralisee(valeur):
+    """SEUL chemin reellement atteignable : le moteur passe toujours tableaux=()."""
+    document = _document()
+    piege = Document(
+        titre="T",
+        sous_titre="S",
+        sections=(
+            Section(
+                titre="Contexte",
+                corps="Prose.",
+                affirmations=(
+                    Affirmation(
+                        texte=valeur,
+                        source=valeur,
+                        date="",
+                        methode="rag",
+                        confiance=NiveauConfiance.MOYENNE,
+                    ),
+                ),
+            ),
+        ),
+        tableaux=(),
+        manifeste=document.manifeste,
+    )
+    assert b"<f>" not in _xml_des_feuilles(rendu_excel(piege))
+
+
+def test_une_formule_dans_un_entete_est_neutralisee():
+    piege = _document(tableaux=(Tableau(titre="T", entetes=("=1+1",), lignes=(("x",),)),))
+    assert b"<f>" not in _xml_des_feuilles(rendu_excel(piege))
 
 
 def test_une_valeur_ordinaire_n_est_pas_alteree():
     """La neutralisation ne doit pas defigurer les donnees legitimes."""
     normal = _document(tableaux=(Tableau(titre="T", entetes=("A",), lignes=(("1 500 FCFA",),)),))
     assert _classeur(rendu_excel(normal))["T"].cell(row=2, column=1).value == "1 500 FCFA"
+
+
+def test_une_valeur_negative_legitime_n_est_pas_defiguree():
+    """L apostrophe est une marque de STYLE.
+
+    Ecrite dans le texte, elle arriverait visible chez l auditeur — et toute variation
+    de prix negative, ou tout tiret de remplissage, serait abime.
+    """
+    normal = _document(tableaux=(Tableau(titre="T", entetes=("A",), lignes=(("-120 FCFA",),)),))
+    cellule = _classeur(rendu_excel(normal))["T"].cell(row=2, column=1)
+    assert cellule.value == "-120 FCFA"
+    assert cellule.quotePrefix is True
 
 
 def test_un_caractere_de_controle_ne_corrompt_pas_le_classeur():
@@ -147,9 +222,42 @@ def test_un_caractere_de_controle_ne_corrompt_pas_le_classeur():
     assert "\x00" not in str(valeur)
 
 
-def test_un_document_sans_tableau_garde_provenance_et_manifeste():
+def test_un_document_sans_tableau_garde_l_entete_la_provenance_et_le_manifeste():
     classeur = _classeur(rendu_excel(_document(tableaux=())))
-    assert classeur.sheetnames == ["Provenance", "Manifeste"]
+    assert classeur.sheetnames == ["Document", "Provenance", "Manifeste"]
+
+
+def test_la_mention_d5_figure_dans_le_classeur():
+    """« Non contournable » ne peut pas vouloir dire « sauf en Excel » — et le classeur
+    est precisement le format que l auditeur ouvrira."""
+    document = _document()
+    avec_mention = Document(
+        titre=document.titre,
+        sous_titre=document.sous_titre,
+        sections=document.sections,
+        tableaux=(),
+        manifeste=document.manifeste,
+        mention="Document préparatoire. Il ne constitue pas une déclaration de conformité.",
+    )
+    feuille = _classeur(rendu_excel(avec_mention))["Document"]
+    paires = {
+        feuille.cell(row=index, column=1).value: feuille.cell(row=index, column=2).value
+        for index in range(1, feuille.max_row + 1)
+    }
+    assert "préparatoire" in paires["Mention"]
+    assert paires["Titre"] == document.titre
+
+
+def test_une_feuille_nommee_provenance_ne_supplante_pas_l_annexe():
+    """Sinon la vraie feuille d audit est reléguee en « Provenance1 », en silence."""
+    piege = _document(tableaux=(Tableau(titre="Provenance", entetes=("A",), lignes=(("x",),)),))
+    classeur = _classeur(rendu_excel(piege))
+    assert classeur["Provenance"].cell(row=1, column=1).value == "Section"
+
+
+def test_un_titre_de_feuille_avec_caractere_de_controle_ne_leve_pas():
+    piege = _document(tableaux=(Tableau(titre="Prix\x00 2026", entetes=("A",), lignes=(("x",),)),))
+    assert _classeur(rendu_excel(piege)).sheetnames
 
 
 def test_au_dela_du_dedoublonnage_le_nom_de_repli_prend_la_main():
@@ -161,4 +269,10 @@ def test_au_dela_du_dedoublonnage_le_nom_de_repli_prend_la_main():
     )
     noms = _classeur(rendu_excel(homonymes)).sheetnames
     assert len(noms) == len(set(noms))  # aucune collision
-    assert len(noms) == 102  # 100 tableaux + Provenance + Manifeste
+    assert len(noms) == 103  # 100 tableaux + Document + Provenance + Manifeste
+
+
+def test_les_metadonnees_du_classeur_sont_celles_du_projet():
+    proprietes = _classeur(rendu_excel(_document())).properties
+    assert "OpenCacao" in proprietes.creator
+    assert "openpyxl" not in proprietes.creator
