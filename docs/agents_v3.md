@@ -201,6 +201,36 @@ Le router POST passe par `get_dialogue_service` (sessions V2), qui appelle `cons
 
 ---
 
+## 10. La parcelle — `models/parcelle.py`, `core/parcelles_store.py`, `services/parcelles.py`
+
+*Chantier C1, livré le 28/07/2026. Spec : `docs/superpowers/specs/2026-07-28-v3-operationnelle-design.md` §5-6.*
+
+### Le concept
+
+Jusqu'ici, l'objet central de la plateforme était **la question**. Un producteur demandait, un agent répondait, et le fil s'effaçait. La V3 introduit un objet qui **persiste et s'enrichit** : la **parcelle**. Elle a une géométrie, une superficie, une direction régionale de rattachement, un historique de captures. Les agents cessent de répondre dans le vide : ils répondront *à propos de quelque chose*.
+
+C'est le basculement de l'assistant vers l'instrument. Un chat n'a pas de mémoire du terrain ; une parcelle en est la mémoire.
+
+### Les décisions
+
+**Quatre modalités de capture, deux contrats serveur.** Photos, vidéo, parcours GPS, parcours + vidéo. L'API n'expose pourtant que **deux** contrats — un jeu d'images géoréférencées, une trace de points — et le navigateur fait le reste : il échantillonne la vidéo (1 image / 2 s, plafond 12) et redimensionne à 1024 px **avant** tout envoi. Ce n'est pas une optimisation, c'est une contrainte de terrain : téléverser une vidéo de 100 Mo sur un réseau mobile ivoirien échouera, et une photo de téléphone moderne fait 4000 px.
+
+**L'étage 0 de la cascade de vision ne mobilise aucun modèle.** Netteté (variance du laplacien) et exposition sont calculées par le navigateur, qui possède déjà les pixels décodés ; le serveur valide **les en-têtes** PNG/JPEG en Python pur — ce qui donne les dimensions réelles *et* sert de contrôle de sécurité, puisque ces octets partent sur le disque. Une image refusée reçoit un **conseil de reprise en français simple** (« approchez-vous de la cabosse », « tournez-vous dos au soleil »), jamais un code d'erreur.
+
+**Le nom de fichier dérive du SHA-256 du contenu**, jamais d'une donnée du client : aucune traversée de chemin n'est possible, et deux téléversements identiques ne consomment qu'un fichier. Une image refusée est **quand même consignée** en métadonnées avec son motif — le producteur doit voir ce qui a été rejeté — mais ses octets ne touchent pas le disque.
+
+**La superficie est calculée, jamais saisie**, sur coordonnées projetées localement (`services/geometrie.py`) — jamais en degrés bruts : un degré de longitude ne vaut pas un degré de latitude. Une géométrie est refusée, avec un motif lisible, si un point sort de la Côte d'Ivoire, si le tracé se coupe lui-même, ou si la superficie sort de l'intervalle 0,1–50 ha.
+
+**Persistance sur le moule de `core/sessions.py`** : `sqlite3` de la bibliothèque standard, migrations par `PRAGMA user_version`, `asyncio.to_thread`, mode WAL, et surtout **initialisation tolérante aux pannes** — si `/data` est inaccessible, l'API démarre quand même, les parcelles sont indisponibles et le chat continue. Les images ne sont pas en base : seule leur empreinte l'est.
+
+**Cloisonnement plus strict que celui des sessions.** Les conversations V2 tolèrent un `X-Device-Id` absent et retombent dans un espace « hérité » partagé — compatibilité assumée. Les parcelles l'**exigent** (400 sinon) : une parcelle porte le polygone GPS exact de la plantation d'un producteur, et cet espace partagé serait une fuite. Les parcelles sont neuves, aucun client hérité à ménager.
+
+### Modèle mental
+
+> Le chat répond à une question et l'oublie. La parcelle, elle, **accumule**. C'est sur elle que se grefferont l'analyse visuelle (C2) et le dossier de traçabilité (C3) — deux chantiers qui n'auraient aucun objet sans elle.
+
+---
+
 ## Recette — Ajouter un agent en 4 étapes (appliquée à l'agent EUDR)
 
 C'est l'aboutissement du socle : l'extensibilité prouvée. L'**agent n°5 — Réglementation EUDR** a été ajouté en suivant exactement cette recette :
