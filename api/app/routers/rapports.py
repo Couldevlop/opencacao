@@ -20,7 +20,7 @@ from app.api_deps import get_cache_client, get_device_id_obligatoire, get_servic
 from app.core.rapports_store import Rapport
 from app.domain.ports import CachePort
 from app.models.rapport import RapportReponse
-from app.services.gabarits import GabaritInconnu, lister_gabarits
+from app.services.gabarits import GabaritInconnu, GabaritInvalide, lister_gabarits
 from app.services.rapports import RapportIntrouvable, ServiceRapports
 
 router = APIRouter(prefix="/v1", tags=["rapports"])
@@ -93,6 +93,13 @@ async def creer_rapport(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Gabarit inconnu."
         ) from exc
+    except GabaritInvalide as exc:
+        # Gabarit livré mais malformé (montage ConfigMap raté) : c'est une erreur
+        # d'exploitation, pas une faute du client — mais elle mérite mieux qu'une trace.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Ce gabarit est momentanément indisponible.",
+        ) from exc
     return _en_reponse(rapport)
 
 
@@ -126,6 +133,7 @@ async def obtenir_rapport(
 async def flux_rapport(
     identifiant: str,
     device_id: str = Depends(get_device_id_obligatoire),
+    cache: CachePort = Depends(get_cache_client),
     service: ServiceRapports = Depends(get_service_rapports),
 ) -> StreamingResponse:
     """Diffuse la rédaction, section par section.
@@ -134,8 +142,13 @@ async def flux_rapport(
     doit streamer un premier octet vite, sans quoi l'edge coupe (524 de juin).
 
     Raises:
-        HTTPException: 404 si le job est inconnu ou d'un autre appareil.
+        HTTPException: 404 si le job est inconnu ou d'un autre appareil, 429 si le
+            quota de génération est dépassé.
     """
+    # Le budget suit le COÛT RÉEL. Créer un job ne coûte rien ; en exécuter un coûte
+    # une génération par section. Garder seulement le POST laissait un client créer
+    # trois jobs puis relancer leurs flux en boucle, sans jamais toucher au quota.
+    await _garde_generation(cache, device_id)
     if await service.obtenir(identifiant, device_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rapport inconnu.")
 

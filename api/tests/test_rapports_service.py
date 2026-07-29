@@ -244,3 +244,81 @@ async def test_le_nom_de_fichier_ne_reprend_pas_le_sujet(store: RapportStore):
     _, nom, _ = await service.exporter(rapport.identifiant, DEVICE, "md")
     assert '"' not in nom
     assert "rm -rf" not in nom
+
+
+async def test_rejouer_un_rapport_termine_ne_le_detruit_pas(store: RapportStore):
+    """Un GET ne doit RIEN detruire.
+
+    Mesure avant correctif : rejouer un job TERMINE alors que l inference etait tombee
+    le faisait basculer en ECHOUE, et l export renvoyait 404 — alors que le markdown
+    etait intact en base. Un rechargement d onglet suffisait.
+    """
+    service = _service(store)
+    rapport = await service.creer("bulletin_regional", "Daloa", DEVICE)
+    async for _ in service.executer(rapport.identifiant, DEVICE):
+        pass
+
+    casse = _service(store, InferenceCassee())
+    evenements = [evenement async for evenement in casse.executer(rapport.identifiant, DEVICE)]
+
+    assert evenements[-1]["type"] == "error"
+    relu = await store.obtenir(rapport.identifiant, DEVICE)
+    assert relu is not None
+    assert relu.etat is EtatRapport.TERMINE  # intact
+    assert relu.markdown.startswith("# Bulletin régional")
+
+
+async def test_deux_flux_simultanes_ne_generent_qu_une_fois(store: RapportStore):
+    """Deux clients sur le meme lien : un seul genere, l autre est econduit."""
+    import asyncio
+
+    service = _service(store)
+    rapport = await service.creer("bulletin_regional", "Daloa", DEVICE)
+
+    async def _consommer() -> list[dict]:
+        return [evenement async for evenement in service.executer(rapport.identifiant, DEVICE)]
+
+    premier, second = await asyncio.gather(_consommer(), _consommer())
+    finaux = [e["type"] for flux in (premier, second) for e in flux if e["type"] == "final"]
+    assert len(finaux) == 1
+
+
+async def test_un_rapport_deja_termine_n_est_pas_regenere(store: RapportStore):
+    service = _service(store)
+    rapport = await service.creer("bulletin_regional", "Daloa", DEVICE)
+    async for _ in service.executer(rapport.identifiant, DEVICE):
+        pass
+    evenements = [evenement async for evenement in service.executer(rapport.identifiant, DEVICE)]
+    assert evenements[-1]["type"] == "error"
+    assert "déjà" in evenements[-1]["message"]
+
+
+async def test_la_memoire_des_documents_est_bornee(store: RapportStore):
+    """Sans borne, le pod (1 Gio, partage avec l index RAG) finit par tomber."""
+    from app.services.rapports import MAX_DOCUMENTS_EN_MEMOIRE
+
+    service = _service(store)
+    for indice in range(MAX_DOCUMENTS_EN_MEMOIRE + 5):
+        rapport = await service.creer("bulletin_regional", f"zone {indice}", DEVICE)
+        async for _ in service.executer(rapport.identifiant, DEVICE):
+            pass
+    assert len(service._documents) == MAX_DOCUMENTS_EN_MEMOIRE
+
+
+async def test_un_document_evince_se_comporte_comme_apres_un_redemarrage(store: RapportStore):
+    """L eviction rend l export binaire indisponible — cas deja gere et deja teste."""
+    from app.services.rapports import MAX_DOCUMENTS_EN_MEMOIRE
+
+    service = _service(store)
+    premier = await service.creer("bulletin_regional", "premier", DEVICE)
+    async for _ in service.executer(premier.identifiant, DEVICE):
+        pass
+    for indice in range(MAX_DOCUMENTS_EN_MEMOIRE):
+        suivant = await service.creer("bulletin_regional", f"zone {indice}", DEVICE)
+        async for _ in service.executer(suivant.identifiant, DEVICE):
+            pass
+
+    octets, _, _ = await service.exporter(premier.identifiant, DEVICE, "md")
+    assert octets.startswith(b"# ")  # le Markdown reste servi depuis la base
+    with pytest.raises(RapportIntrouvable):
+        await service.exporter(premier.identifiant, DEVICE, "docx")

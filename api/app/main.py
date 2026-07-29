@@ -61,6 +61,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         espace_libre_min_octets=settings.captures_espace_libre_min_octets,
     )
     app.state.purge_captures_task = None
+    app.state.purge_rapports_task = None
     if settings.parcelles_enabled:
         await app.state.parcelles.initialiser()
         app.state.purge_captures_task = _lancer_purge_captures(app)
@@ -86,6 +87,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Un job « en cours » après un redémarrage est orphelin : personne ne le
         # reprendra, et le laisser ainsi ferait attendre un client indéfiniment.
         await app.state.rapports.reprendre_orphelins()
+        app.state.purge_rapports_task = _lancer_purge_rapports(app, settings)
     app.state.service_rapports = _construire_service_rapports(app, settings)
 
     app.state.auth_store = AuthStore.from_settings(settings)
@@ -121,6 +123,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             app.state.purge_task.cancel()
         if app.state.purge_captures_task is not None:
             app.state.purge_captures_task.cancel()
+        if app.state.purge_rapports_task is not None:
+            app.state.purge_rapports_task.cancel()
         await app.state.inference.close()
         await app.state.cache.close()
         if app.state.embeddings is not None:
@@ -215,6 +219,36 @@ def _lancer_purge_captures(app: FastAPI) -> asyncio.Task[None]:
                     logger.info("captures_purgees_disque", nombre=nombre)
             except Exception as exc:  # noqa: BLE001 - la purge ne doit jamais tuer l'app
                 logger.warning("purge_captures_echouee", error=str(exc))
+
+    return asyncio.create_task(boucle())
+
+
+def _lancer_purge_rapports(app: FastAPI, settings: Settings) -> asyncio.Task[None] | None:
+    """Lance la purge périodique des rapports expirés (moule des captures).
+
+    Un livrable se télécharge le jour même. Le conserver indéfiniment ferait croître
+    ``/data`` — partagé avec l'index RAG, les sessions et les captures — jusqu'à une
+    saturation qui toucherait TOUTE l'API, pas seulement les rapports.
+
+    Args:
+        app: Application dont l'état porte le dépôt des rapports.
+        settings: Paramètres applicatifs (rétention).
+
+    Returns:
+        La tâche asyncio créée, ou None si la rétention est désactivée.
+    """
+    if settings.rapports_retention_jours <= 0:
+        return None
+
+    async def boucle() -> None:
+        while True:
+            try:
+                nombre = await app.state.rapports.purger_anciens(settings.rapports_retention_jours)
+                if nombre:
+                    logger.info("rapports_purges", nombre=nombre)
+            except Exception as exc:  # noqa: BLE001 - la purge ne doit jamais tuer l'app
+                logger.warning("purge_rapports_echouee", error=type(exc).__name__)
+            await asyncio.sleep(24 * 3600)
 
     return asyncio.create_task(boucle())
 

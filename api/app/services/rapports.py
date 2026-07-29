@@ -14,6 +14,7 @@ identifiant — un manifeste doit désigner le document qu'il accompagne.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable
 
 from app.application.redaction import MoteurRedaction, SujetRefuse
@@ -47,6 +48,15 @@ _RENDUS_BINAIRES = {"docx": rendu_word, "xlsx": rendu_excel, "pptx": rendu_pptx}
 # d'inférence ou un motif de garde-fou n'apprend rien d'utile au demandeur.
 _ECHEC = "La génération n'a pas abouti."
 
+# Ce document est déjà pris : rechargement d'onglet, ou deux clients sur le même lien.
+_DEJA_PRIS = "Ce document est déjà en cours de génération ou terminé."
+
+# Documents gardés en mémoire pour l'export binaire. Un document au plafond de gabarit
+# pèse ~400 Kio : sans borne, le pod (1 Gio, partagé avec l'index RAG) finit par tomber.
+# L'éviction rend l'export binaire indisponible exactement comme après un redémarrage —
+# un cas déjà géré, et déjà testé.
+MAX_DOCUMENTS_EN_MEMOIRE = 32
+
 
 class RapportIntrouvable(Exception):
     """Le rapport visé n'existe pas, n'appartient pas au demandeur, ou n'est pas prêt."""
@@ -64,7 +74,7 @@ class ServiceRapports:
         """
         self._store = store
         self._moteur = moteur
-        self._documents: dict[str, Document] = {}
+        self._documents: OrderedDict[str, Document] = OrderedDict()
 
     async def creer(self, gabarit: str, sujet: str, demandeur: str) -> Rapport:
         """Crée un job de rapport.
@@ -111,6 +121,14 @@ class ServiceRapports:
         # Premier octet immédiat : c'est ce qui évite la coupure edge (524 de juin).
         yield {"type": "progress", "message": "Préparation du document…"}
 
+        # Le flux est un GET : un rechargement d'onglet le rappelle. Sans cette
+        # prise atomique, la génération repartait — et si l'inférence était tombée
+        # entre-temps, un livrable DÉJÀ RENDU basculait en échec. Un GET ne détruit rien.
+        if not await self._store.demarrer(identifiant, demandeur):
+            logger.info("rapport_deja_pris", rapport=identifiant)
+            yield {"type": "error", "message": _DEJA_PRIS}
+            return
+
         evenements: list[dict] = []
 
         async def _progression(faites: int, total: int, titre: str) -> None:
@@ -137,10 +155,23 @@ class ServiceRapports:
             yield evenement
 
         markdown = rendu_markdown(document)
-        self._documents[identifiant] = document
+        self._retenir(identifiant, document)
         await self._store.terminer(identifiant, markdown)
         logger.info("rapport_termine", rapport=identifiant, sections=len(document.sections))
         yield {"type": "final", "titre": document.titre, "sections": len(document.sections)}
+
+    def _retenir(self, identifiant: str, document: Document) -> None:
+        """Garde le document pour l'export binaire, sans laisser la mémoire croître.
+
+        Args:
+            identifiant: Identifiant du job.
+            document: Document produit.
+        """
+        self._documents[identifiant] = document
+        self._documents.move_to_end(identifiant)
+        while len(self._documents) > MAX_DOCUMENTS_EN_MEMOIRE:
+            evince, _ = self._documents.popitem(last=False)
+            logger.info("rapport_document_evince", rapport=evince)
 
     async def exporter(
         self, identifiant: str, demandeur: str, format_demande: str

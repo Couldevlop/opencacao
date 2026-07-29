@@ -211,3 +211,33 @@ def test_le_parcours_complet_aboutit_a_un_fichier_telechargeable(client: TestCli
     assert "bulletin_regional-" in export.headers["content-disposition"]
     assert binaire.status_code == 200
     assert binaire.content.startswith(b"PK")
+
+
+def test_le_flux_consomme_le_quota_de_generation(client: TestClient):
+    """C est le FLUX qui coute, pas le POST : sans cela, 3 jobs suffisaient a boucler."""
+    from app.api_deps import get_cache_client
+
+    class _CacheCompteur:
+        def __init__(self) -> None:
+            self.compteurs: dict[str, int] = {}
+
+        async def hit_rate_limit(self, client_ip: str) -> bool:
+            return False
+
+        async def hit_quota(self, cle: str, limite: int, fenetre_s: int) -> bool:
+            self.compteurs[cle] = self.compteurs.get(cle, 0) + 1
+            return self.compteurs[cle] > limite
+
+    cache = _CacheCompteur()
+    identifiant = _creer(client).json()["identifiant"]
+    client.app.dependency_overrides[get_cache_client] = lambda: cache
+    try:
+        statuts = [
+            client.get(f"/v1/rapports/{identifiant}/stream", headers=ENTETES).status_code
+            for _ in range(4)
+        ]
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert cache.compteurs["rapport:appareil-a"] == 4
+    assert statuts[3] == 429

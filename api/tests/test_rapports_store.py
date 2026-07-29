@@ -172,3 +172,60 @@ async def test_une_migration_qui_echoue_ne_laisse_pas_le_schema_a_moitie(tmp_pat
     assert "debris" not in tables
     assert "rapports" in tables
     assert version == len(RapportStore._MIGRATIONS)
+
+
+async def test_demarrer_ne_reussit_qu_une_fois(store: RapportStore):
+    """Transition atomique : c est elle qui empeche deux flux de generer le meme job."""
+    cree = await store.creer("etude_filiere", "le cacao", DEVICE)
+    assert await store.demarrer(cree.identifiant, DEVICE) is True
+    assert await store.demarrer(cree.identifiant, DEVICE) is False
+
+
+async def test_demarrer_refuse_un_job_deja_termine(store: RapportStore):
+    """Un GET ne doit pas pouvoir rejouer — donc detruire — un livrable rendu."""
+    cree = await store.creer("etude_filiere", "le cacao", DEVICE)
+    await store.terminer(cree.identifiant, "# Étude")
+    assert await store.demarrer(cree.identifiant, DEVICE) is False
+
+
+async def test_demarrer_cloisonne_par_appareil(store: RapportStore):
+    cree = await store.creer("etude_filiere", "le cacao", DEVICE)
+    assert await store.demarrer(cree.identifiant, "appareil-b") is False
+
+
+async def test_demarrer_sur_un_depot_non_pret_rend_faux(tmp_path: Path):
+    depot = RapportStore(tmp_path / "jamais.db")
+    assert await depot.demarrer("x", DEVICE) is False
+
+
+async def test_purger_supprime_les_rapports_anciens(store: RapportStore):
+    """Un livrable se telecharge le jour meme : le garder indefiniment sature /data."""
+    from datetime import UTC, datetime, timedelta
+
+    recent = await store.creer("etude_filiere", "recent", DEVICE)
+    ancien = await store.creer("etude_filiere", "ancien", DEVICE)
+    await store.terminer(ancien.identifiant, "# Ancien")
+    vieille_date = (datetime.now(UTC) - timedelta(days=40)).isoformat()
+    await store._forcer_date(ancien.identifiant, vieille_date)
+
+    assert await store.purger_anciens(30) == 1
+    assert await store.obtenir(ancien.identifiant, DEVICE) is None
+    assert await store.obtenir(recent.identifiant, DEVICE) is not None
+
+
+async def test_purger_avec_une_retention_nulle_ne_supprime_rien(store: RapportStore):
+    """0 = conservation indefinie, comme pour les sessions."""
+    await store.creer("etude_filiere", "le cacao", DEVICE)
+    assert await store.purger_anciens(0) == 0
+
+
+async def test_purger_sur_un_depot_non_pret_rend_zero(tmp_path: Path):
+    depot = RapportStore(tmp_path / "jamais.db")
+    assert await depot.purger_anciens(30) == 0
+
+
+async def test_une_colonne_inconnue_est_refusee(store: RapportStore):
+    """Invariant de module : la clause SET est construite par f-string."""
+    cree = await store.creer("etude_filiere", "le cacao", DEVICE)
+    with pytest.raises(ValueError):
+        await store._majorer(cree.identifiant, {"etat = 'x' --": "boum"})

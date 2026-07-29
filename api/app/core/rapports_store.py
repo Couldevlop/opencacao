@@ -18,7 +18,7 @@ import asyncio
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from uuid import uuid4
@@ -27,6 +27,12 @@ from app.core.config import Settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Colonnes qu'une mise à jour partielle peut écrire. La clause ``SET`` est construite
+# par interpolation de ces noms : la liste est ce qui rend l'interpolation sûre.
+_COLONNES_MODIFIABLES = frozenset(
+    {"etat", "sections_faites", "sections_total", "markdown", "erreur", "maj_le"}
+)
 
 
 class EtatRapport(str, Enum):
@@ -272,10 +278,18 @@ class RapportStore:
         Args:
             identifiant: Identifiant du job.
             colonnes: Colonnes à écrire, dont les NOMS sont des littéraux du module.
+
+        Raises:
+            ValueError: Si un nom de colonne sort de la liste connue. La clause ``SET``
+                est construite par interpolation : cet invariant est ce qui rend
+                l'interpolation sûre, autant le faire tenir par le code.
         """
         if not self._pret:
             return None
-        colonnes["maj_le"] = datetime.now(UTC).isoformat()
+        # Copie : muter le dict de l'appelant est une surprise inutile.
+        colonnes = {**colonnes, "maj_le": datetime.now(UTC).isoformat()}
+        if not set(colonnes) <= _COLONNES_MODIFIABLES:
+            raise ValueError("colonne inconnue")
         assignations = ", ".join(f"{cle} = ?" for cle in colonnes)
         valeurs = (*colonnes.values(), identifiant)
         async with self._verrou:
@@ -314,6 +328,88 @@ class RapportStore:
         return await self._majorer(
             identifiant, {"etat": EtatRapport.ECHOUE.value, "erreur": erreur}
         )
+
+    async def demarrer(self, identifiant: str, demandeur: str) -> bool:
+        """Prend le job en exécution, si personne ne l'a déjà fait.
+
+        **C'est ici que se joue l'idempotence.** Le flux est un ``GET`` : un
+        rechargement d'onglet, ou deux clients sur le même lien, le rappellent. Sans
+        cette transition atomique, la génération repartait — et si l'inférence était
+        tombée entre-temps, un livrable déjà rendu au client basculait en échec. Un
+        ``GET`` ne doit rien détruire.
+
+        Args:
+            identifiant: Identifiant du job.
+            demandeur: Identifiant anonyme du demandeur.
+
+        Returns:
+            ``True`` si ce flux a pris le job, ``False`` s'il était déjà en cours,
+            terminé, échoué, inconnu ou d'un autre appareil.
+        """
+        if not self._pret:
+            return False
+        async with self._verrou:
+            return await asyncio.to_thread(self._demarrer, identifiant, demandeur)
+
+    def _demarrer(self, identifiant: str, demandeur: str) -> bool:
+        """Bascule EN_ATTENTE vers EN_COURS (appelé dans un thread)."""
+        with closing(self._connexion()) as connexion:
+            curseur = connexion.execute(
+                "UPDATE rapports SET etat = ?, maj_le = ? "
+                "WHERE id = ? AND demandeur = ? AND etat = ?",
+                (
+                    EtatRapport.EN_COURS.value,
+                    datetime.now(UTC).isoformat(),
+                    identifiant,
+                    demandeur,
+                    EtatRapport.EN_ATTENTE.value,
+                ),
+            )
+            connexion.commit()
+            return curseur.rowcount == 1
+
+    async def purger_anciens(self, jours: int) -> int:
+        """Supprime les rapports antérieurs à la rétention (RGPD, et volume /data).
+
+        Un livrable se télécharge le jour même. Le conserver indéfiniment ferait
+        croître ``/data`` — partagé avec l'index RAG, les sessions et les captures —
+        jusqu'à une saturation qui toucherait **toute** l'API, pas seulement les
+        rapports. Même moule que la purge des sessions et des captures.
+
+        Args:
+            jours: Rétention en jours. ``0`` désactive la purge.
+
+        Returns:
+            Le nombre de rapports supprimés.
+        """
+        if not self._pret or jours <= 0:
+            return 0
+        limite = (datetime.now(UTC) - timedelta(days=jours)).isoformat()
+        async with self._verrou:
+            return await asyncio.to_thread(self._purger, limite)
+
+    def _purger(self, limite: str) -> int:
+        """Supprime les rapports antérieurs à la limite (appelé dans un thread)."""
+        with closing(self._connexion()) as connexion:
+            curseur = connexion.execute("DELETE FROM rapports WHERE cree_le < ?", (limite,))
+            connexion.commit()
+            nombre = curseur.rowcount
+        if nombre:
+            logger.info("rapports_purges", nombre=nombre)
+        return nombre
+
+    async def _forcer_date(self, identifiant: str, horodatage: str) -> None:
+        """Force la date de création d'un job — réservé aux tests de rétention."""
+        async with self._verrou:
+            await asyncio.to_thread(self._ecrire_date, identifiant, horodatage)
+
+    def _ecrire_date(self, identifiant: str, horodatage: str) -> None:
+        """Écrit la date de création (appelé dans un thread)."""
+        with closing(self._connexion()) as connexion:
+            connexion.execute(
+                "UPDATE rapports SET cree_le = ? WHERE id = ?", (horodatage, identifiant)
+            )
+            connexion.commit()
 
     async def reprendre_orphelins(self) -> int:
         """Marque échoués les jobs restés inachevés après un redémarrage.
