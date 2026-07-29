@@ -52,6 +52,18 @@ Le projet accompagne le livre blanc *« IA souveraine pour la Côte d'Ivoire »*
 | llama-cpp-python | ≥ 0.3 | Service d'inférence (CPU, fallback GGUF) |
 | Docker | 24+ | Conteneurisation |
 | Docker Compose | v2 | Orchestration |
+| pypdf | 5.x | Extraction de texte des PDF téléversés (console de curation) |
+| maxminddb | 2.x | Géolocalisation IP → pays **en local** (GeoLite2) ; l'IP n'est jamais stockée |
+| python-docx | 1.1.x | Rendu Word des livrables (V3, chantier C3) |
+| openpyxl | 3.1.x | Rendu Excel des livrables : annexes de données et tableau de provenance |
+| python-pptx | 1.0.x | Rendu PowerPoint des livrables (restitution institutionnelle) |
+
+Les cinq dernières sont **pures Python, sans dépendance système**. Elles ont été
+ajoutées selon la règle de la §13 (« pas de framework non listé dans la section 2.1 »,
+donc toute addition exige la validation explicite de Waopron Coulibaly) : `pypdf` et
+`maxminddb` pour la console de curation et l'analytique, puis `python-docx`, `openpyxl`
+et `python-pptx` autorisées le 28/07/2026 par la demande explicite des formats Word,
+PPTX et Excel. Chacune porte sa justification en commentaire dans `api/pyproject.toml`.
 
 ### 2.2 Modèle de base
 
