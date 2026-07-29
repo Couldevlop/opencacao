@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import string
 from dataclasses import dataclass, replace
+from functools import lru_cache
 from pathlib import Path
 
 import yaml
@@ -85,11 +86,34 @@ class Gabarit:
     sections: tuple[SectionGabarit, ...]
 
 
+@lru_cache(maxsize=1)
 def lister_gabarits() -> tuple[str, ...]:
-    """Retourne les identifiants des gabarits disponibles, triés."""
+    """Retourne les identifiants des gabarits disponibles, triés.
+
+    Mis en cache comme les autres référentiels du projet (``postprocess.py``,
+    ``contacts.py``, ``localites.py``) : le dossier est livré avec l'image et ne
+    change pas en cours d'exécution, alors que cette fonction est appelée à chaque
+    requête de création de rapport.
+
+    Le filtre sur ``*.yaml`` est **insensible à la casse en dev (Windows) et sensible
+    en prod (Linux)** : on normalise donc explicitement, sans quoi un gabarit nommé
+    ``BULLETIN.YAML`` passerait les tests et disparaîtrait en production.
+    """
     if not _DOSSIER.is_dir():
         return ()
-    return tuple(sorted(chemin.stem for chemin in _DOSSIER.glob("*.yaml")))
+    return tuple(
+        sorted(
+            chemin.stem
+            for chemin in _DOSSIER.iterdir()
+            if chemin.is_file() and chemin.suffix == ".yaml"
+        )
+    )
+
+
+def vider_cache() -> None:
+    """Oublie les gabarits mis en cache (rechargement à chaud, et tests)."""
+    lister_gabarits.cache_clear()
+    charger_gabarit.cache_clear()
 
 
 def _texte(valeur: object, ou: str) -> str:
@@ -206,6 +230,7 @@ def lire_gabarit(charge: object) -> Gabarit:
     )
 
 
+@lru_cache(maxsize=16)
 def charger_gabarit(identifiant: str) -> Gabarit:
     """Charge un gabarit depuis ``app/data/gabarits``.
 
@@ -224,7 +249,13 @@ def charger_gabarit(identifiant: str) -> Gabarit:
     # une donnée client, on choisit dans une liste blanche calculée depuis le disque.
     if identifiant not in lister_gabarits():
         raise GabaritInconnu(identifiant)
-    chemin = _DOSSIER / f"{identifiant}.yaml"
+    # Confinement après résolution : un lien symbolique déposé dans le dossier serait
+    # suivi hors de celui-ci. On ne rejette pas les liens en bloc — un montage
+    # ConfigMap en est fait, et il pointe DANS le dossier — on exige seulement que la
+    # cible y reste.
+    chemin = (_DOSSIER / f"{identifiant}.yaml").resolve()
+    if not chemin.is_file() or _DOSSIER.resolve() not in chemin.parents:
+        raise GabaritInconnu(identifiant)
     try:
         charge = yaml.safe_load(chemin.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as erreur:

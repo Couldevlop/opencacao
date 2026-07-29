@@ -11,7 +11,16 @@ from app.services.gabarits import (
     charger_gabarit,
     lire_gabarit,
     lister_gabarits,
+    vider_cache,
 )
+
+
+@pytest.fixture(autouse=True)
+def cache_neuf():
+    """Les gabarits sont mis en cache : un test qui deplace le dossier doit l oublier."""
+    vider_cache()
+    yield
+    vider_cache()
 
 
 def test_les_trois_gabarits_de_la_spec_sont_livres():
@@ -173,6 +182,43 @@ def test_une_charge_mal_typee_donne_une_erreur_metier(charge):
     """Sans cela, une faute de frappe dans un YAML remonte en 500 avec trace."""
     with pytest.raises(GabaritInvalide):
         lire_gabarit(charge)
+
+
+def test_un_lien_pointant_hors_du_dossier_est_refuse(monkeypatch, tmp_path):
+    """Un lien depose dans le dossier serait suivi hors de celui-ci : on confine."""
+    from app.services import gabarits as module
+
+    dossier = tmp_path / "gabarits"
+    dossier.mkdir()
+    dehors = tmp_path / "hors_dossier.yaml"
+    dehors.write_text("id: x\ntitre: T\nsections:\n  - titre: S\n", encoding="utf-8")
+    try:
+        (dossier / "evade.yaml").symlink_to(dehors)
+    except (OSError, NotImplementedError):  # lien symbolique interdit sur ce poste
+        pytest.skip("creation de lien symbolique non autorisee")
+
+    monkeypatch.setattr(module, "_DOSSIER", dossier)
+    module.vider_cache()
+    assert "evade" in module.lister_gabarits()
+    with pytest.raises(GabaritInconnu):
+        module.charger_gabarit("evade")
+
+
+def test_un_lien_restant_dans_le_dossier_est_accepte(monkeypatch, tmp_path):
+    """Un montage ConfigMap est fait de liens internes : ne pas les rejeter en bloc."""
+    from app.services import gabarits as module
+
+    dossier = tmp_path / "gabarits"
+    dossier.mkdir()
+    (dossier / "reel.yaml").write_text("id: x\ntitre: T\nsections:\n  - titre: S\n", "utf-8")
+    try:
+        (dossier / "alias.yaml").symlink_to(dossier / "reel.yaml")
+    except (OSError, NotImplementedError):
+        pytest.skip("creation de lien symbolique non autorisee")
+
+    monkeypatch.setattr(module, "_DOSSIER", dossier)
+    module.vider_cache()
+    assert module.charger_gabarit("alias").titre == "T"
 
 
 def test_un_yaml_illisible_donne_une_erreur_metier(monkeypatch, tmp_path):
