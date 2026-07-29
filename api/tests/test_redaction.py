@@ -185,7 +185,9 @@ async def test_le_registre_analytique_est_impose_au_modele():
 
 async def test_une_section_qui_prescrit_un_dosage_est_refusee():
     """Un document d etude ne prescrit pas plus qu un conseil au producteur."""
-    inference = FausseInference(reponse="Appliquer 2 l/ha de bouillie sur les cabosses.")
+    inference = FausseInference(
+        reponse="Appliquer 2 l/ha de produit phytosanitaire sur les cabosses."
+    )
     moteur = MoteurRedaction(inference, {"rag": FauxCollecteur(_affirmation())}, _contexte())
     document = await moteur.rediger(_gabarit(), "le cacao", "appareil-a")
     section = document.sections[0]
@@ -281,7 +283,7 @@ async def test_un_sujet_hostile_ne_casse_pas_la_substitution(sujet):
 @pytest.mark.parametrize(
     "sujet",
     [
-        "la lutte anti-mirides a 2 l/ha de bouillie bordelaise",
+        "un traitement phytosanitaire a 2 l/ha sur les cabosses",
         "la culture de l anacarde en Cote d Ivoire",
         "la production de manioc",
     ],
@@ -368,7 +370,7 @@ async def test_une_source_vide_de_sens_est_ecartee_par_le_moteur():
 
 async def test_les_affirmations_d_une_section_refusee_ne_vont_pas_au_manifeste():
     """Une section ecartee par le garde-fou ne doit pas laisser ses sources derriere."""
-    inference = FausseInference(reponse="Appliquer 2 l/ha de bouillie.")
+    inference = FausseInference(reponse="Appliquer 2 l/ha de produit phytosanitaire.")
     moteur = MoteurRedaction(inference, {"rag": FauxCollecteur(_affirmation())}, _contexte())
     document = await moteur.rediger(_gabarit(), "le cacao", "appareil-a")
     assert document.manifeste.documents_rag == ()
@@ -420,3 +422,41 @@ async def test_une_etude_sur_la_transformation_ou_le_nord_produit_du_contenu(suj
     assert document.sections[0].lacune is False
     assert document.sections[0].corps == corps
     assert sujet in document.titre
+
+
+@pytest.mark.parametrize(
+    "corps",
+    [
+        "Le rendement moyen atteint 800 kg/ha sur les parcelles suivies.",
+        "La densite recommandee avoisine 1 100 plants/ha selon les sources.",
+        "Les apports organiques observes se situent autour de 5 kg/ha.",
+    ],
+)
+async def test_une_etude_peut_citer_un_rendement_chiffre(corps):
+    """Un rendement en kg/ha est le chiffre le plus banal d une analyse agronomique.
+
+    Le garde-fou de sortie a ete ecrit pour le CONSEIL, ou un faux positif ne coute
+    qu une redirection. Applique tel quel a un livrable, il transformait en lacune
+    toute section citant un rendement — c est-a-dire l essentiel d une etude.
+    """
+    inference = FausseInference(reponse=corps)
+    moteur = MoteurRedaction(inference, {"rag": FauxCollecteur(_affirmation())}, _contexte())
+    document = await moteur.rediger(_gabarit(), "le cacao", "appareil-a")
+    assert document.sections[0].lacune is False
+    assert document.sections[0].corps == corps
+
+
+@pytest.mark.parametrize(
+    "corps",
+    [
+        "Appliquer 2 l/ha de produit phytosanitaire sur les cabosses.",
+        "Diluer 50 ml dans 10 litres avant pulverisation du produit phytosanitaire.",
+    ],
+)
+async def test_une_prescription_chiffree_reste_refusee(corps):
+    """Ce qui est interdit, c est la PRESCRIPTION — pas le chiffre."""
+    inference = FausseInference(reponse=corps)
+    moteur = MoteurRedaction(inference, {"rag": FauxCollecteur(_affirmation())}, _contexte())
+    document = await moteur.rediger(_gabarit(), "le cacao", "appareil-a")
+    assert document.sections[0].lacune is True
+    assert corps not in document.sections[0].corps

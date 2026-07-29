@@ -15,10 +15,14 @@ l'étude possible.**
 lacune qui dit ce qui manque. Générer sans contexte est exactement la fabrication que
 tout le reste du projet combat (v0.6.48).
 
-**Un seul garde-fou de sortie, et c'est un choix.** ``verifier_reponse`` s'applique :
-un document d'étude ne prescrit pas plus qu'un conseil au producteur, les dosages
-restent non négociables. ``contient_diagnostic`` **ne s'applique pas** (arbitrage
-Waopron du 29/07/2026) : ce verrou est celui du constat visuel — nommer une atteinte
+**Un seul garde-fou de sortie, et c'est un choix.** ``contient_prescription``
+s'applique : un document d'étude ne prescrit pas plus qu'un conseil au producteur.
+Mais il refuse la *prescription*, pas le *chiffre* — un rendement en kg/ha est la
+donnée la plus courante d'une analyse agronomique, et le garde-fou du conseil, qui se
+déclenche sur tout taux de dose, aurait vidé chaque section de sa substance.
+
+``contient_diagnostic`` **ne s'applique pas** (arbitrage Waopron du 29/07/2026) : ce
+verrou est celui du constat visuel — nommer une atteinte
 à partir d'une *photo*, sans jeu de données pour mesurer le rappel. Une étude qui
 rapporte, sources à l'appui, qu'une maladie affecte la filière énonce un fait
 documenté ; l'interdire rendrait toute section agronomique impossible à écrire.
@@ -232,7 +236,11 @@ class MoteurRedaction:
             temperature=TEMPERATURE_SECTION,
             max_tokens=MAX_TOKENS_SECTION,
         )
-        if guardrails.verifier_reponse(corps) is not None:
+        # On refuse la PRESCRIPTION, pas le chiffre. « verifier_reponse » se
+        # declenche sur tout taux de dose, kg/ha compris : juste pour un conseil au
+        # producteur, ou un faux positif ne coute qu'une redirection ; ruineux pour
+        # une etude, ou un rendement est la donnee la plus courante qui soit.
+        if guardrails.contient_prescription(corps):
             logger.warning("section_sortie_refusee", section=section.titre)
             return Section(titre=section.titre, corps=_LACUNE_REFUSEE, affirmations=(), lacune=True)
         return Section(titre=section.titre, corps=corps.strip(), affirmations=affirmations)
