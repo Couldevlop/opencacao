@@ -1,0 +1,27 @@
+# Dossier de parcelle — destiné aux coopératives et exportateurs.
+# D5 : ce dossier N'EST PAS une déclaration de conformité EUDR. La mention est portée
+# en tête, de façon non contournable, et un test vérifie qu'elle y est.
+id: dossier_parcelle
+titre: "Dossier préparatoire de parcelle — {sujet}"
+sous_titre: "Éléments de traçabilité"
+public: "coopératives, exportateurs"
+mention: >-
+  Document préparatoire. Il rassemble des éléments de traçabilité et ne constitue ni
+  une déclaration de conformité, ni une attestation réglementaire. Tout maillon
+  manquant de la chaîne est signalé comme tel.
+sections:
+  - titre: "Identification de la parcelle"
+    sources: [parcelle]
+    consigne: "Rapporter la localisation déclarée, la superficie calculée et la direction régionale de rattachement."
+  - titre: "Chaîne d'approvisionnement"
+    sources: [parcelle]
+    consigne: "Exposer les maillons connus, du producteur à l'exportateur, et déclarer explicitement ceux qui manquent."
+  - titre: "Constat satellite"
+    sources: [satellite]
+    consigne: "Rapporter les alertes de déforestation datées pour la parcelle, sans conclure à une conformité."
+  - titre: "Constats visuels"
+    sources: [constats]
+    consigne: "Rapporter les constats visuels enregistrés pour la parcelle et leur état de revue."
+  - titre: "Pièces à fournir"
+    sources: []
+    consigne: "Énoncer ce qu'il faudrait produire pour compléter le dossier."

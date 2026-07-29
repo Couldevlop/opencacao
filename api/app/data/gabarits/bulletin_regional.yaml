@@ -1,0 +1,17 @@
+# Bulletin régional — une page, périodique, destiné aux producteurs et à l'ANADER.
+# Seul gabarit dont le public est le producteur : le registre y reste direct.
+id: bulletin_regional
+titre: "Bulletin régional — {sujet}"
+sous_titre: "Météo, prix et alertes de la zone"
+public: "producteurs, ANADER"
+mention: ""
+sections:
+  - titre: "Conditions météorologiques"
+    sources: [meteo]
+    consigne: "Rapporter les conditions relevées pour la zone sur la période."
+  - titre: "Prix du cacao"
+    sources: [prix]
+    consigne: "Rapporter le prix bord-champ officiel en vigueur."
+  - titre: "Alertes de la zone"
+    sources: [satellite]
+    consigne: "Rapporter les alertes de déforestation relevées sur la zone."

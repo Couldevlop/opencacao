@@ -1,0 +1,28 @@
+# Étude de filière — 5 à 15 pages, destinée aux institutions, bailleurs, chercheurs.
+# Registre ANALYTIQUE : troisième personne, aucune adresse au lecteur, aucun renvoi
+# ANADER. Le corpus est en registre « conseil au producteur » ; c'est le prompt
+# système de rédaction qui redresse le registre, pas le gabarit.
+id: etude_filiere
+titre: "Étude de filière — {sujet}"
+sous_titre: "Cacao ivoirien — analyse documentée"
+public: "institutions, bailleurs, chercheurs"
+mention: ""
+sections:
+  - titre: "Contexte de la filière"
+    sources: [rag]
+    consigne: "Situer le sujet dans la filière cacao ivoirienne : place économique, acteurs, chiffres de cadrage."
+  - titre: "État des connaissances agronomiques"
+    sources: [rag]
+    consigne: "Exposer ce que les sources agronomiques établissent sur le sujet, sans recommandation de traitement."
+  - titre: "Conditions climatiques observées"
+    sources: [meteo, rag]
+    consigne: "Décrire les conditions climatiques relevées et leur incidence documentée sur le sujet."
+  - titre: "Marché et prix"
+    sources: [prix, rag]
+    consigne: "Rapporter le prix officiel en vigueur et son évolution, sans projection ni prévision."
+  - titre: "Pression sur le couvert forestier"
+    sources: [satellite, rag]
+    consigne: "Rapporter les alertes de déforestation disponibles pour la zone, sans conclure à une conformité réglementaire."
+  - titre: "Limites de la présente étude"
+    sources: []
+    consigne: "Énoncer ce que les sources mobilisées ne permettent pas d'établir."
