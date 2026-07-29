@@ -654,3 +654,51 @@ def verifier_reponse(reponse: str) -> Refus | None:
     ):
         return Refus(CategorieRefus.PHYTOSANITAIRE)
     return None
+
+
+# Noms de maladies et de ravageurs du cacaoyer. Les prononcer, c'est diagnostiquer —
+# ce que D3 interdit tant que le verrou de rappel par classe n'est pas franchi
+# (spec §7.5). On décrit un symptôme observé ; on ne nomme jamais sa cause.
+_NOMS_MALADIES = (
+    "pourriture brune",
+    "phytophthora",
+    "swollen shoot",
+    "swollen-shoot",
+    "cssv",
+    "mirides",
+    "miride",
+    "capsides",
+    "anthracnose",
+    "fusariose",
+    "armillaire",
+    "moniliose",
+    "balai de sorciere",
+)
+
+# Un constat ne nomme pas davantage un PRODUIT qu'une maladie (D3) : « appliquez un
+# fongicide » est déjà une prescription, même sans chiffre. Le vocabulaire phyto
+# existant sert de source unique — ``verifier_reponse`` couvre le versant chiffré.
+_TERMES_INTERDITS_CONSTAT = _NOMS_MALADIES + _TERMES_PHYTO
+
+_RE_INTERDITS_CONSTAT = _compiler(_TERMES_INTERDITS_CONSTAT)
+
+
+def contient_diagnostic(texte: str) -> str | None:
+    """Retourne le terme interdit trouvé dans le texte, ou None.
+
+    Garde-fou de sortie propre au constat visuel (D3, arbitrage du 28/07/2026) : le
+    système décrit ce qu'il observe, ne nomme jamais la cause et ne prescrit aucun
+    produit. Un constat qui franchit l'un de ces interdits est rejeté, pas corrigé —
+    on ne réécrit pas une sortie compromise.
+
+    Args:
+        texte: Texte du constat à vérifier.
+
+    Returns:
+        Le terme fautif (pour la journalisation), ou ``None`` si le texte est sain.
+    """
+    normalise = _normaliser(texte)
+    for terme, motif in zip(_TERMES_INTERDITS_CONSTAT, _RE_INTERDITS_CONSTAT, strict=True):
+        if motif.search(normalise):
+            return terme
+    return None
