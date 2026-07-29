@@ -118,3 +118,14 @@ class ConstatReponse(BaseModel):
     observations: list[ObservationReponse] = Field(default_factory=list)
     facteurs_contexte: list[str] = Field(default_factory=list)
     disclaimer: str = DISCLAIMER
+
+
+class ConstatRevuReponse(ConstatReponse):
+    """Constat vu par la console de revue ANADER, décision de l'agent comprise.
+
+    Schéma distinct du précédent, et non un élargissement : l'identifiant de l'agent
+    qui a tranché n'a rien à faire dans la réponse rendue au producteur.
+    """
+
+    revu_par: str = ""
+    correction: str = ""

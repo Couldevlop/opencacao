@@ -55,3 +55,52 @@ class LimiteurConnexion:
     def succes(self, ip: str) -> None:
         """Réinitialise le compteur d'échecs de l'IP (connexion réussie)."""
         self._echecs.pop(ip, None)
+
+
+class LimiteurDebit:
+    """Limite le nombre de requêtes par IP sur une fenêtre glissante.
+
+    Complète :class:`LimiteurConnexion`, qui ne compte que les *échecs* de login. Une
+    session valide n'est pas un blanc-seing : les routes de revue lisent les constats
+    de tous les producteurs et l'export parcourt le dépôt entier. Un cookie volé, ou
+    un onglet qui boucle, ne doit pas pouvoir marteler la console.
+
+    Compteur en mémoire, comme l'anti-brute-force : la console est mono-réplica
+    (Deployment ``Recreate``), aucune dépendance à Redis n'est justifiée.
+    """
+
+    def __init__(
+        self,
+        max_requetes: int = 60,
+        fenetre_s: float = 60.0,
+        horloge: Callable[[], float] = time.monotonic,
+    ) -> None:
+        """Initialise le limiteur.
+
+        Args:
+            max_requetes: Nombre de requêtes autorisées par fenêtre et par IP.
+            fenetre_s: Durée (s) de la fenêtre glissante.
+            horloge: Source de temps monotone (injectable pour les tests).
+        """
+        self._max = max_requetes
+        self._fenetre = fenetre_s
+        self._horloge = horloge
+        self._appels: dict[str, list[float]] = {}
+
+    def autorise(self, ip: str) -> bool:
+        """Enregistre une requête et indique si elle reste sous la limite.
+
+        Args:
+            ip: Adresse IP cliente.
+
+        Returns:
+            ``True`` si la requête est autorisée, ``False`` si la limite est atteinte.
+        """
+        maintenant = self._horloge()
+        recents = [t for t in self._appels.get(ip, []) if maintenant - t < self._fenetre]
+        if len(recents) >= self._max:
+            self._appels[ip] = recents
+            return False
+        recents.append(maintenant)
+        self._appels[ip] = recents
+        return True

@@ -271,6 +271,10 @@ class ParcelleStorePort(Protocol):
         """Liste les constats en attente de revue ANADER, les plus anciens d'abord."""
         ...
 
+    async def lister_constats_revus(self, limite: int = ..., decalage: int = ...) -> list[Constat]:
+        """Liste une page de constats déjà revus, les plus anciens d'abord."""
+        ...
+
     async def reviser_constat(
         self, identifiant: str, etat: EtatRevue, revu_par: str, correction: str
     ) -> Constat | None:

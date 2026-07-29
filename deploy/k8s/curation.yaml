@@ -1,10 +1,15 @@
-# Console de curation — INTERNE uniquement (jamais dans l'Ingress).
-# Réutilise l'image de l'API mais lance une app ASGI distincte
-# (app.curation.main:app). Accès par : kubectl -n opencacao port-forward
-#   svc/curation 8090:8090  ->  http://localhost:8090
+# Console de curation — application ASGI distincte (app.curation.main:app), servie
+# depuis l'image de l'API. ATTENTION : elle EST publiée sur le web, via
+# curation-ingress.yaml (curation.opencacao.openlabconsulting.com). Le seul rempart
+# est donc l'authentification applicative, pas l'isolation réseau.
 #
-# Auth HTTP Basic optionnelle : définir CURATION_PASSWORD (via un Secret) pour
-# l'activer. Par défaut, la protection repose sur l'accès cluster (port-forward).
+# Auth par formulaire + cookie de session signé, et fail-closed : un
+# CURATION_PASSWORD vide ne l'ouvre PAS, il rend la console indisponible (503). Le
+# mode ouvert (port-forward, poste de dev) se demande explicitement, avec
+# CURATION_AUTH_DISABLED=1 — jamais dans ce manifeste.
+#
+# Accès de secours sans Ingress :
+#   kubectl -n opencacao port-forward svc/curation 8090:8090 -> http://localhost:8090
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -52,6 +57,15 @@ spec:
             - name: CURATION_PASSWORD
               valueFrom:
                 secretKeyRef: { name: curation-auth, key: CURATION_PASSWORD }
+            # File de revue ANADER des constats (V3, étage 6). La console lit le MÊME
+            # fichier SQLite que l'API et respecte le même drapeau : ces deux valeurs
+            # doivent rester alignées sur api-config, sinon la file se présente vide.
+            - name: PARCELLES_ENABLED
+              valueFrom:
+                configMapKeyRef: { name: api-config, key: PARCELLES_ENABLED }
+            - name: PARCELLES_DB_PATH
+              valueFrom:
+                configMapKeyRef: { name: api-config, key: PARCELLES_DB_PATH }
           volumeMounts:
             - name: dataset
               mountPath: /data

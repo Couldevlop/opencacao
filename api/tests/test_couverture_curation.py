@@ -69,6 +69,7 @@ class PipelineRefusant:
 def console_documents(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """Console ouverte (sans mot de passe) dont le pipeline refuse les URLs."""
     monkeypatch.setattr(cur, "_MOT_DE_PASSE", "")
+    monkeypatch.setattr(cur, "_AUTH_DESACTIVEE", True)
     monkeypatch.setattr(cur, "_documents", DocumentStore(tmp_path / "documents"))
     monkeypatch.setattr(cur, "_pipeline", PipelineRefusant())
     return TestClient(cur.app)

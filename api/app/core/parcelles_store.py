@@ -157,15 +157,52 @@ class ParcelleStore:
         connexion.execute("PRAGMA foreign_keys=ON")
         return connexion
 
+    @staticmethod
+    def _instructions(script: str) -> tuple[str, ...]:
+        """Découpe un script de migration en instructions exécutables une à une.
+
+        ``executescript`` ne peut pas servir ici : il valide implicitement la
+        transaction en cours, ce qui **relâcherait le verrou** pris juste avant. Les
+        scripts de migration sont internes à ce module et ne contiennent aucun
+        littéral portant un point-virgule : le découpage est sûr.
+
+        Args:
+            script: Corps d'une migration, instructions séparées par ``;``.
+
+        Returns:
+            Les instructions non vides, dans l'ordre.
+        """
+        return tuple(
+            instruction.strip() for instruction in script.split(";") if instruction.strip()
+        )
+
     def _migrer(self) -> None:
-        """Applique les migrations manquantes, en une transaction par migration."""
+        """Applique les migrations manquantes, sous verrou d'écriture exclusif.
+
+        Deux processus ouvrent désormais ce fichier (l'API et la console de revue).
+        ``BEGIN IMMEDIATE`` prend le verrou d'écriture AVANT de lire ``user_version``
+        et le garde jusqu'au ``COMMIT``, sans quoi les deux pourraient lire la même
+        version et appliquer deux fois la même migration — inoffensif tant qu'elles
+        sont idempotentes, fatal au premier ``ALTER TABLE``.
+
+        La transaction est pilotée à la main (``isolation_level = None``) : le mode
+        implicite de ``sqlite3`` ne couvre pas le DDL, et le DDL de SQLite étant
+        transactionnel, la migration devient atomique — tout ou rien.
+        """
         self._chemin.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connexion()) as connexion:
-            version = connexion.execute("PRAGMA user_version").fetchone()[0]
-            for indice in range(version, len(self._MIGRATIONS)):
-                connexion.executescript(self._MIGRATIONS[indice])
-                connexion.execute(f"PRAGMA user_version = {indice + 1}")
-                connexion.commit()
+            connexion.isolation_level = None  # BEGIN/COMMIT explicites, à nous
+            connexion.execute("BEGIN IMMEDIATE")
+            try:
+                version = connexion.execute("PRAGMA user_version").fetchone()[0]
+                for indice in range(version, len(self._MIGRATIONS)):
+                    for instruction in self._instructions(self._MIGRATIONS[indice]):
+                        connexion.execute(instruction)
+                    connexion.execute(f"PRAGMA user_version = {indice + 1}")
+                connexion.execute("COMMIT")
+            except sqlite3.Error:
+                connexion.execute("ROLLBACK")
+                raise
 
     # ------------------------------------------------------------ sérialisation
 
@@ -655,6 +692,38 @@ class ParcelleStore:
             lignes = connexion.execute(
                 "SELECT * FROM constats WHERE etat_revue = ? ORDER BY cree_le ASC LIMIT ?",
                 (EtatRevue.EN_ATTENTE.value, limite),
+            ).fetchall()
+        return [self._ligne_en_constat(ligne) for ligne in lignes]
+
+    async def lister_constats_revus(self, limite: int = 200, decalage: int = 0) -> list[Constat]:
+        """Liste les constats déjà revus par un agent, les plus anciens d'abord.
+
+        Ce sont eux, et eux seuls, qui portent une étiquette humaine : un constat
+        encore en attente ne sert pas d'exemple d'entraînement.
+
+        Paginable (``decalage``) : l'export d'entraînement croît avec l'usage et la
+        console tourne dans un pod plafonné à 1 Gio — il le lit par pages, jamais d'un
+        bloc. Le tri porte un départage par identifiant, sans quoi deux constats créés
+        dans la même seconde pourraient sauter ou se répéter entre deux pages.
+
+        Args:
+            limite: Nombre maximal de constats retournés.
+            decalage: Nombre de constats à sauter (pagination).
+
+        Returns:
+            Les constats revus, ``[]`` si le dépôt n'est pas prêt.
+        """
+        if not self._pret:
+            return []
+        return await asyncio.to_thread(self._lire_revus, limite, decalage)
+
+    def _lire_revus(self, limite: int, decalage: int) -> list[Constat]:
+        """Lit une page de constats revus (appelé dans un thread)."""
+        with closing(self._connexion()) as connexion:
+            lignes = connexion.execute(
+                "SELECT * FROM constats WHERE etat_revue != ? "
+                "ORDER BY cree_le ASC, id ASC LIMIT ? OFFSET ?",
+                (EtatRevue.EN_ATTENTE.value, limite, decalage),
             ).fetchall()
         return [self._ligne_en_constat(ligne) for ligne in lignes]
 

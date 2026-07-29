@@ -9,10 +9,16 @@ metadata:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # Débit borné en amont de l'application (OWASP API4). La console porte désormais
+    # la file de revue, qui lit les constats de TOUS les producteurs : le limiteur
+    # applicatif protège les routes, celui-ci protège le pod lui-même.
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
     # Durcissement recommandé (OWASP) : restreindre l'accès aux IP de l'équipe.
-    # La console a un accès en ÉCRITURE au corpus d'entraînement ; combiné au
-    # blocage anti-brute-force applicatif, restreindre l'ingress par IP réduit
-    # encore la surface. Décommenter et renseigner les CIDR autorisés :
+    # La console a un accès en ÉCRITURE au corpus d'entraînement et un accès en
+    # LECTURE aux constats de tous les producteurs ; combiné au blocage
+    # anti-brute-force applicatif, restreindre l'ingress par IP réduit encore la
+    # surface. Décommenter et renseigner les CIDR autorisés :
     # nginx.ingress.kubernetes.io/whitelist-source-range: "203.0.113.0/24,198.51.100.7/32"
 spec:
   ingressClassName: nginx

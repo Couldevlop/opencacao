@@ -17,6 +17,8 @@ import hmac
 import os
 import secrets
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
@@ -33,7 +35,9 @@ from app.core.parametres import (
     ParametresStore,
     brouiller_email,
 )
+from app.core.parcelles_store import ParcelleStore
 from app.core.security import BodySizeLimitMiddleware
+from app.curation import revue_constats
 from app.curation.analytics import analytique
 from app.curation.documents import DocumentInvalide, DocumentStore
 from app.curation.jobs import JobsRegistry
@@ -46,7 +50,7 @@ from app.curation.models import (
     ValidationRequest,
 )
 from app.curation.pipeline import PipelineService
-from app.curation.ratelimit import LimiteurConnexion
+from app.curation.ratelimit import LimiteurConnexion, LimiteurDebit
 from app.curation.store import CurationStore, DosageRefuse, ValidationInvalide
 
 logger = get_logger(__name__)
@@ -63,6 +67,10 @@ _documents = DocumentStore.from_env()
 _taches: set[asyncio.Task] = set()
 _UTILISATEUR = os.environ.get("CURATION_USER", "curateur")
 _MOT_DE_PASSE = os.environ.get("CURATION_PASSWORD", "")
+# Bypass d'authentification, à demander EXPLICITEMENT (poste de dev, port-forward).
+# Un mot de passe vide ne suffit pas : une console ouverte par accident exposerait le
+# corpus en écriture et les constats de tous les producteurs.
+_AUTH_DESACTIVEE = os.environ.get("CURATION_AUTH_DISABLED", "") == "1"
 # Clé de signature des sessions, dérivée du mot de passe : stable entre
 # redémarrages, et la rotation du mot de passe invalide les sessions.
 _SECRET = hashlib.sha256(f"opencacao-curation:{_MOT_DE_PASSE}".encode()).digest()
@@ -75,6 +83,14 @@ _DUREE_S = 8 * 3600
 _LIMITEUR_LOGIN = LimiteurConnexion(
     max_echecs=int(os.environ.get("CURATION_LOGIN_MAX_ECHECS", "10")),
     fenetre_s=float(os.environ.get("CURATION_LOGIN_FENETRE_S", "300")),
+)
+
+# Débit des routes de revue (OWASP API4). Une session valide n'est pas un blanc-seing :
+# ces routes lisent les constats de TOUS les producteurs et l'export parcourt le dépôt.
+# Large pour un curateur qui travaille, étroit pour un cookie volé ou un onglet qui boucle.
+_LIMITEUR_REVUE = LimiteurDebit(
+    max_requetes=int(os.environ.get("CURATION_REVUE_MAX_REQUETES", "60")),
+    fenetre_s=float(os.environ.get("CURATION_REVUE_FENETRE_S", "60")),
 )
 
 
@@ -108,16 +124,66 @@ def _token_valide(token: str | None) -> bool:
 
 
 def _exiger_session(request: Request) -> None:
-    """Dépendance : exige une session valide si un mot de passe est configuré."""
-    if not _MOT_DE_PASSE:
+    """Dépendance : exige une session valide.
+
+    **Fail-closed.** Un ``CURATION_PASSWORD`` vide ne désactive plus l'authentification
+    en silence : la console est publiée sur un sous-domaine HTTPS et donne accès en
+    écriture au corpus ainsi qu'aux constats de *tous* les producteurs. Un secret mal
+    renseigné ouvrirait tout. Le mode sans mot de passe (accès par port-forward) reste
+    possible, mais il faut le demander explicitement via ``CURATION_AUTH_DISABLED=1``.
+
+    Raises:
+        HTTPException: 503 si la console n'est pas configurée, 401 sans session valide.
+    """
+    if _AUTH_DESACTIVEE:
         return
+    if not _MOT_DE_PASSE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Console non configurée : CURATION_PASSWORD est vide.",
+        )
     if not _token_valide(request.cookies.get(_COOKIE)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session requise.")
 
 
 Session = Annotated[None, Depends(_exiger_session)]
 
-app = FastAPI(title="OpenCacao — Console de curation", docs_url=None, redoc_url=None)
+
+def _garde_debit_revue(request: Request) -> None:
+    """Dépendance : borne le débit des routes de revue, par IP cliente.
+
+    Raises:
+        HTTPException: 429 si la limite est atteinte.
+    """
+    if not _LIMITEUR_REVUE.autorise(_ip_client(request)):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Trop de requêtes sur la file de revue. Réessayez dans une minute.",
+        )
+
+
+@asynccontextmanager
+async def _cycle_de_vie(application: FastAPI) -> AsyncIterator[None]:
+    """Ouvre le dépôt des parcelles, qui porte la file de revue des constats.
+
+    Tolérant aux pannes comme côté API : si le fichier ne peut être ouvert, la console
+    démarre quand même et la file se présente vide plutôt que de tomber.
+    """
+    parametres = get_settings()
+    application.state.parcelles = ParcelleStore.from_settings(parametres)
+    # Même drapeau que l'API : coupées là-bas, les parcelles le sont ici aussi. La
+    # file se présente alors vide plutôt que de créer un fichier que personne n'alimente.
+    if parametres.parcelles_enabled:
+        await application.state.parcelles.initialiser()
+    yield
+
+
+app = FastAPI(
+    title="OpenCacao — Console de curation",
+    docs_url=None,
+    redoc_url=None,
+    lifespan=_cycle_de_vie,
+)
 configure_logging(os.environ.get("LOG_LEVEL", "INFO"))
 
 # En-têtes de sécurité (OWASP Secure Headers). CSP propre à la console : la page
@@ -150,6 +216,15 @@ async def _entetes_securite(request: Request, call_next) -> Response:
 # Anti-DoS : plafond du corps de requête. Relevé pour l'upload de documents
 # (contenu base64) ; reste borné pour éviter les abus. ~12 Mo de body ≈ ~9 Mo de fichier.
 app.add_middleware(BodySizeLimitMiddleware, max_body_bytes=12_000_000)
+
+# File de revue ANADER des constats visuels (V3, étage 6). Montée AVEC la dépendance
+# de session : ces routes voient les constats de tous les producteurs, une exposition
+# anonyme y serait une fuite bien plus grave que sur l'API publique. Le garde de débit
+# s'y ajoute — une session valide ne dispense pas de borner l'accès au dépôt entier.
+app.include_router(
+    revue_constats.router,
+    dependencies=[Depends(_exiger_session), Depends(_garde_debit_revue)],
+)
 
 
 @app.get("/api/sante")
