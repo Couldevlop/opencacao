@@ -247,3 +247,21 @@ class ParcelleStorePort(Protocol):
     async def purger_captures(self, avant: datetime) -> list[str]:
         """Supprime les captures antérieures et retourne les empreintes à effacer."""
         ...
+
+
+@runtime_checkable
+class VisionPort(Protocol):
+    """Contrat d'un modèle de vision décrivant des images de plantation.
+
+    **Descripteur, pas diagnosticien.** L'implémentation ne nomme jamais une maladie :
+    la consigne le lui interdit et le garde-fou de sortie le vérifie. Toujours
+    mockable — aucun appel réseau en test.
+    """
+
+    async def decrire(self, images: tuple[bytes, ...], consigne: str) -> str | None:
+        """Décrit les images, ou retourne None si la vision est indisponible."""
+        ...
+
+    async def disponible(self) -> bool:
+        """Indique si le modèle de vision est joignable."""
+        ...
