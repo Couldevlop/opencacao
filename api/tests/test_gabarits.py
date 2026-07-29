@@ -91,6 +91,34 @@ def test_un_gabarit_sans_section_est_invalide():
         lire_gabarit({"id": "vide", "titre": "T", "sections": []})
 
 
+def test_un_gabarit_a_trop_de_sections_est_invalide():
+    """Le moteur appelle l inference UNE FOIS PAR SECTION, des dizaines de secondes sur CPU.
+
+    Les gabarits sont livres avec l image, mais aussi montables par ConfigMap : une
+    erreur d exploitation ne doit pas se traduire par des heures de CPU en serie.
+    """
+    with pytest.raises(GabaritInvalide):
+        lire_gabarit(
+            {
+                "id": "x",
+                "titre": "T",
+                "sections": [{"titre": f"S{i}", "sources": ["rag"]} for i in range(41)],
+            }
+        )
+
+
+def test_un_gabarit_au_plafond_de_sections_reste_valide():
+    """La borne ne doit pas mordre sur l etude reelle : « quarante paragraphes »."""
+    gabarit = lire_gabarit(
+        {
+            "id": "x",
+            "titre": "T",
+            "sections": [{"titre": f"S{i}", "sources": ["rag"]} for i in range(40)],
+        }
+    )
+    assert len(gabarit.sections) == 40
+
+
 def test_un_gabarit_sans_titre_est_invalide():
     with pytest.raises(GabaritInvalide):
         lire_gabarit({"id": "x", "sections": [{"titre": "S", "sources": ["rag"]}]})

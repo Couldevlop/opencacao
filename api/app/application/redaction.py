@@ -58,6 +58,29 @@ TEMPERATURE_SECTION = 0.3
 MAX_AFFIRMATIONS_SECTION = 12
 MAX_CARACTERES_AFFIRMATION = 480
 
+# Catégories de refus qui s'appliquent au SUJET d'un livrable.
+#
+# Les garde-fous du projet ont été écrits pour la question d'un producteur ; toutes
+# leurs catégories ne se transposent pas à un document d'analyse. Deux familles :
+#
+# * Ce qui ne doit JAMAIS être produit, quel que soit le lecteur — un dosage, un avis
+#   médical, une autre culture que le cacao, un diagnostic sur image. Non négociable
+#   (CLAUDE.md), et donc refusé ici.
+# * Ce qui relève de « à qui l'assistant s'adresse » — un producteur à Korhogo est
+#   redirigé parce qu'on n'y cultive pas de cacao, et on ne conseille pas sur la
+#   transformation. Mais une ÉTUDE sur la filière à Korhogo, sur la limite nord de la
+#   ceinture cacaoyère ou sur la valeur ajoutée locale est un travail d'analyse
+#   parfaitement légitime — c'est même ce qu'un bailleur demande. Refuser rendrait le
+#   bulletin régional d'une DR du Nord impossible à produire.
+_REFUS_SUR_SUJET = frozenset(
+    {
+        guardrails.CategorieRefus.PHYTOSANITAIRE,
+        guardrails.CategorieRefus.MEDICAL,
+        guardrails.CategorieRefus.HORS_FILIERE,
+        guardrails.CategorieRefus.DIAGNOSTIC_IMAGE,
+    }
+)
+
 _LACUNE = (
     "Aucune source mobilisable n'a été trouvée pour cette section. Elle est laissée "
     "en l'état plutôt que renseignée par estimation : les éléments nécessaires "
@@ -242,7 +265,7 @@ class MoteurRedaction:
         # porte ; un sujet hors filière produirait une étude sur l'anacarde signée
         # OpenCacao. Les deux sont non négociables (CLAUDE.md).
         refus = guardrails.evaluer(sujet) or guardrails.verifier_reponse(sujet)
-        if refus is not None:
+        if refus is not None and refus.categorie in _REFUS_SUR_SUJET:
             logger.warning("sujet_refuse", categorie=refus.categorie.value)
             raise SujetRefuse(refus.message)
 

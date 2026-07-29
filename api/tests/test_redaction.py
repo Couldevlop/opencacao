@@ -372,3 +372,23 @@ async def test_les_affirmations_d_une_section_refusee_ne_vont_pas_au_manifeste()
     moteur = MoteurRedaction(inference, {"rag": FauxCollecteur(_affirmation())}, _contexte())
     document = await moteur.rediger(_gabarit(), "le cacao", "appareil-a")
     assert document.manifeste.documents_rag == ()
+
+
+@pytest.mark.parametrize(
+    "sujet",
+    [
+        "la filiere cacao a Korhogo",
+        "la plantation de Ferkessedougou",
+        "la transformation locale du cacao en chocolat",
+    ],
+)
+async def test_un_sujet_d_analyse_legitime_n_est_pas_refuse(sujet):
+    """Les garde-fous ont ete ecrits pour la QUESTION D UN PRODUCTEUR.
+
+    Un producteur a Korhogo est redirige parce qu on n y cultive pas de cacao ; une
+    ETUDE sur la limite nord de la ceinture cacaoyere, ou sur la valeur ajoutee
+    locale, est un travail d analyse legitime — c est meme ce qu un bailleur demande.
+    Refuser rendrait le bulletin regional d une DR du Nord impossible a produire.
+    """
+    document = await _moteur().rediger(_gabarit(), sujet, "appareil-a")
+    assert sujet in document.titre

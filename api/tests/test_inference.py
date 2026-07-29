@@ -267,3 +267,53 @@ async def test_generer_conserve_le_prompt_systeme_par_defaut() -> None:
     assert vus["system"] != "REGISTRE ANALYTIQUE"
     assert vus["system"]
     await client.close()
+
+
+async def test_generer_transmet_l_entete_et_le_libelle_au_tour_utilisateur() -> None:
+    """Le registre ne tient que si le client TRANSMET l'en-tête jusqu'aux messages.
+
+    C'est la couture fragile : le moteur de rédaction passe bien ``entete_contexte``
+    et ``libelle_question``, mais si ``generer`` cessait de les relayer à
+    ``build_messages``, l'en-tête par défaut reviendrait — celui qui dit « oriente
+    vers l'ANADER » et cadre en « Question : », soit exactement ce que le prompt
+    système du livrable interdit. Rien d'autre ne couvre ce passage.
+    """
+    vus: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        charge = json.loads(request.content)
+        vus["user"] = charge["messages"][-1]["content"]
+        return httpx.Response(200, json={"choices": [{"message": {"content": "Prose."}}]})
+
+    client = _client(handler)
+    await client.generer(
+        "Rédige la section « Contexte ».",
+        contexte="- La production avoisine 2,2 Mt (source : CNRA)",
+        entete_contexte="Éléments sourcés à mobiliser.\n\n{contexte}",
+        libelle_question="Section à rédiger",
+    )
+    assert "Éléments sourcés à mobiliser." in vus["user"]
+    assert "Section à rédiger : Rédige la section « Contexte »." in vus["user"]
+    assert "ANADER" not in vus["user"]
+    assert "Question :" not in vus["user"]
+    await client.close()
+
+
+async def test_generer_garde_l_entete_de_contexte_par_defaut() -> None:
+    """Non-régression du chat : sans surcharge, l'en-tête RAG du producteur reste.
+
+    Le conseil au producteur DOIT continuer d'orienter vers l'ANADER — ce qui est
+    juste pour lui, et faux seulement dans un document d'étude.
+    """
+    vus: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        charge = json.loads(request.content)
+        vus["user"] = charge["messages"][-1]["content"]
+        return httpx.Response(200, json={"choices": [{"message": {"content": "Prose."}}]})
+
+    client = _client(handler)
+    await client.generer("Comment sécher mes fèves ?", contexte="Extrait CNRA.")
+    assert "ANADER" in vus["user"]
+    assert "Question : Comment sécher mes fèves ?" in vus["user"]
+    await client.close()

@@ -41,6 +41,14 @@ _CHAMPS_AUTORISES = frozenset({"sujet"})
 # gabarit est un fichier YAML, et un fichier ajouté hors CI doit buter sur la règle.
 _MENTION_OBLIGATOIRE = frozenset({"dossier_parcelle"})
 
+# Plafond de sections. Le moteur appelle l'inférence UNE FOIS PAR SECTION : sur le
+# profil CPU de production, une section coûte des dizaines de secondes. Le chiffre
+# reprend celui que le moteur s'est donné (« quarante paragraphes de 700 caractères »,
+# ``application/redaction.py``) — au-delà, c'est une faute de gabarit, pas une étude.
+# Les gabarits sont livrés avec l'image, mais aussi montables par ConfigMap : une
+# erreur d'exploitation ne doit pas se traduire par des heures de CPU en série.
+_MAX_SECTIONS = 40
+
 
 class GabaritInconnu(Exception):
     """Le gabarit demandé n'existe pas."""
@@ -179,9 +187,9 @@ def lire_gabarit(charge: object) -> Gabarit:
         Le gabarit validé.
 
     Raises:
-        GabaritInvalide: Charge mal typée, titre manquant, aucune section, section
-            sans titre, source hors de ``SOURCES_CONNUES``, ou champ de format
-            interdit dans un titre.
+        GabaritInvalide: Charge mal typée, titre manquant, aucune section, plus de
+            ``_MAX_SECTIONS`` sections, section sans titre, source hors de
+            ``SOURCES_CONNUES``, ou champ de format interdit dans un titre.
     """
     if not isinstance(charge, dict):
         raise GabaritInvalide("le gabarit n'est pas un objet YAML")
@@ -192,6 +200,8 @@ def lire_gabarit(charge: object) -> Gabarit:
     sections_brutes = charge.get("sections") or []
     if not isinstance(sections_brutes, list) or not sections_brutes:
         raise GabaritInvalide("aucune section")
+    if len(sections_brutes) > _MAX_SECTIONS:
+        raise GabaritInvalide(f"trop de sections (maximum {_MAX_SECTIONS})")
 
     sections: list[SectionGabarit] = []
     for brute in sections_brutes:
