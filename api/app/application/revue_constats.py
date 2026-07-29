@@ -11,6 +11,13 @@ export hors ligne :
 * **L'export est minimisé.** Il porte ce qui est observé, jamais chez qui : ni
   propriétaire, ni parcelle, ni capture, ni coordonnée. Cette garantie vit ici, pas
   dans un helper privé d'adaptateur HTTP.
+
+**Pseudonymisé, pas anonyme.** L'empreinte SHA-256 reste la clé qui relie une ligne à
+son image sur disque — c'est ce qui rend le jeu de données entraînable. Elle permet
+donc aussi, pour qui détient *en plus* la base, de remonter au propriétaire. Sans
+conséquence en interne, où les deux vivent déjà côte à côte ; à re-clé (HMAC salé,
+sel non publié) le jour où le jeu de données sortira, faute de quoi la publication
+emporterait ce lien avec elle.
 """
 
 from __future__ import annotations
