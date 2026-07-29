@@ -366,3 +366,54 @@ def test_le_plafond_elargi_ne_vaut_que_pour_les_parcelles(client: TestClient):
         "/v1/chat", json={"question": "x" * 20_000, "langue": "fr"}, headers=ENTETES
     )
     assert reponse.status_code == 413
+
+
+# ------------------------------------------------- frontiere d autorisation
+#
+# get_device_id rend "" quand l en-tete X-Device-Id est absent : c est l espace
+# « herite » partage, un choix de compatibilite assume pour les sessions V2. Applique
+# aux PARCELLES, il devient une fuite : tout appelant omettant l en-tete voit — et
+# peut modifier — les parcelles de tous les autres appelants sans en-tete, alors
+# qu une parcelle porte le POLYGONE GPS EXACT de la plantation d un producteur.
+#
+# Les parcelles sont neuves : aucun client herite a menager. On exige l identifiant.
+
+
+def test_lister_sans_entete_appareil_est_refuse(client: TestClient):
+    reponse = client.get("/v1/parcelles")
+    assert reponse.status_code == 400
+
+
+def test_creer_sans_entete_appareil_est_refuse(client: TestClient):
+    reponse = client.post("/v1/parcelles", json={"nom": "X", "localite": "Daloa"})
+    assert reponse.status_code == 400
+
+
+def test_obtenir_sans_entete_appareil_est_refuse(client: TestClient):
+    identifiant = _creer(client)
+    assert client.get(f"/v1/parcelles/{identifiant}").status_code == 400
+
+
+def test_geometrie_sans_entete_appareil_est_refusee(client: TestClient):
+    identifiant = _creer(client)
+    reponse = client.put(f"/v1/parcelles/{identifiant}/geometrie", json={"points": _carre()})
+    assert reponse.status_code == 400
+
+
+def test_capture_sans_entete_appareil_est_refusee(client: TestClient):
+    identifiant = _creer(client)
+    reponse = client.post(
+        f"/v1/parcelles/{identifiant}/captures",
+        json={"modalite": "photos", "images": [_image_payload()]},
+    )
+    assert reponse.status_code == 400
+
+
+def test_un_entete_vide_vaut_un_entete_absent(client: TestClient):
+    """Envoyer X-Device-Id: '' ne doit pas ouvrir l espace partage par la bande."""
+    assert client.get("/v1/parcelles", headers={"X-Device-Id": "   "}).status_code == 400
+
+
+def test_les_sessions_gardent_leur_espace_herite(client: TestClient):
+    """La compatibilite V2 n est pas touchee : seules les parcelles se durcissent."""
+    assert client.get("/v1/sessions").status_code == 200

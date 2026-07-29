@@ -12,7 +12,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api_deps import get_cache_client, get_client_ip, get_device_id, get_service_parcelles
+from app.api_deps import (
+    get_cache_client,
+    get_client_ip,
+    get_device_id_obligatoire,
+    get_service_parcelles,
+)
 from app.domain.ports import CachePort
 from app.models.parcelle import (
     CaptureReponse,
@@ -52,7 +57,7 @@ async def _garde_debit(cache: CachePort, client_ip: str) -> None:
 async def creer_parcelle(
     payload: CreerParcelleRequest,
     client_ip: str = Depends(get_client_ip),
-    device_id: str = Depends(get_device_id),
+    device_id: str = Depends(get_device_id_obligatoire),
     cache: CachePort = Depends(get_cache_client),
     service: ServiceParcelles = Depends(get_service_parcelles),
 ) -> ParcelleReponse:
@@ -64,7 +69,7 @@ async def creer_parcelle(
 
 @router.get("/parcelles", response_model=list[ParcelleReponse])
 async def lister_parcelles(
-    device_id: str = Depends(get_device_id),
+    device_id: str = Depends(get_device_id_obligatoire),
     service: ServiceParcelles = Depends(get_service_parcelles),
 ) -> list[ParcelleReponse]:
     """Liste les parcelles de l'appareil appelant."""
@@ -75,7 +80,7 @@ async def lister_parcelles(
 @router.get("/parcelles/{identifiant}", response_model=ParcelleReponse)
 async def obtenir_parcelle(
     identifiant: str,
-    device_id: str = Depends(get_device_id),
+    device_id: str = Depends(get_device_id_obligatoire),
     service: ServiceParcelles = Depends(get_service_parcelles),
 ) -> ParcelleReponse:
     """Retourne une parcelle de l'appareil appelant.
@@ -94,7 +99,7 @@ async def enregistrer_geometrie(
     identifiant: str,
     payload: GeometrieRequest,
     client_ip: str = Depends(get_client_ip),
-    device_id: str = Depends(get_device_id),
+    device_id: str = Depends(get_device_id_obligatoire),
     cache: CachePort = Depends(get_cache_client),
     service: ServiceParcelles = Depends(get_service_parcelles),
 ) -> ParcelleReponse:
@@ -127,7 +132,7 @@ async def deposer_capture(
     identifiant: str,
     payload: CaptureRequest,
     client_ip: str = Depends(get_client_ip),
-    device_id: str = Depends(get_device_id),
+    device_id: str = Depends(get_device_id_obligatoire),
     cache: CachePort = Depends(get_cache_client),
     service: ServiceParcelles = Depends(get_service_parcelles),
 ) -> CaptureReponse:
@@ -160,7 +165,7 @@ async def deposer_capture(
 async def obtenir_capture(
     identifiant: str,
     capture_id: str,
-    device_id: str = Depends(get_device_id),
+    device_id: str = Depends(get_device_id_obligatoire),
     service: ServiceParcelles = Depends(get_service_parcelles),
 ) -> CaptureReponse:
     """Retourne une capture de l'appareil appelant.
