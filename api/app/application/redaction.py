@@ -97,7 +97,10 @@ _LACUNE_REFUSEE = (
     "n'est pas réécrite."
 )
 
-ProgressionRappel = Callable[[int, int, str], Awaitable[None]]
+# Le rappel reçoit la SECTION, pas seulement son titre : l'écran doit pouvoir
+# afficher la prose au fil de l'eau — « le flux SSE écrit les sections à l'écran »
+# (spec §8.7). Un titre seul ne permet que d'allumer une case.
+ProgressionRappel = Callable[[int, int, Section], Awaitable[None]]
 
 
 class SujetRefuse(Exception):
@@ -258,8 +261,8 @@ class MoteurRedaction:
             gabarit: Gabarit déclaratif fournissant le plan.
             sujet: Sujet du document, substitué dans le titre.
             demandeur: Identifiant du demandeur — seule son empreinte entre au manifeste.
-            progression: Rappel appelé après chaque section — c'est lui qui alimente
-                le flux SSE.
+            progression: Rappel appelé après chaque section, avec la section produite —
+                c'est lui qui alimente le flux SSE.
 
         Returns:
             Le document assemblé, manifeste compris.
@@ -281,9 +284,10 @@ class MoteurRedaction:
         total = len(gabarit.sections)
         for index, declaree in enumerate(gabarit.sections, start=1):
             affirmations = await self._collecter(declaree, sujet)
-            sections.append(await self._rediger_section(declaree, sujet, affirmations))
+            section = await self._rediger_section(declaree, sujet, affirmations)
+            sections.append(section)
             if progression is not None:
-                await progression(index, total, declaree.titre)
+                await progression(index, total, section)
 
         # (source, empreinte) — le contrat du manifeste. L'empreinte identifie
         # l'extrait mobilisé, pas seulement son émetteur : c'est ce qui permet de

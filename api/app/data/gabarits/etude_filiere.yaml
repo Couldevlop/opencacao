@@ -7,6 +7,9 @@ titre: "Étude de filière — {sujet}"
 sous_titre: "Cacao ivoirien — analyse documentée"
 public: "institutions, bailleurs, chercheurs"
 mention: ""
+# Vocabulaire par lequel une demande en langage naturel désigne ce document.
+# Volontairement étroit : un mot trop courant ferait répondre ce gabarit à tout.
+declencheurs: ["étude", "analyse", "filière", "synthèse", "panorama"]
 sections:
   - titre: "Contexte de la filière"
     sources: [rag]

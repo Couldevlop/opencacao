@@ -49,6 +49,11 @@ _MENTION_OBLIGATOIRE = frozenset({"dossier_parcelle"})
 # erreur d'exploitation ne doit pas se traduire par des heures de CPU en série.
 _MAX_SECTIONS = 40
 
+# Plafond de déclencheurs, même raison que _MAX_SECTIONS : les gabarits sont montables
+# par ConfigMap, et la reconnaissance coûte en gabarits × déclencheurs. Une liste grasse
+# déposée par erreur transformerait chaque demande en secondes de CPU.
+_MAX_DECLENCHEURS = 40
+
 
 class GabaritInconnu(Exception):
     """Le gabarit demandé n'existe pas."""
@@ -84,6 +89,9 @@ class Gabarit:
         public: Public visé, pour information.
         mention: Mention non contournable en tête du document (D5), ou vide.
         sections: Sections dans l'ordre de rédaction.
+        declencheurs: Mots qui, dans une demande en langage naturel, désignent ce
+            type de document. Déclaratif comme le reste : ajouter un gabarit reste
+            un fichier YAML, y compris pour être reconnu à l'oral.
     """
 
     identifiant: str
@@ -92,6 +100,7 @@ class Gabarit:
     public: str
     mention: str
     sections: tuple[SectionGabarit, ...]
+    declencheurs: tuple[str, ...] = ()
 
 
 @lru_cache(maxsize=1)
@@ -230,6 +239,18 @@ def lire_gabarit(charge: object) -> Gabarit:
     sous_titre = _verifier_substitution(
         _texte(charge.get("sous_titre"), "sous_titre"), "sous_titre"
     )
+
+    brutes_declencheurs = charge.get("declencheurs") or ()
+    # Même piège que « sources » : une chaîne est itérable et donnerait un
+    # déclencheur par lettre, donc un gabarit qui répond à tout.
+    if isinstance(brutes_declencheurs, str) or not isinstance(brutes_declencheurs, list | tuple):
+        raise GabaritInvalide("declencheurs doit être une liste")
+    if len(brutes_declencheurs) > _MAX_DECLENCHEURS:
+        raise GabaritInvalide(f"trop de declencheurs (maximum {_MAX_DECLENCHEURS})")
+    declencheurs = tuple(
+        mot for mot in (_texte(brut, "declencheur").lower() for brut in brutes_declencheurs) if mot
+    )
+
     return Gabarit(
         identifiant=_texte(charge.get("id"), "id"),
         titre=titre,
@@ -237,6 +258,7 @@ def lire_gabarit(charge: object) -> Gabarit:
         public=_texte(charge.get("public"), "public"),
         mention=_texte(charge.get("mention"), "mention"),
         sections=tuple(sections),
+        declencheurs=declencheurs,
     )
 
 

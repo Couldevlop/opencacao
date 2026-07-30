@@ -437,3 +437,44 @@ async def test_une_file_saturee_est_refusee_proprement(store: RapportStore):
     relu = await store.obtenir(rapport.identifiant, DEVICE)
     assert relu is not None
     assert relu.etat is EtatRapport.ECHOUE
+
+
+async def test_l_evenement_de_section_porte_son_texte(store: RapportStore):
+    """« Le flux SSE ecrit les sections a l ecran » (spec 8.7).
+
+    Sans le corps dans l evenement, l ecran ne peut qu allumer une case : le document
+    ne s assemble pas sous les yeux du public, ce qui est tout l objet du moment de
+    scene. La lacune est transmise aussi — un lecteur doit voir qu une section n a pas
+    ete renseignee, et pourquoi.
+    """
+    service = _service(store)
+    rapport = await service.creer("bulletin_regional", "Daloa", DEVICE)
+    evenements = [evenement async for evenement in service.executer(rapport.identifiant, DEVICE)]
+
+    sections = [e for e in evenements if e["type"] == "section"]
+    assert sections
+    assert sections[0]["corps"]
+    assert sections[0]["lacune"] is False
+    assert sections[0]["titre"]
+
+
+async def test_une_section_en_lacune_est_annoncee_comme_telle_dans_le_flux(store: RapportStore):
+    """La lacune n est pas un echec : l ecran doit pouvoir la presenter sobrement."""
+    contexte = ContexteGeneration("opencacao-8b", "1.1.0", "0.6.75", "cpu")
+
+    class SansSource:
+        async def collecter(self, sujet: str) -> tuple[Affirmation, ...]:
+            return ()
+
+    service = ServiceRapports(
+        store,
+        lambda: MoteurRedaction(
+            FausseInference(), {n: SansSource() for n in ("meteo", "prix", "satellite")}, contexte
+        ),
+    )
+    rapport = await service.creer("bulletin_regional", "Daloa", DEVICE)
+    evenements = [evenement async for evenement in service.executer(rapport.identifiant, DEVICE)]
+
+    sections = [e for e in evenements if e["type"] == "section"]
+    assert sections
+    assert all(section["lacune"] is True for section in sections)

@@ -119,6 +119,47 @@ def test_un_gabarit_au_plafond_de_sections_reste_valide():
     assert len(gabarit.sections) == 40
 
 
+def test_des_declencheurs_en_chaine_sont_refuses():
+    """Une chaine est iterable : « declencheurs: etude » donnerait un declencheur par
+    lettre, donc un gabarit qui repond a n importe quelle demande."""
+    with pytest.raises(GabaritInvalide):
+        lire_gabarit(
+            {
+                "id": "x",
+                "titre": "T",
+                "declencheurs": "etude",
+                "sections": [{"titre": "S", "sources": ["rag"]}],
+            }
+        )
+
+
+def test_trop_de_declencheurs_est_invalide():
+    """Meme raison que le plafond de sections : les gabarits sont montables par
+    ConfigMap, et la reconnaissance coute en gabarits x declencheurs."""
+    with pytest.raises(GabaritInvalide):
+        lire_gabarit(
+            {
+                "id": "x",
+                "titre": "T",
+                "declencheurs": [f"mot{i}" for i in range(41)],
+                "sections": [{"titre": "S", "sources": ["rag"]}],
+            }
+        )
+
+
+def test_les_declencheurs_sont_ramenes_en_minuscules():
+    gabarit = lire_gabarit(
+        {
+            "id": "x",
+            "titre": "T",
+            "declencheurs": ["Étude", "  ", "ANALYSE"],
+            "sections": [{"titre": "S", "sources": ["rag"]}],
+        }
+    )
+    # Les entrees vides disparaissent : un declencheur vide correspondrait a tout.
+    assert gabarit.declencheurs == ("étude", "analyse")
+
+
 def test_un_gabarit_sans_titre_est_invalide():
     with pytest.raises(GabaritInvalide):
         lire_gabarit({"id": "x", "sections": [{"titre": "S", "sources": ["rag"]}]})

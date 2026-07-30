@@ -32,7 +32,7 @@ def _creer(client: TestClient, gabarit: str = "bulletin_regional", sujet: str = 
 def test_les_gabarits_sont_listes(client: TestClient):
     reponse = client.get("/v1/rapports/gabarits")
     assert reponse.status_code == 200
-    assert "bulletin_regional" in reponse.json()
+    assert "bulletin_regional" in [gabarit["identifiant"] for gabarit in reponse.json()]
 
 
 def test_creer_sans_entete_appareil_est_refuse(client: TestClient):
@@ -296,3 +296,23 @@ def test_l_export_a_son_propre_quota(client: TestClient):
     assert statuts[:_EXPORTS_PAR_FENETRE] == [200] * _EXPORTS_PAR_FENETRE
     assert statuts[-1] == 429
     assert list(cache.compteurs) == ["export:appareil-a"]
+
+
+def test_les_gabarits_exposent_leur_plan(client: TestClient):
+    """L ecran montre le sommaire AVANT de generer : il lui faut les titres.
+
+    Sans cela, l interface ne peut afficher que des cases vides et decouvrir le plan
+    au fil du flux — or le plan est connu d avance, c est tout l interet du gabarit.
+    """
+    reponse = client.get("/v1/rapports/gabarits")
+    assert reponse.status_code == 200
+    gabarits = {g["identifiant"]: g for g in reponse.json()}
+
+    etude = gabarits["etude_filiere"]
+    assert etude["titre"]
+    assert etude["public"]
+    assert etude["sections"][0] == "Contexte de la filière"
+    assert len(etude["sections"]) == 6
+    assert etude["mention"] == ""
+
+    assert "préparatoire" in gabarits["dossier_parcelle"]["mention"].lower()

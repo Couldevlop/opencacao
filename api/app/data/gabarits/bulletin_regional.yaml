@@ -5,6 +5,9 @@ titre: "Bulletin régional — {sujet}"
 sous_titre: "Météo, prix et alertes de la zone"
 public: "producteurs, ANADER"
 mention: ""
+# « plantation » est absent à dessein : le mot est trop courant dans la bouche d'un
+# producteur pour désigner un TYPE de document.
+declencheurs: ["bulletin", "région", "régional", "hebdomadaire", "mensuel"]
 sections:
   - titre: "Conditions météorologiques"
     sources: [meteo]

@@ -9,19 +9,28 @@ Cloisonnement par appareil, comme les parcelles : chaque requête porte un
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 from app.api_deps import get_cache_client, get_device_id_obligatoire, get_service_rapports
+from app.application.intention_rapport import DEMANDE_MAX, resoudre_demande
 from app.core.rapports_store import Rapport
 from app.domain.ports import CachePort
-from app.models.rapport import RapportReponse
-from app.services.gabarits import GabaritInconnu, GabaritInvalide, lister_gabarits
-from app.services.rapports import RapportIntrouvable, ServiceRapports
+from app.models.rapport import GabaritReponse, IntentionReponse, RapportReponse
+from app.services.gabarits import (
+    Gabarit,
+    GabaritInconnu,
+    GabaritInvalide,
+    charger_gabarit,
+    lister_gabarits,
+)
+from app.services.rapports import RapportIntrouvable, ServiceRapports, SujetVide
 
 router = APIRouter(prefix="/v1", tags=["rapports"])
 
@@ -78,6 +87,31 @@ class CreerRapportRequest(BaseModel):
     sujet: str = Field(min_length=1, max_length=200)
 
 
+class IntentionRequest(BaseModel):
+    """Demande écrite librement, à interpréter.
+
+    Le plafond vient de la couche métier (``DEMANDE_MAX``) : deux valeurs
+    indépendantes finiraient par diverger, et c'est le métier qui sait ce qu'il
+    accepte de traiter.
+    """
+
+    demande: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=DEMANDE_MAX),
+    ]
+
+
+def _en_gabarit_reponse(gabarit: Gabarit) -> GabaritReponse:
+    """Projette un gabarit sur son schéma d'API, plan compris."""
+    return GabaritReponse(
+        identifiant=gabarit.identifiant,
+        titre=gabarit.titre,
+        public=gabarit.public,
+        mention=gabarit.mention,
+        sections=[section.titre for section in gabarit.sections],
+    )
+
+
 def _en_reponse(rapport: Rapport) -> RapportReponse:
     """Projette un job sur son schéma d'API."""
     return RapportReponse(
@@ -90,10 +124,62 @@ def _en_reponse(rapport: Rapport) -> RapportReponse:
     )
 
 
-@router.get("/rapports/gabarits", response_model=list[str])
-async def lister_les_gabarits() -> list[str]:
-    """Liste les gabarits de livrables disponibles."""
-    return list(lister_gabarits())
+@router.get("/rapports/gabarits", response_model=list[GabaritReponse])
+async def lister_les_gabarits() -> list[GabaritReponse]:
+    """Liste les gabarits disponibles, **plan compris**.
+
+    L'écran affiche le sommaire AVANT de lancer la génération : le plan est connu
+    d'avance — c'est tout l'intérêt du gabarit — et le découvrir au fil du flux
+    priverait le lecteur de ce qu'il attend.
+    """
+    return [_en_gabarit_reponse(charger_gabarit(nom)) for nom in lister_gabarits()]
+
+
+@router.post("/rapports/intention", response_model=IntentionReponse)
+async def comprendre_demande(
+    payload: IntentionRequest,
+    request: Request,
+    device_id: str = Depends(get_device_id_obligatoire),
+    cache: CachePort = Depends(get_cache_client),
+) -> IntentionReponse:
+    """Interprète une demande écrite librement, sans rien produire.
+
+    On demande un document, on ne le configure pas. La résolution est déterministe
+    et ne consomme pas d'inférence : elle ne mérite donc pas le quota de génération,
+    qui protège le coût réel. Elle mérite en revanche le limiteur générique **par IP**
+    comme tout POST de l'application — un quota par appareil ne protégerait rien, le
+    client choisissant son ``X-Device-Id`` (OWASP API4).
+
+    Ce qui n'est pas certain ressort avec ses candidats et un statut 200 : une
+    ambiguïté est une question à poser, pas une panne.
+
+    Raises:
+        HTTPException: 429 si le débit est dépassé, 503 si un gabarit est illisible.
+    """
+    if await cache.hit_rate_limit(request.client.host if request.client else "inconnu"):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Trop de requêtes. Patientez quelques instants.",
+        )
+    try:
+        catalogue = [charger_gabarit(nom) for nom in lister_gabarits()]
+    except GabaritInvalide as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Les types de documents sont momentanément indisponibles.",
+        ) from exc
+
+    # La résolution est synchrone et parcourt jusqu'à 2 000 caractères : laissée dans
+    # la coroutine, elle bloquerait la boucle d'événements — donc aussi les flux SSE du
+    # chat. Même raison que le rendu binaire (`services/rapports.py`).
+    intention = await asyncio.to_thread(resoudre_demande, payload.demande, catalogue)
+    par_nom = {gabarit.identifiant: gabarit for gabarit in catalogue}
+    return IntentionReponse(
+        gabarit=intention.gabarit,
+        sujet=intention.sujet,
+        certaine=intention.certaine,
+        candidats=[_en_gabarit_reponse(par_nom[nom]) for nom in intention.candidats],
+    )
 
 
 @router.post("/rapports", response_model=RapportReponse, status_code=status.HTTP_201_CREATED)
@@ -121,6 +207,11 @@ async def creer_rapport(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Ce gabarit est momentanément indisponible.",
+        ) from exc
+    except SujetVide as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Ce sujet est vide. Indiquez sur quoi doit porter le document.",
         ) from exc
     return _en_reponse(rapport)
 

@@ -9,6 +9,10 @@ mention: >-
   Document préparatoire. Il rassemble des éléments de traçabilité et ne constitue ni
   une déclaration de conformité, ni une attestation réglementaire. Tout maillon
   manquant de la chaîne est signalé comme tel.
+# « eudr » et « traçabilité » désignent bien ce dossier — qui reste préparatoire,
+# jamais une attestation de conformité (D5). Le déclencheur nomme le document, il ne
+# promet rien sur sa valeur juridique.
+declencheurs: ["dossier", "parcelle", "traçabilité", "eudr"]
 sections:
   - titre: "Identification de la parcelle"
     sources: [parcelle]

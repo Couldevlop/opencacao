@@ -132,6 +132,34 @@ class SectionReponse(BaseModel):
     lacune: bool
 
 
+class GabaritReponse(BaseModel):
+    """Gabarit exposé au client, plan compris.
+
+    Le plan est envoyé avec le gabarit pour que l'écran puisse afficher le sommaire
+    avant toute génération : la structure vient du gabarit, pas du modèle.
+    """
+
+    identifiant: str
+    titre: str
+    public: str
+    mention: str
+    sections: list[str] = Field(default_factory=list)
+
+
+class IntentionReponse(BaseModel):
+    """Ce que le serveur a compris d'une demande écrite librement.
+
+    ``certaine`` est le seul champ qui décide : à faux, l'écran pose UNE question et
+    ne produit rien. ``candidats`` porte les gabarits entre lesquels trancher, avec
+    leur titre lisible — un écran ne propose pas « etude_filiere ».
+    """
+
+    gabarit: str
+    sujet: str
+    certaine: bool
+    candidats: list[GabaritReponse] = Field(default_factory=list)
+
+
 class RapportReponse(BaseModel):
     """État d'un rapport exposé au client."""
 

@@ -254,8 +254,8 @@ async def test_la_progression_est_notifiee_section_par_section():
     """C est ce qui alimente le flux SSE : un evenement par section."""
     vues: list[tuple[int, int, str]] = []
 
-    async def _progression(faites: int, total: int, titre: str) -> None:
-        vues.append((faites, total, titre))
+    async def _progression(faites: int, total: int, section) -> None:
+        vues.append((faites, total, section.titre))
 
     gabarit = _gabarit(
         SectionGabarit("Contexte", ("rag",), ""),
