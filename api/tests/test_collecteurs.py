@@ -24,9 +24,11 @@ class FauxRag:
     def __init__(self, *passages: Passage) -> None:
         self.passages = list(passages)
         self.requetes: list[str] = []
+        self.ancres: list[str] = []
 
-    async def passages_pour(self, question: str) -> list[Passage]:
+    async def passages_pour(self, question: str, ancre: str = "") -> list[Passage]:
         self.requetes.append(question)
+        self.ancres.append(ancre)
         return self.passages
 
 

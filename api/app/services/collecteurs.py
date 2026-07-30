@@ -55,6 +55,11 @@ def empreinte_passage(texte: str) -> str:
 class CollecteurOutil:
     """Rend citable un outil existant (météo, prix, satellite)."""
 
+    # Le prix officiel et la météo d'une zone sont les mêmes au chapitre 1 et au 5 :
+    # une seule invocation sert tout le document. Et l'argument reste le SUJET, jamais
+    # le titre de section — la détection de localité lit dedans (localites.py).
+    varie_par_section = False
+
     def __init__(self, outil: OutilPort, source: str, cle_argument: str = "") -> None:
         """Initialise le collecteur.
 
@@ -68,11 +73,13 @@ class CollecteurOutil:
         self._source = source
         self._cle = cle_argument
 
-    async def collecter(self, sujet: str) -> tuple[Affirmation, ...]:
+    async def collecter(self, sujet: str, requete: str = "") -> tuple[Affirmation, ...]:
         """Invoque l'outil et convertit sa réponse en affirmations sourcées.
 
         Args:
             sujet: Sujet du document, passé à l'outil s'il attend un argument.
+            requete: Ignoré — un outil ne se raffine pas par section, et lui passer un
+                titre brouillerait la détection de localité.
 
         Returns:
             Une affirmation par donnée rendue, vide si la source est indisponible.
@@ -99,6 +106,11 @@ class CollecteurOutil:
 class CollecteurRag:
     """Rend citables les passages du corpus documentaire."""
 
+    # Source DOCUMENTAIRE : elle se raffine par section. Interrogée avec le seul sujet,
+    # les cinq sections d'une étude recevaient les mêmes passages, et il ne restait au
+    # modèle qu'à inventer la différence entre elles.
+    varie_par_section = True
+
     def __init__(self, recuperateur: object | None) -> None:
         """Initialise le collecteur.
 
@@ -108,18 +120,23 @@ class CollecteurRag:
         """
         self._recuperateur = recuperateur
 
-    async def collecter(self, sujet: str) -> tuple[Affirmation, ...]:
+    async def collecter(self, sujet: str, requete: str = "") -> tuple[Affirmation, ...]:
         """Retourne les passages pertinents, chacun avec sa source et son empreinte.
 
         Args:
-            sujet: Sujet ou titre de section servant de requête.
+            sujet: Sujet du document, servant de requête à défaut de mieux.
+            requete: Requête propre à la section — titre, consigne et sujet. C'est
+                elle qui fait que deux sections ne reçoivent pas le même contexte.
 
         Returns:
             Une affirmation par passage retenu, vide si le RAG est absent.
         """
         if self._recuperateur is None:
             return ()
-        passages = await self._recuperateur.passages_pour(sujet)
+        # Requête de section pour le sens, sujet pour l'ancre lexicale : sans cette
+        # dissociation, allonger la requête ferait tomber le recouvrement lexical sous
+        # son seuil et tuerait la voie de secours qui rattrape les termes rares.
+        passages = await self._recuperateur.passages_pour(requete or sujet, ancre=sujet)
         return tuple(
             Affirmation(
                 texte=passage.texte,

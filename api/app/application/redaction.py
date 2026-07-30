@@ -30,9 +30,10 @@ documenté ; l'interdire rendrait toute section agronomique impossible à écrir
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Protocol
 
 from app.application.provenance import construire_manifeste, source_absente
 from app.core.logging import get_logger
@@ -116,13 +117,60 @@ class SujetRefuse(Exception):
         self.message = message
 
 
-@runtime_checkable
+# Volontairement PAS `@runtime_checkable` : un Protocol portant un membre qui n'est pas
+# une méthode — ici `varie_par_section` — fait lever `issubclass`. Le décorateur
+# promettrait alors une capacité qu'il n'a plus. Aucun `isinstance`/`issubclass` ne vise
+# ce port ; on retire la promesse plutôt que de la laisser mentir.
 class CollecteurPort(Protocol):
-    """Contrat d'une source mobilisable par une section."""
+    """Contrat d'une source mobilisable par une section.
 
-    async def collecter(self, sujet: str) -> tuple[Affirmation, ...]:
-        """Retourne les affirmations sourcées disponibles pour ce sujet."""
+    ``varie_par_section`` distingue les deux natures de source. Une source
+    DOCUMENTAIRE (le RAG) doit être interrogée avec la requête propre à la section :
+    sans quoi les cinq sections d'une étude reçoivent les mêmes passages, et il ne
+    reste au modèle qu'à inventer la différence. Une source OUTIL (prix, météo) ne
+    varie pas d'une section à l'autre — elle dépend de la localité, pas du titre — et
+    la rappeler par section coûte autant d'appels réseau pour un seul résultat.
+    """
+
+    varie_par_section: bool
+
+    async def collecter(self, sujet: str, requete: str = "") -> tuple[Affirmation, ...]:
+        """Retourne les affirmations sourcées disponibles.
+
+        Args:
+            sujet: Sujet du document — c'est là que se lit la localité.
+            requete: Requête propre à la section, pour les sources documentaires.
+        """
         ...
+
+
+# Plafond de la requête documentaire. Le titre et la consigne viennent d'un gabarit, et
+# un gabarit est montable par ConfigMap : rien ne borne leur longueur au chargement. Sans
+# ce plafond, une consigne démesurée déposée par erreur produirait un embedding refusé
+# (donc N sections en lacune silencieuse) et un BM25 en O(corpus × mots) qui bloquerait
+# la boucle d'événements. Même raison que `_MAX_SECTIONS` dans `services/gabarits.py`.
+REQUETE_MAX = 400
+
+
+def requete_de_section(section: SectionGabarit, sujet: str) -> str:
+    """Compose la requête documentaire d'une section.
+
+    Le titre et la consigne portent ce que la section cherche ; le sujet garde la
+    recherche dans le bon périmètre — « production » seul ratisserait tout le corpus,
+    toutes campagnes confondues.
+
+    Cette requête sert au canal DENSE. Le canal lexical, lui, reste ancré sur le sujet
+    seul : son seuil se calcule sur le nombre de mots de la requête, et l'allonger
+    l'éteindrait (voir ``rag.passages_pour``).
+
+    Args:
+        section: Section déclarée par le gabarit.
+        sujet: Sujet du document.
+
+    Returns:
+        La requête à soumettre à la source documentaire, bornée.
+    """
+    return " ".join(part for part in (section.titre, section.consigne, sujet) if part)[:REQUETE_MAX]
 
 
 def _ligne_de_contexte(affirmation: Affirmation) -> str:
@@ -172,7 +220,51 @@ class MoteurRedaction:
         self._collecteurs = collecteurs
         self._contexte = contexte
 
-    async def _collecter(self, section: SectionGabarit, sujet: str) -> tuple[Affirmation, ...]:
+    @staticmethod
+    async def _appeler(
+        collecteur: CollecteurPort, sujet: str, requete: str
+    ) -> tuple[Affirmation, ...]:
+        """Appelle un collecteur, qu'il connaisse ou non la requête de section.
+
+        Un collecteur écrit avant l'introduction de la requête documentaire n'accepte
+        qu'un argument. On ne casse pas le contrat sous ses pieds : on retombe sur
+        l'ancien appel plutôt que de l'obliger à changer.
+
+        Args:
+            collecteur: Source à interroger.
+            sujet: Sujet du document.
+            requete: Requête propre à la section.
+
+        Returns:
+            Les affirmations rendues par la source.
+        """
+        # On INSPECTE la signature, on n'attrape pas une TypeError : une TypeError levée
+        # à l'intérieur du collecteur ferait rejouer l'appel, effets de bord compris,
+        # avant de finir en lacune silencieuse.
+        parametres = inspect.signature(collecteur.collecter).parameters
+        variadiques = {inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL}
+        accepte_requete = len(parametres) >= 2 or any(
+            parametre.kind in variadiques for parametre in parametres.values()
+        )
+        if accepte_requete:
+            # Appel TOUT EN MOTS-CLÉS. En positionnel, une signature `(sujet, *, requete)`
+            # ou `(**kwargs)` — le style déjà employé par `OutilPort` dans ce dépôt —
+            # lève une TypeError, que le `except Exception` de `_collecter` transforme
+            # en lacune silencieuse. En mots-clés, les trois formes passent, et une
+            # signature qui n'attend pas `requete` échoue bruyamment au lieu de recevoir
+            # la requête dans un paramètre qui ne l'attendait pas.
+            return await collecteur.collecter(sujet=sujet, requete=requete)
+        # Collecteur d'avant la requête documentaire : il reçoit le sujet seul, et on le
+        # dit — une requête perdue en silence est invisible jusqu'au document produit.
+        logger.warning("collecteur_sans_requete", collecteur=type(collecteur).__name__)
+        return await collecteur.collecter(sujet)
+
+    async def _collecter(
+        self,
+        section: SectionGabarit,
+        sujet: str,
+        partagees: dict[str, tuple[Affirmation, ...]],
+    ) -> tuple[Affirmation, ...]:
         """Rassemble les affirmations des sources déclarées par une section.
 
         Une source injoignable ne fait pas tomber le document : elle ne contribue
@@ -180,7 +272,9 @@ class MoteurRedaction:
 
         Args:
             section: Section déclarée par le gabarit.
-            sujet: Sujet du document, transmis à chaque source.
+            sujet: Sujet du document.
+            partagees: Résultats déjà obtenus des sources qui ne varient pas d'une
+                section à l'autre, réutilisés au lieu d'être redemandés.
 
         Returns:
             Les affirmations effectivement sourcées.
@@ -191,12 +285,29 @@ class MoteurRedaction:
             if collecteur is None:
                 logger.warning("collecteur_absent", source=nom, section=section.titre)
                 continue
+            # Une source qui ne varie pas par section n'est interrogée qu'une fois pour
+            # tout le document — le prix officiel est le même au chapitre 1 et au 5.
+            #
+            # Le défaut est « varie », et c'est délibéré : une source qui oublie de se
+            # déclarer coûte quelques appels de trop, alors que l'inverse ramènerait en
+            # silence le défaut que ce mécanisme corrige — toutes les sections nourries
+            # du même contexte. On se trompe du côté du correct, pas de l'économe.
+            par_section = getattr(collecteur, "varie_par_section", True)
+            if not par_section and nom in partagees:
+                recoltees.extend(partagees[nom])
+                continue
             try:
-                recoltees.extend(await collecteur.collecter(sujet))
+                obtenues = await self._appeler(
+                    collecteur, sujet, requete_de_section(section, sujet)
+                )
             except Exception as exc:  # noqa: BLE001 — une source ne fait pas tomber le document
                 # Le type suffit au diagnostic ; le message d'une exception peut
                 # embarquer une URL ou le sujet, qui n'ont rien à faire dans un log.
                 logger.warning("collecteur_echoue", source=nom, error=type(exc).__name__)
+                continue
+            if not par_section:
+                partagees[nom] = obtenues
+            recoltees.extend(obtenues)
         # Défense en profondeur : une affirmation sans source ne rentre pas, même si
         # un collecteur en produisait une par erreur. On applique la règle CANONIQUE
         # du projet, pas un ``strip()`` plus faible : une source « n/a » traverserait,
@@ -282,8 +393,11 @@ class MoteurRedaction:
 
         sections: list[Section] = []
         total = len(gabarit.sections)
+        # Partagé pour tout le document : les sources qui ne varient pas par section
+        # ne sont interrogées qu'une fois.
+        partagees: dict[str, tuple[Affirmation, ...]] = {}
         for index, declaree in enumerate(gabarit.sections, start=1):
-            affirmations = await self._collecter(declaree, sujet)
+            affirmations = await self._collecter(declaree, sujet, partagees)
             section = await self._rediger_section(declaree, sujet, affirmations)
             sections.append(section)
             if progression is not None:
