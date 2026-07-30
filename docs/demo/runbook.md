@@ -1,0 +1,265 @@
+# Runbook jour J — OpenCacao V3
+
+> **Critère d'acceptation de ce document (spec §9.6) : il doit être utilisable par
+> quelqu'un d'autre que Waopron.** Si une étape suppose un savoir qui n'est écrit
+> nulle part, c'est un défaut du runbook, pas du lecteur.
+
+Chaque commande est donnée telle qu'elle se tape. Les valeurs à remplacer sont en
+`MAJUSCULES`.
+
+---
+
+## 0. Avant de commencer — les cinq choses à savoir
+
+| | |
+|---|---|
+| **Cluster** | `nexusrh-preprod`, K3s v1.35.x, nœud unique `62.238.11.20` |
+| **Accès** | `export KUBECONFIG=kubeconfig-hetzner.yaml` (racine du dépôt), namespace `opencacao` |
+| **Déploiement** | `deploy/scripts/roll-image.sh` **et rien d'autre** — voir §1 |
+| **Domaine** | `opencacao.openlabconsulting.com`, derrière Cloudflare |
+| **Console** | `curation.opencacao.openlabconsulting.com` — publique, protégée par mot de passe |
+
+**Les trois pièges qui ont déjà coûté du temps :**
+
+1. **ArgoCD ne déploie pas.** L'Application `opencacao` n'existe plus sur le cluster
+   (retirée après l'incident du 06/07/2026). `roll-image.sh` est l'**unique** chemin.
+   N'attendez pas qu'une synchronisation se fasse : elle ne viendra pas.
+2. **`roll-image.sh` ne synchronise pas la ConfigMap.** Il change l'image et
+   `APP_VERSION`, c'est tout. Toute clé nouvelle (un drapeau, un timeout) doit être
+   patchée à la main — sinon le code tourne sur ses valeurs par défaut, en silence.
+3. **Cloudflare coupe une réponse d'origine vers 100 secondes** (erreur 524). Toute
+   réponse longue doit émettre un premier octet vite. C'est déjà vrai du chat et des
+   rapports ; ne l'oubliez pas en changeant un timeout.
+
+---
+
+## 1. Déployer une version
+
+```bash
+export KUBECONFIG=kubeconfig-hetzner.yaml
+deploy/scripts/roll-image.sh X.Y.Z          # ex. 0.6.75
+```
+
+Le script patche `APP_VERSION` dans la ConfigMap, bascule les images de `api`,
+`curation` et `web`, purge le cache de réponses Redis (`cache:chat:*`) et, si
+`CF_API_TOKEN` et `CF_ZONE_ID` sont exportés, purge le cache Cloudflare.
+
+**Vérifier ce qui tourne réellement** — le tag Git le plus récent ne dit rien :
+
+```bash
+kubectl -n opencacao get deploy api \
+  -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+kubectl -n opencacao get rs -l app=api --sort-by=.metadata.creationTimestamp
+curl -s https://opencacao.openlabconsulting.com/v1/health
+curl -s https://opencacao.openlabconsulting.com/v1/ready
+```
+
+> **Précédent, 06/07/2026 :** trois minutes après une release, quelqu'un a lancé
+> `roll-image.sh` avec un **ancien** tag, faisant régresser la production de quatre
+> versions pendant 24 h. La signature était visible dans `APP_VERSION`. **Après chaque
+> déploiement, relisez le tag effectivement servi.**
+
+### Retour arrière
+
+```bash
+deploy/scripts/roll-image.sh TAG_PRECEDENT
+```
+
+C'est la même commande. Le retour arrière n'est pas une procédure spéciale, ce qui est
+voulu : sous pression, on ne veut pas apprendre une seconde commande.
+
+---
+
+## 2. Bascule GPU
+
+**À répéter et chronométrer au moins deux fois avant le jour J** (spec §9.6), aller
+**et** retour. Une bascule découverte le jour même est une bascule ratée.
+
+### 2.1 Prérequis, à vérifier la veille
+
+```bash
+# Le nœud expose-t-il un GPU ?
+kubectl get nodes -o json | grep -c "nvidia.com/gpu"
+
+# Les poids sont-ils en place sur le nœud ? (modèle fusionné, PAS le GGUF)
+ls -la /opt/opencacao/models/opencacao-8b/
+# et, pour la vision :
+ls -la /opt/opencacao/models/qwen3-vl-8b-Q4_K_M.gguf \
+       /opt/opencacao/models/qwen3-vl-8b-mmproj-f16.gguf
+```
+
+Renseigner le `nodeSelector` et les `tolerations` de `deploy/k8s/inference-gpu.yaml`
+selon les labels réels du nœud — commentés par défaut, car ils dépendent du
+fournisseur. **Sans eux, le pod peut rester `Pending` sans explication visible.**
+
+### 2.2 Bascule (chronométrer à partir d'ici)
+
+```bash
+export KUBECONFIG=kubeconfig-hetzner.yaml
+
+# 1. Remplacer l'inférence CPU par vLLM (même nom de Service : rien à changer côté API)
+kubectl -n opencacao apply -f deploy/k8s/inference-gpu.yaml
+
+# 2. Attendre que le modèle soit chargé (peut prendre plusieurs minutes)
+kubectl -n opencacao rollout status deploy/inference --timeout=15m
+
+# 3. Déployer le modèle de vision
+kubectl -n opencacao apply -f deploy/k8s/vision.yaml
+kubectl -n opencacao apply -f deploy/k8s/networkpolicy.yaml   # cloisonne « vision »
+kubectl -n opencacao rollout status deploy/vision --timeout=15m
+
+# 4. Dire à l'API qu'elle est sur GPU (roll-image.sh ne fait PAS cela)
+kubectl -n opencacao patch configmap api-config --type merge -p '{"data":{
+  "PROFIL_MATERIEL": "gpu",
+  "INFERENCE_BACKEND": "vllm",
+  "VISION_ENABLED": "true"
+}}'
+
+# 5. Redémarrer l'API pour qu'elle relise la ConfigMap
+kubectl -n opencacao rollout restart deploy/api
+kubectl -n opencacao rollout status deploy/api --timeout=5m
+```
+
+### 2.3 Vérifier
+
+```bash
+curl -s https://opencacao.openlabconsulting.com/v1/ready
+curl -s https://opencacao.openlabconsulting.com/v1/version
+# Une vraie question, chronométrée :
+time curl -s -X POST https://opencacao.openlabconsulting.com/v1/chat \
+  -H 'Content-Type: application/json' -H 'X-Device-Id: recette-jour-j' \
+  -d '{"question":"Quand récolter le cacao ?","langue":"fr"}' | head -c 300
+```
+
+**Noter les temps mesurés dans le tableau du §6.** Un chiffre non écrit est un chiffre
+perdu.
+
+### 2.4 Retour au CPU
+
+```bash
+kubectl -n opencacao apply -f deploy/k8s/inference.yaml     # revient à llama.cpp
+kubectl -n opencacao delete deploy vision --ignore-not-found
+kubectl -n opencacao patch configmap api-config --type merge -p '{"data":{
+  "PROFIL_MATERIEL": "cpu",
+  "INFERENCE_BACKEND": "llama-cpp",
+  "VISION_ENABLED": "false"
+}}'
+kubectl -n opencacao rollout restart deploy/api
+kubectl -n opencacao rollout status deploy/api --timeout=10m
+```
+
+> **Le repli CPU est le plan de secours du plan de secours.** Il doit être chronométré
+> lui aussi : c'est ce qu'on exécutera sous pression si le GPU lâche en scène.
+
+---
+
+## 3. Les drapeaux de la V3
+
+Trois fonctionnalités sont livrées mais **coupées**, chacune par un drapeau. Les
+activer se fait à chaud, sans redéploiement d'image.
+
+| Drapeau | État | Ce qu'il ouvre | À savoir avant d'activer |
+|---|---|---|---|
+| `PARCELLES_ENABLED` | `false` | Parcelles et captures terrain (C1) | Crée `parcelles.db` sur `/data` |
+| `VISION_ENABLED` | `false` | Analyse visuelle des captures (C2) | **Inerte sans GPU** : `PROFIL_MATERIEL` doit valoir `gpu`, sinon l'API répond 503 |
+| `RAPPORTS_ENABLED` | `false` | Atelier de livrables (C3) | Une étude enchaîne **une génération par section** : mesurer le budget CPU total avant |
+
+```bash
+kubectl -n opencacao patch configmap api-config --type merge \
+  -p '{"data":{"PARCELLES_ENABLED":"true"}}'
+kubectl -n opencacao rollout restart deploy/api
+```
+
+**Budget de latence — le point à trancher avant d'activer la vision.** Le constat visuel
+est **synchrone** : il enchaîne `VISION_TIMEOUT_S` puis `REQUEST_TIMEOUT_S`. Valeurs
+réellement en ConfigMap aujourd'hui :
+
+```
+VISION_TIMEOUT_S  =  30
+REQUEST_TIMEOUT_S = 300      <-- et non 120, qui n'est que le défaut du code
+```
+
+Soit un pire cas de **330 s**, quand Cloudflare coupe vers 100. Le client verrait un
+524, et la génération continuerait côté serveur pour rien.
+
+Trois issues, à choisir explicitement :
+
+1. Abaisser `REQUEST_TIMEOUT_S` pour que le cumul tienne sous 100 s — au prix de
+   couper les générations longues du chat, qui s'appuient sur ces 300 s.
+2. Passer le constat visuel en flux, comme l'ont été `/chat/stream` et les rapports.
+3. Ne pas activer `VISION_ENABLED` sur un domaine derrière Cloudflare.
+
+**Ne pas activer sans avoir tranché.** C'est exactement le scénario du 524 déjà vécu en
+juillet sur la composition multi-agents.
+
+---
+
+## 4. Surveillance en direct
+
+```bash
+# Journaux de l'API, filtrés sur ce qui compte
+kubectl -n opencacao logs -f deploy/api | grep -E "error|warning|refus|echoue"
+
+# Mémoire de l'inférence — la cause de l'OOM-kill du 28/06/2026
+kubectl -n opencacao top pod -l app=inference
+
+# Redémarrages : un compteur qui bouge est le premier signe d'un OOM
+kubectl -n opencacao get pods -w
+```
+
+**Seuils d'alerte.** Le pod d'inférence est plafonné à 12 Gi et a déjà été tué pour
+dépassement. Si `top pod` approche cette limite, ne pas attendre : vérifier que
+`--cache-ram` est bien à 1024 dans le manifeste servi.
+
+**Alertes automatiques.** Un CronJob `watchdog-enrichissement` tourne chaque jour à
+04:30 UTC et alerte par email si l'enrichissement du corpus n'a pas réussi depuis plus
+de 26 h. L'email part par ZeptoMail.
+
+> **L'expéditeur DOIT être `waopron@openlabconsulting.com`.** `noreply@` est refusé par
+> ZeptoMail (erreur `SM_147`). Si les alertes cessent, vérifier d'abord cela.
+
+---
+
+## 5. Plan de secours — à dégainer sans hésiter
+
+L'ordre compte : chaque palier est plus sûr et plus rapide que le précédent.
+
+| Palier | Quand | Comment |
+|---|---|---|
+| **1. Couper la fonctionnalité fautive** | Une seule brique déraille | Passer son drapeau à `false` + `rollout restart deploy/api` (~1 min) |
+| **2. Repli CPU** | Le GPU lâche ou vLLM ne charge pas | §2.4 (chronométré à l'avance) |
+| **3. Retour arrière d'image** | La version déployée est en cause | `roll-image.sh TAG_PRECEDENT` |
+| **4. Hors-ligne** | Le service est inaccessible | Captures d'écran et enregistrements préparés — voir ci-dessous |
+
+**Le palier 4 doit être prêt AVANT le jour J**, pas improvisé : enregistrement vidéo du
+scénario complet joué en production, et captures des écrans clés. Sans lui, une panne
+réseau dans la salle suffit à interrompre la démonstration.
+
+- [ ] Enregistrement du scénario complet — **à produire**
+- [ ] Captures des écrans clés — **à produire**
+- [ ] Fichiers de livrables (`.docx`, `.xlsx`, `.pptx`) déjà générés, sur la machine de
+      présentation — **à produire**
+
+---
+
+## 6. Mesures — à remplir pendant les répétitions
+
+Un tableau vide le jour J signifie que les répétitions n'ont pas eu lieu.
+
+| Répétition | Date | Bascule GPU | Retour CPU | Latence 1ʳᵉ question | Incident |
+|---|---|---|---|---|---|
+| 1 | | | | | |
+| 2 | | | | | |
+
+---
+
+## 7. Qui fait quoi
+
+À remplir avant le jour J : un runbook sans noms laisse chacun supposer que l'autre
+s'en occupe.
+
+| Rôle | Personne | Joignable à |
+|---|---|---|
+| Pilote de la démonstration | | |
+| Surveillance technique (journaux, mémoire) | | |
+| Décision de repli | | |

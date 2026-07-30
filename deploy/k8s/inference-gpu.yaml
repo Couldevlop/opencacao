@@ -1,0 +1,83 @@
+# Inférence GPU : vLLM servant le modèle fusionné (V3, chantier C4, spec §9.1).
+# JAMAIS exposé publiquement (ClusterIP), comme son homologue CPU.
+#
+# NE PAS APPLIQUER SUR LE NŒUD CPU. Ce manifeste remplace `inference.yaml` : les deux
+# portent le même nom de Service (`inference`) pour que la bascule ne demande aucun
+# changement d'URL côté API — seul `INFERENCE_BACKEND` et `PROFIL_MATERIEL` changent
+# dans la ConfigMap. Procédure complète et retour arrière : `docs/demo/runbook.md`.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inference
+  labels: { app: inference }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: inference }
+  strategy: { type: Recreate } # un seul GPU : pas deux pods à la fois
+  template:
+    metadata:
+      labels: { app: inference }
+    spec:
+      # À renseigner selon le nœud GPU réellement provisionné : sans sélecteur, le
+      # planificateur peut placer le pod sur un nœud sans carte et il restera Pending.
+      # nodeSelector: { "nvidia.com/gpu.present": "true" }
+      # tolerations:
+      #   - { key: "nvidia.com/gpu", operator: "Exists", effect: "NoSchedule" }
+      containers:
+        - name: vllm
+          # Épinglé : « latest » sur un serveur d'inférence, c'est une régression un
+          # matin de démonstration. Version alignée sur la spec §2.1 (vLLM ≥ 0.12).
+          image: vllm/vllm-openai:v0.12.0
+          args:
+            - "--model"
+            - "/models/opencacao-8b" # modèle fusionné, PAS le GGUF
+            - "--served-model-name"
+            - "opencacao-8b" # doit égaler MODEL_NAME de la ConfigMap
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8000"
+            - "--max-model-len"
+            - "8192"
+            # Laisse de la mémoire à la carte pour l'activation et le cache KV ; à
+            # relever seulement après mesure, jamais par optimisme.
+            - "--gpu-memory-utilization"
+            - "0.85"
+            - "--dtype"
+            - "bfloat16"
+          ports:
+            - containerPort: 8000
+          volumeMounts:
+            - name: modele
+              mountPath: /models
+              readOnly: true
+            # vLLM compile des noyaux au premier démarrage : sans cache, chaque
+            # redémarrage repaie plusieurs minutes.
+            - name: cache-vllm
+              mountPath: /root/.cache
+          resources:
+            requests: { cpu: "2", memory: "16Gi", nvidia.com/gpu: "1" }
+            limits: { cpu: "8", memory: "32Gi", nvidia.com/gpu: "1" }
+          readinessProbe:
+            httpGet: { path: /v1/models, port: 8000 }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 60 # le 1er chargement + compilation peut être long
+      volumes:
+        - name: modele
+          hostPath:
+            path: /opt/opencacao/models
+            type: Directory
+        - name: cache-vllm
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inference
+spec:
+  selector: { app: inference }
+  ports:
+    - port: 8000
+      targetPort: 8000
