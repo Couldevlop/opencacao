@@ -209,8 +209,11 @@ def resoudre_demande(demande: str, gabarits: Iterable[Gabarit]) -> Intention:
     premier_declencheur = len(texte)
     for gabarit in catalogue:
         touches = 0
-        for brut in gabarit.declencheurs:
-            declencheur = _plier(brut)
+        # Dédoublonné APRÈS pliage. « étude » et « etude » déclarés tous deux dans un
+        # gabarit désignent le même mot : les compter deux fois gonflerait le score et
+        # ferait gagner ce gabarit sur une égalité qui n'en est pas une — c'est-à-dire
+        # trancher là où il fallait poser une question.
+        for declencheur in {_plier(brut) for brut in gabarit.declencheurs}:
             # Le pluriel est toléré, et rien d'autre : voir `_correspond`.
             fins = [
                 fin

@@ -127,6 +127,18 @@ class TestAmbiguite:
         assert intention.certaine is False
         assert set(intention.candidats) == {"etude_filiere", "bulletin_regional"}
 
+    def test_un_declencheur_declare_deux_fois_ne_compte_qu_une_fois(self) -> None:
+        # « étude » et « etude » declares ensemble designent le meme mot. Les compter
+        # deux fois ferait gagner ce gabarit sur une egalite qui n en est pas une —
+        # donc trancher la ou il fallait poser une question.
+        catalogue = (
+            gabarit("etude_filiere", ("étude", "etude", "analyse")),
+            gabarit("bulletin_regional", ("bulletin",)),
+        )
+        intention = resoudre_demande("une étude et un bulletin sur Daloa", catalogue)
+        assert intention.certaine is False
+        assert set(intention.candidats) == {"etude_filiere", "bulletin_regional"}
+
     def test_un_type_dominant_l_emporte_sur_une_mention_isolee(self) -> None:
         # Deux déclencheurs contre un : ce n'est plus une égalité.
         intention = resoudre_demande("une analyse de la filière, façon bulletin", CATALOGUE)

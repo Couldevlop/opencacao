@@ -14,11 +14,16 @@ import json
 from collections.abc import AsyncIterator
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field, StringConstraints
 
-from app.api_deps import get_cache_client, get_device_id_obligatoire, get_service_rapports
+from app.api_deps import (
+    get_cache_client,
+    get_client_ip,
+    get_device_id_obligatoire,
+    get_service_rapports,
+)
 from app.application.intention_rapport import DEMANDE_MAX, resoudre_demande
 from app.core.rapports_store import Rapport
 from app.domain.ports import CachePort
@@ -138,9 +143,9 @@ async def lister_les_gabarits() -> list[GabaritReponse]:
 @router.post("/rapports/intention", response_model=IntentionReponse)
 async def comprendre_demande(
     payload: IntentionRequest,
-    request: Request,
     device_id: str = Depends(get_device_id_obligatoire),
     cache: CachePort = Depends(get_cache_client),
+    client_ip: str = Depends(get_client_ip),
 ) -> IntentionReponse:
     """Interprète une demande écrite librement, sans rien produire.
 
@@ -156,7 +161,13 @@ async def comprendre_demande(
     Raises:
         HTTPException: 429 si le débit est dépassé, 503 si un gabarit est illisible.
     """
-    if await cache.hit_rate_limit(request.client.host if request.client else "inconnu"):
+    # L'IP vient de la dépendance dédiée, jamais de `request.client.host`. En production
+    # l'application est derrière Cloudflare : `request.client.host` y est l'IP de l'edge,
+    # LA MÊME pour tout le monde. Le compteur serait alors global — soit il ne freine
+    # aucun attaquant, soit il verrouille tous les utilisateurs d'un coup. `get_client_ip`
+    # lit CF-Connecting-IP, et seulement si l'on est configuré pour faire confiance au
+    # proxy (anti-spoofing, OWASP API4).
+    if await cache.hit_rate_limit(client_ip):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Trop de requêtes. Patientez quelques instants.",
