@@ -47,5 +47,16 @@ jobs:
       - name: Tests des scripts d'entraînement
         run: pytest training/tests -o addopts=""
 
+      # Le front n'a aucune dépendance : `node --test` suffit, sans installation.
+      # La vérification de syntaxe couvre les modules qu'aucun test ne charge (client
+      # d'API, vue, composition) — une erreur y passerait sinon jusqu'au navigateur.
+      - name: Installer Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Tests du front (node --test)
+        run: make test-web
+
       - name: Validation du corpus
         run: python training/scripts/enrich_corpus.py --check corpus/corpus_cacao_demarrage.jsonl

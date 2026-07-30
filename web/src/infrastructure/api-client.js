@@ -422,6 +422,155 @@ export function creerClientApi(lireBaseUrl) {
     return versCapture(await resp.json());
   }
 
+
+  // ------------------------------------------------------------- livrables (C3)
+
+  /**
+   * Liste les gabarits disponibles, PLAN COMPRIS. Renvoie `null` si le serveur ne
+   * sert pas l'atelier — l'écran doit distinguer « aucun gabarit » de « fonction
+   * absente ».
+   */
+  async function listerGabarits() {
+    const resp = await appelParcelle(
+      "/v1/rapports/gabarits",
+      { headers: enTetes({ Accept: "application/json" }) },
+      { tolererAbsence: true }
+    );
+    if (!resp) return null;
+    const data = await resp.json();
+    return Array.isArray(data) ? data : [];
+  }
+
+  /**
+   * Demande au serveur ce qu'il comprend d'une phrase écrite librement.
+   *
+   * Aucune génération : la résolution est déterministe côté serveur, donc immédiate.
+   */
+  async function comprendreDemande(demande) {
+    const resp = await appelParcelle(
+      "/v1/rapports/intention",
+      {
+        method: "POST",
+        headers: enTetes({ "Content-Type": "application/json", Accept: "application/json" }),
+        body: JSON.stringify({ demande }),
+      },
+      { messageAbsence: "L'atelier de livrables n'est pas activé sur ce serveur." }
+    );
+    return resp.json();
+  }
+
+  /** Crée un job de génération. Renvoie l'état initial du rapport. */
+  async function creerRapport({ gabarit, sujet }) {
+    const resp = await appelParcelle(
+      "/v1/rapports",
+      {
+        method: "POST",
+        headers: enTetes({ "Content-Type": "application/json", Accept: "application/json" }),
+        body: JSON.stringify({ gabarit, sujet }),
+      },
+      { messageAbsence: "L'atelier de livrables n'est pas activé sur ce serveur." }
+    );
+    return resp.json();
+  }
+
+  /** Liste les documents de cet appareil. */
+  async function listerRapports() {
+    const resp = await appelParcelle(
+      "/v1/rapports",
+      { headers: enTetes({ Accept: "application/json" }) },
+      { tolererAbsence: true }
+    );
+    if (!resp) return null;
+    const data = await resp.json();
+    return Array.isArray(data) ? data : [];
+  }
+
+  /**
+   * Suit la rédaction d'un rapport et relaie CHAQUE événement à onEvenement.
+   *
+   * Le premier événement arrive avant toute génération : c'est ce qui permet
+   * d'afficher l'attente sans page blanche. Un type inconnu est relayé tel quel —
+   * à l'appelant de l'ignorer, pour qu'un serveur plus récent ne casse pas cet écran.
+   *
+   * @param {string} identifiant
+   * @param {(evenement: object) => void} onEvenement
+   */
+  async function suivreRapport(identifiant, onEvenement) {
+    let resp;
+    try {
+      resp = await fetch(
+        baseCourante() + "/v1/rapports/" + encodeURIComponent(identifiant) + "/stream",
+        { headers: enTetes({ Accept: "text/event-stream" }) }
+      );
+    } catch {
+      throw new ConseilError(ErreurKind.RESEAU, "API injoignable");
+    }
+    if (resp.status === 404) {
+      throw new ConseilError(ErreurKind.INTROUVABLE, "Document inconnu.");
+    }
+    if (ERREURS_HTTP[resp.status]) {
+      throw new ConseilError(ERREURS_HTTP[resp.status], await detailServeur(resp));
+    }
+    if (!resp.ok || !resp.body) {
+      throw new ConseilError(ErreurKind.HTTP, "Erreur HTTP " + resp.status);
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let tampon = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      tampon += decoder.decode(value, { stream: true });
+      let sep;
+      while ((sep = tampon.indexOf("\n\n")) >= 0) {
+        const bloc = tampon.slice(0, sep);
+        tampon = tampon.slice(sep + 2);
+        const ligne = bloc.split("\n").find((l) => l.startsWith("data:"));
+        if (!ligne) continue;
+        try {
+          onEvenement(JSON.parse(ligne.slice(5).trim()));
+        } catch {
+          // Un bloc illisible ne doit pas interrompre le flux.
+        }
+      }
+    }
+  }
+
+  /**
+   * Chemin de téléchargement d'un rapport dans un format donné.
+   *
+   * CHEMIN, pas URL : `appelParcelle` préfixe déjà la base. Y remettre `baseCourante()`
+   * produisait « https://hoteHttps://hote/v1/… » — un hôte syntaxiquement valide, donc
+   * pas d'exception, juste un échec DNS présenté comme « API injoignable ». Les quatre
+   * boutons d'export étaient morts sans qu'aucun test simulant le client ne le voie.
+   */
+  function cheminExport(identifiant, format) {
+    return (
+      "/v1/rapports/" +
+      encodeURIComponent(identifiant) +
+      "/export?format=" +
+      encodeURIComponent(format)
+    );
+  }
+
+  /**
+   * Télécharge un rapport et rend le couple `{blob, nom}`.
+   *
+   * On passe par fetch plutôt que par un lien direct : l'en-tête X-Device-Id est
+   * obligatoire, et un `<a href>` ne le porterait pas.
+   *
+   * Le nom de fichier est construit ICI, jamais repris de `Content-Disposition` : un
+   * en-tête serveur peut porter U+202E et faire lire « facture.exe » comme
+   * « facture.docx » dans la barre de téléchargement. Le format est déjà connu.
+   */
+  async function exporterRapport(identifiant, format) {
+    const resp = await appelParcelle(cheminExport(identifiant, format), {
+      headers: enTetes({}),
+    });
+    return { blob: await resp.blob(), nom: `opencacao-${identifiant}.${format}` };
+  }
+
   return Object.freeze({
     demander,
     demanderStream,
@@ -439,5 +588,11 @@ export function creerClientApi(lireBaseUrl) {
     obtenirParcelle,
     enregistrerGeometrie,
     deposerCapture,
+    listerGabarits,
+    comprendreDemande,
+    creerRapport,
+    listerRapports,
+    suivreRapport,
+    exporterRapport,
   });
 }

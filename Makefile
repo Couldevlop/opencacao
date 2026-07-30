@@ -21,7 +21,9 @@ help:
 	@echo "  demo-base-cpu Démarre la démo flux complet (Ministral 3 8B de base, CPU/GGUF)"
 	@echo "  up            Démarre le service (inference + api + redis)"
 	@echo "  down          Arrête le service"
-	@echo "  test          Lance les tests Python (pytest)"
+	@echo "  test          Lance tous les tests (API + front)"
+	@echo "  test-api      Tests Python (pytest)"
+	@echo "  test-web      Tests du front (node --test, sans dépendance)"
 	@echo "  lint          Vérifie le style (ruff check)"
 	@echo "  format        Formate le code (ruff format)"
 
@@ -116,9 +118,22 @@ down:
 	docker compose -f docker-compose.base.yml down
 	docker compose -f docker-compose.base-cpu.yml down
 
-test:
+test: test-api test-web
+
+test-api:
 	cd api && pytest
 	pytest training/tests -o addopts=""
+
+# Front : lanceur de tests de Node, aucune dépendance (le web est « zéro dépendance »).
+# Ne couvre que les couches PURES — domaine et application — là où est la logique ;
+# le rendu DOM se vérifie à l'écran, pas dans un simulacre de navigateur.
+test-web:
+# Les tests ne chargent que les couches domaine et application. Un module non testé
+# — client d'API, vue, composition — peut donc être syntaxiquement cassé sans qu'un
+# test échoue : la page blanche se découvrirait alors dans le navigateur. On vérifie
+# tous les modules avant de lancer les tests.
+	node -e "const fs=require('fs'),p=require('path'),{execFileSync}=require('child_process');(function w(d){for(const e of fs.readdirSync(d,{withFileTypes:true})){const f=p.join(d,e.name);if(e.isDirectory())w(f);else if(f.endsWith('.js'))execFileSync(process.execPath,['--check',f],{stdio:'inherit'});}})('web/src');console.log('syntaxe des modules : ok')"
+	node --test web/tests/*.test.js
 
 lint:
 	cd api && ruff check .
