@@ -178,7 +178,11 @@ class ServiceRapports:
         # plusieurs minutes est un échec public, une attente annoncée est tolérée. La
         # position peut être légèrement périmée si une place se libère entre-temps —
         # assumé, mieux vaut approximatif tout de suite qu'exact trop tard.
-        position = self._file.position()
+        # Saturation d'abord. Annoncer « position 9 » alors que le plafond d'attente
+        # est à 8, c'est promettre une place qui sera refusée à la ligne suivante :
+        # le client reçoit une estimation de plusieurs minutes puis un refus immédiat.
+        # Mieux vaut refuser tout de suite, et ne rien promettre.
+        position = 0 if self._file.saturee() else self._file.position()
         if position:
             attente_s = self._file.attente_estimee(position)
             yield {

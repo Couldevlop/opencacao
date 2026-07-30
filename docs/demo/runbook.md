@@ -284,6 +284,23 @@ réseau dans la salle suffit à interrompre la démonstration.
 
 ## 6. Mesures — à remplir pendant les répétitions
 
+### Où en sont les critères d'acceptation (spec §9.6)
+
+| Critère | État |
+|---|---|
+| Sous charge simulée, la file annonce une position et aucune requête ne meurt en silence | **Acquis.** Vérifié en continu par `api/tests/test_charge_file_attente.py` : douze demandes concurrentes pour une place, chacune repart avec une issue nette — servie ou refusée lisiblement. |
+| Bascule GPU puis retour CPU, deux fois, chronométrés | **En attente du GPU.** Rien ne peut être mesuré avant. |
+| Scénario complet joué en production, deux fois de suite | **En attente** des questions de Waopron et de la bascule. |
+| Plan de secours utilisable par quelqu'un d'autre | **À éprouver** — le seul juge est quelqu'un qui n'a pas écrit ce document. |
+
+Le premier critère est le seul qui ne dépend ni du matériel ni d'une répétition : il est
+donc verrouillé par un test plutôt que par une observation ponctuelle. Ce test a d'ailleurs
+trouvé une incohérence à l'écrit : une demande s'entendait annoncer « position 9 » alors
+que le plafond d'attente est à 8, puis se faisait refuser dans la foulée. On ne promet plus
+une place qui n'existe pas.
+
+### Chronométrage des répétitions
+
 Un tableau vide le jour J signifie que les répétitions n'ont pas eu lieu.
 
 | Répétition | Date | Bascule GPU | Retour CPU | Latence 1ʳᵉ question | Incident |
