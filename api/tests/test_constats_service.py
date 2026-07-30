@@ -173,3 +173,47 @@ async def test_vision_indisponible_leve_une_erreur_orientant_vers_l_anader(
     with pytest.raises(VisionIndisponibleErreur) as erreur:
         await service.produire(parcelle, "cap1", DEVICE)
     assert "ANADER" in str(erreur.value)
+
+
+async def test_un_constat_trop_long_est_abandonne_avant_la_coupure_du_bord(
+    depot: ParcelleStore, dossier: Path
+):
+    """Le constat est SYNCHRONE : il doit promettre moins que ce que l edge tolere.
+
+    REQUEST_TIMEOUT_S vaut 300 s en production (aligne sur l ingress, pour le flux du
+    chat), et VISION_TIMEOUT_S 30 : le pire cas atteignait 330 s la ou Cloudflare coupe
+    vers 100. Le client voyait un 524 et la generation continuait pour rien. On borne
+    donc le constat lui-meme, et on rend la consigne ANADER — le repli deja prevu.
+    """
+    import asyncio
+
+    class VisionLente:
+        async def decrire(self, images, consigne):
+            await asyncio.sleep(5)
+            return "Une description qui arrive trop tard."
+
+        async def disponible(self) -> bool:
+            return True
+
+    parcelle = await _preparer(depot)
+    service = ServiceConstats(
+        depot,
+        ServiceConstatVisuel(VisionLente(), FausseInference()),
+        dossier_captures=dossier,
+        budget_s=0.2,
+    )
+    with pytest.raises(VisionIndisponibleErreur) as erreur:
+        await service.produire(parcelle, "cap1", DEVICE)
+    assert "ANADER" in str(erreur.value)
+
+
+async def test_un_constat_dans_les_temps_n_est_pas_affecte(depot: ParcelleStore, dossier: Path):
+    parcelle = await _preparer(depot)
+    service = ServiceConstats(
+        depot,
+        ServiceConstatVisuel(FauxVision(), FausseInference()),
+        dossier_captures=dossier,
+        budget_s=30.0,
+    )
+    constat = await service.produire(parcelle, "cap1", DEVICE)
+    assert constat.texte

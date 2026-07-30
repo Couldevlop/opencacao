@@ -1,0 +1,6 @@
+# Questions du scénario de démonstration — pré-chauffées avant l'entrée en scène.
+# Une par ligne. Les lignes vides et celles commençant par # sont ignorées.
+# À REMPLIR par Waopron : ce sont les questions EXACTES qui seront posées en scène.
+#
+# Exemple de forme attendue (à remplacer) :
+Quand récolter le cacao ?

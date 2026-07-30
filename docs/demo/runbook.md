@@ -19,17 +19,54 @@ Chaque commande est donnée telle qu'elle se tape. Les valeurs à remplacer sont
 | **Domaine** | `opencacao.openlabconsulting.com`, derrière Cloudflare |
 | **Console** | `curation.opencacao.openlabconsulting.com` — publique, protégée par mot de passe |
 
-**Les trois pièges qui ont déjà coûté du temps :**
+**Les trois pièges qui ont déjà coûté du temps.** Les trois ont été **vérifiés sur le
+cluster le 30/07/2026** — ce ne sont pas des souvenirs.
 
-1. **ArgoCD ne déploie pas.** L'Application `opencacao` n'existe plus sur le cluster
-   (retirée après l'incident du 06/07/2026). `roll-image.sh` est l'**unique** chemin.
-   N'attendez pas qu'une synchronisation se fasse : elle ne viendra pas.
-2. **`roll-image.sh` ne synchronise pas la ConfigMap.** Il change l'image et
-   `APP_VERSION`, c'est tout. Toute clé nouvelle (un drapeau, un timeout) doit être
-   patchée à la main — sinon le code tourne sur ses valeurs par défaut, en silence.
+1. **ArgoCD ne déploie pas OpenCacao.** Une seule Application existe sur le cluster, et
+   c'est `openlab-website` :
+
+   ```
+   $ kubectl get applications -A
+   NAMESPACE   NAME              SYNC STATUS   HEALTH STATUS
+   argocd      openlab-website   Synced        Healthy
+   ```
+
+   L'Application `opencacao` a été retirée après l'incident du 06/07/2026.
+   `roll-image.sh` est l'**unique** chemin. N'attendez pas une synchronisation : elle ne
+   viendra pas.
+
+2. **`roll-image.sh` ne synchronise pas la ConfigMap — et l'écart est déjà là.** Le
+   script change l'image et `APP_VERSION`, rien d'autre. Relevé sur le cluster, la
+   ConfigMap vivante **ne contient pas** les clés de la V3 :
+
+   ```
+   PARCELLES_ENABLED   absent      VISION_ENABLED     absent
+   RAPPORTS_ENABLED    absent      VISION_TIMEOUT_S   absent
+   PROFIL_MATERIEL     absent
+   ```
+
+   Le code retombe donc sur ses défauts — qui valent `false`, `false`, `false`, `30` et
+   `cpu`, soit exactement les valeurs voulues aujourd'hui. **On est juste par chance, pas
+   par construction.** Avant d'activer quoi que ce soit :
+
+   ```bash
+   kubectl -n opencacao apply -f deploy/k8s/api.yaml   # réaligne la ConfigMap
+   kubectl -n opencacao rollout restart deploy/api
+   ```
+
 3. **Cloudflare coupe une réponse d'origine vers 100 secondes** (erreur 524). Toute
    réponse longue doit émettre un premier octet vite. C'est déjà vrai du chat et des
    rapports ; ne l'oubliez pas en changeant un timeout.
+
+**État relevé le 30/07/2026**, pour comparaison :
+
+| | |
+|---|---|
+| Image servie | `ghcr.io/couldevlop/opencacao-api:0.6.74` |
+| `APP_VERSION` | `0.6.74` (la release `0.6.75` existe sur GHCR, non déployée) |
+| Nœud | `nexusrh-preprod`, K3s `v1.35.4+k3s1` |
+| Mémoire de l'inférence | **4,9 Gi** consommés sur 12 Gi de limite |
+| Drapeaux actifs | `AGENTS_ENABLED`, `SEMANTIC_CACHE_ENABLED`, `DIALOGUE_NATUREL_ENABLED` |
 
 ---
 
@@ -175,22 +212,25 @@ est **synchrone** : il enchaîne `VISION_TIMEOUT_S` puis `REQUEST_TIMEOUT_S`. Va
 réellement en ConfigMap aujourd'hui :
 
 ```
-VISION_TIMEOUT_S  =  30
-REQUEST_TIMEOUT_S = 300      <-- et non 120, qui n'est que le défaut du code
+REQUEST_TIMEOUT_S = 300      <-- relevé sur le cluster, et non 120 (défaut du code)
+VISION_TIMEOUT_S  =  30      <-- défaut du code, la clé est absente de la ConfigMap
 ```
 
-Soit un pire cas de **330 s**, quand Cloudflare coupe vers 100. Le client verrait un
-524, et la génération continuerait côté serveur pour rien.
+Le cumul brut atteindrait **330 s** quand Cloudflare coupe vers 100 : le client verrait
+un 524 et la génération continuerait côté serveur pour rien.
 
-Trois issues, à choisir explicitement :
+**C'est réglé, mais par une borne explicite, pas par ces deux valeurs.** Le service du
+constat s'accorde un budget total de **75 s** (`BUDGET_CONSTAT_S` dans
+`api/app/services/constats.py`) : au-delà, il abandonne et rend la consigne qui oriente
+vers l'ANADER — le repli déjà prévu par la cascade — plutôt que de laisser l'edge
+couper. `REQUEST_TIMEOUT_S` reste à 300 volontairement : il est aligné sur le
+`proxy-read-timeout` de l'ingress et sert le flux du chat, où une composition
+multi-agents prend jusqu'à trois minutes. **Le baisser casserait ce que le correctif du
+524 de juillet avait réparé.**
 
-1. Abaisser `REQUEST_TIMEOUT_S` pour que le cumul tienne sous 100 s — au prix de
-   couper les générations longues du chat, qui s'appuient sur ces 300 s.
-2. Passer le constat visuel en flux, comme l'ont été `/chat/stream` et les rapports.
-3. Ne pas activer `VISION_ENABLED` sur un domaine derrière Cloudflare.
-
-**Ne pas activer sans avoir tranché.** C'est exactement le scénario du 524 déjà vécu en
-juillet sur la composition multi-agents.
+Ce qui reste à surveiller après la bascule GPU : si le budget de 75 s se révèle trop
+court pour une analyse d'image sur GPU, l'ajuster **là** — pas en touchant au timeout
+global.
 
 ---
 

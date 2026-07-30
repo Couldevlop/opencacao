@@ -22,6 +22,15 @@ from app.services.vision.indisponible import CONSIGNE_INDISPONIBLE
 
 logger = get_logger(__name__)
 
+# Budget total du constat, bord à bord. Il est SYNCHRONE par conception : il doit donc
+# promettre moins que ce que l'edge tolère. Cloudflare coupe une réponse d'origine vers
+# 100 s ; au-delà, le client voit un 524 et la génération continue côté serveur pour
+# rien. Or les timeouts en aval s'additionnent — VISION_TIMEOUT_S (30 s) puis
+# REQUEST_TIMEOUT_S (300 s en ConfigMap, aligné sur l'ingress pour le flux du chat, et
+# qu'on ne peut donc pas baisser). On borne ici, et le dépassement retombe sur le repli
+# déjà prévu : la consigne qui oriente vers l'ANADER.
+BUDGET_CONSTAT_S = 75.0
+
 
 class CaptureIntrouvable(Exception):
     """La capture visée n'existe pas, ou n'appartient pas à cet appareil."""
@@ -39,6 +48,7 @@ class ServiceConstats:
         store: ParcelleStorePort,
         constat_visuel: ServiceConstatVisuel,
         dossier_captures: Path,
+        budget_s: float = BUDGET_CONSTAT_S,
     ) -> None:
         """Initialise le service.
 
@@ -46,10 +56,13 @@ class ServiceConstats:
             store: Dépôt de persistance des parcelles et constats.
             constat_visuel: Cascade d'analyse (étages 1, 4 et 5).
             dossier_captures: Dossier où C1 a écrit les images.
+            budget_s: Temps total accordé à la cascade, bord à bord. Au-delà, on rend
+                la consigne d'indisponibilité plutôt que de laisser l'edge couper.
         """
         self._store = store
         self._analyse = constat_visuel
         self._dossier = dossier_captures
+        self._budget_s = budget_s
 
     def _lire_images(self, capture: Capture) -> tuple[tuple[bytes, str], ...]:
         """Relit sur disque les octets des images RECEVABLES d'une capture.
@@ -131,7 +144,14 @@ class ServiceConstats:
             raise CaptureIntrouvable(capture_id)
 
         contexte = await self._contexte(parcelle_id, proprietaire)
-        constat = await self._analyse.analyser(images, contexte)
+        try:
+            async with asyncio.timeout(self._budget_s):
+                constat = await self._analyse.analyser(images, contexte)
+        except TimeoutError as expire:
+            # Dépasser le budget n'est pas un cas exotique : c'est ce qui arrive quand
+            # le modèle rame. Mieux vaut le dire dans les temps qu'un 524 muet.
+            logger.warning("constat_budget_depasse", capture=capture_id, budget_s=self._budget_s)
+            raise VisionIndisponibleErreur(CONSIGNE_INDISPONIBLE) from expire
         if constat is None:
             raise VisionIndisponibleErreur(CONSIGNE_INDISPONIBLE)
 
