@@ -78,7 +78,11 @@ def rendu_pptx(document: Document) -> bytes:
     if document.mention:
         # D5 : la mention est sur la PREMIÈRE diapositive, pas reléguée en fin de deck.
         sous_titre = f"{sous_titre}\n{document.mention}" if sous_titre else document.mention
-    if len(ouverture.placeholders) > 1:
+    # pragma: no branch — la disposition « titre » du gabarit python-pptx livré porte
+    # toujours deux emplacements. Ce garde-fou ne sert que si le gabarit était remplacé
+    # un jour ; l'exercer exigerait de simuler les entrailles de python-pptx, donc de
+    # tester le simulacre plutôt que le code. Branche assumée, pas oubliée.
+    if len(ouverture.placeholders) > 1:  # pragma: no branch
         ouverture.placeholders[1].text = _propre(sous_titre)
 
     for section in document.sections:
