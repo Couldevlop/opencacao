@@ -34,6 +34,36 @@ export function nomDepuisHash(hash, noms, defaut) {
   return noms.includes(nom) ? nom : defaut;
 }
 
+// Quelle capacité déclarée par l'API ouvre quelle destination. La conversation n'y
+// figure pas : elle est le produit, elle ne se ferme jamais.
+const CAPACITE_PAR_DESTINATION = { parcelle: "parcelles", atelier: "rapports" };
+
+/**
+ * Retire de la barre latérale les destinations que l'API ne sert pas.
+ *
+ * « Ma parcelle » et l'atelier vivent derrière des drapeaux qu'on baisse — après une
+ * démonstration, ou parce qu'une étude coûte des minutes de CPU quand l'inférence ne
+ * sert qu'une requête à la fois. Les proposer quand même donnerait une porte qui ne
+ * mène nulle part.
+ *
+ * @param {Object<string, object>} liens Nœud cliquable de chaque destination.
+ * @param {object|null} capacites Capacités déclarées par `/v1/version`, ou `null` si
+ *   l'API n'a pas répondu — auquel cas on ne masque RIEN : le chat ne fonctionne pas
+ *   davantage, et faire disparaître les destinations donnerait à croire qu'elles ont
+ *   été retirées.
+ * @returns {Array<string>} Les destinations effectivement fermées.
+ */
+export function masquerDestinationsFermees(liens, capacites) {
+  if (!capacites) return [];
+  const fermees = [];
+  for (const [destination, capacite] of Object.entries(CAPACITE_PAR_DESTINATION)) {
+    const ouverte = capacites[capacite] === true;
+    if (liens[destination]) liens[destination].hidden = !ouverte;
+    if (!ouverte) fermees.push(destination);
+  }
+  return fermees;
+}
+
 /**
  * Crée la navigation entre les destinations de la coquille.
  *

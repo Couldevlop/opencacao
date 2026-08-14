@@ -10,7 +10,11 @@ import { creerClientApi } from "./infrastructure/api-client.js";
 import { ecrireCompte, lireCompte } from "./infrastructure/auth-store-local.js";
 import { ecrireSessionActive, lireSessionActive } from "./infrastructure/session-store-local.js";
 import { creerVue } from "./ui/chat-view.js";
-import { creerNavigation, nomDepuisHash } from "./ui/navigation.js";
+import {
+  creerNavigation,
+  masquerDestinationsFermees,
+  nomDepuisHash,
+} from "./ui/navigation.js";
 import { creerSidebar } from "./ui/sidebar-view.js";
 
 const CLE_API = "opencacao.apiUrl";
@@ -381,6 +385,25 @@ if (vues.chat && vues.parcelle && vues.atelier) {
     navigation.activer(nomDepuisHash(window.location.hash, NOMS_VUES, "chat"));
   });
   navigation.activer(nomDepuisHash(window.location.hash, NOMS_VUES, "chat"));
+
+  // Ce que l'API ouvre RÉELLEMENT. Les drapeaux se baissent — après une démonstration,
+  // ou parce qu'une étude coûte des minutes de CPU quand l'inférence ne sert qu'une
+  // requête à la fois. La barre latérale doit suivre, sinon elle propose une porte qui
+  // ne mène nulle part. Interrogé après le premier affichage : la conversation ne
+  // dépend pas de cette réponse et ne doit pas l'attendre.
+  (async () => {
+    let capacites = null;
+    try {
+      const reponse = await fetch(`${baseUrl}/v1/version`);
+      if (reponse.ok) capacites = (await reponse.json()).capacites;
+    } catch {
+      // API injoignable : on ne masque rien (cf. masquerDestinationsFermees).
+    }
+    const fermees = masquerDestinationsFermees(liensVues, capacites);
+    // Un lien partagé vers une destination depuis fermée ne doit pas laisser un écran
+    // vide : on ramène à la conversation.
+    if (fermees.includes(navigation.actuelle())) navigation.activer("chat");
+  })();
 }
 
 /* ---------- amorçage des conversations ---------- */

@@ -112,6 +112,42 @@ voulu : sous pression, on ne veut pas apprendre une seconde commande.
 **À répéter et chronométrer au moins deux fois avant le jour J** (spec §9.6), aller
 **et** retour. Une bascule découverte le jour même est une bascule ratée.
 
+### Les deux commandes, et laquelle choisir
+
+```bash
+deploy/scripts/jour-j.sh ouvrir            # l'ÉVÉNEMENT : matériel + fonctionnalités
+deploy/scripts/profil.sh gpu               # le MATÉRIEL seul
+```
+
+`profil.sh` bascule le matériel et rien d'autre. `jour-j.sh` bascule l'événement : il
+appelle `profil.sh`, monte le service de vision, **puis** ouvre au public les
+fonctionnalités que le GPU débloque — et sait tout refermer.
+
+La séparation est volontaire. Un drapeau de fonctionnalité n'est pas une capacité
+matérielle ; les confondre, c'est ouvrir l'atelier au public parce qu'on voulait un
+GPU. **En répétition, on utilise `profil.sh`** : on éprouve la bascule sans rien ouvrir.
+
+```bash
+deploy/scripts/jour-j.sh ouvrir http://100.x.y.z:8000   # sur un GPU loué (§2.3 bis)
+deploy/scripts/jour-j.sh fermer                         # après la démonstration
+deploy/scripts/jour-j.sh etat                           # ne change rien
+```
+
+**`fermer` ferme d'abord, éteint ensuite** — l'ordre inverse laisserait l'API annoncer
+la vision et l'atelier alors que le GPU n'est déjà plus là. Il baisse `RAPPORTS_ENABLED`
+et `VISION_ENABLED`, revient au CPU, met la vision à zéro réplique, et affiche ce qu'il
+ne peut pas faire : **arrêter un pod loué, facturé à l'heure**.
+
+`PARCELLES_ENABLED` reste levé : la cartographie ne mobilise aucun modèle. `RAPPORTS`
+redescend parce qu'une étude coûte plusieurs minutes de CPU et que l'inférence ne sert
+**qu'une requête à la fois** — un visiteur lançant un document bloquerait le chat pour
+tout le monde. La spec §4.1 prévoit la file nocturne par cron pour cet usage ; elle
+n'existe pas encore.
+
+> Depuis le 14/08, l'interface **suit** ces drapeaux : `/v1/version` déclare ses
+> capacités et la barre latérale masque les destinations fermées. Baisser un drapeau
+> ne laisse donc plus une porte qui ne mène nulle part.
+
 ### 2.0 Migration à faire UNE FOIS, hors répétition
 
 Jusqu'au 14/08/2026, `inference.yaml` et `inference-gpu.yaml` portaient **le même nom

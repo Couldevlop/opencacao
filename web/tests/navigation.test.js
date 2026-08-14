@@ -12,7 +12,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { monterDom } from "./dom-minimal.js";
-import { creerNavigation, nomDepuisHash } from "../src/ui/navigation.js";
+import {
+  creerNavigation,
+  masquerDestinationsFermees,
+  nomDepuisHash,
+} from "../src/ui/navigation.js";
 
 test("le changement est signalé pour tenir l'URL à jour", async () => {
   const noeuds = monterDom(["vueChat", "vueParcelle", "lienChat", "lienParcelle"]);
@@ -161,6 +165,47 @@ test("cliquer un lien active sa destination", async () => {
 
   assert.equal(noeuds.vueParcelle.hidden, false);
   assert.equal(navigation.actuelle(), "parcelle");
+});
+
+test("une destination fermée disparaît de la barre latérale", () => {
+  // Depuis que les trois ecrans partagent une fenetre, la barre laterale propose ses
+  // destinations en permanence. Baisser RAPPORTS_ENABLED apres la demonstration
+  // laisserait sinon une porte qui ne mene nulle part.
+  const noeuds = monterDom(["lienChat", "lienParcelle", "lienAtelier"]);
+  const liens = {
+    chat: noeuds.lienChat,
+    parcelle: noeuds.lienParcelle,
+    atelier: noeuds.lienAtelier,
+  };
+
+  const fermees = masquerDestinationsFermees(liens, {
+    parcelles: true,
+    rapports: false,
+    vision: false,
+  });
+
+  assert.equal(noeuds.lienAtelier.hidden, true);
+  assert.equal(noeuds.lienParcelle.hidden, false);
+  // La conversation ne se ferme jamais : c'est le produit.
+  assert.equal(noeuds.lienChat.hidden, false);
+  assert.deepEqual(fermees, ["atelier"]);
+});
+
+test("sans réponse de l'API, rien n'est masqué", () => {
+  // L API injoignable, le chat ne marche pas non plus : masquer les destinations
+  // ajouterait une panne a une panne, et donnerait a croire qu elles ont ete retirees.
+  const noeuds = monterDom(["lienChat", "lienParcelle", "lienAtelier"]);
+  const liens = {
+    chat: noeuds.lienChat,
+    parcelle: noeuds.lienParcelle,
+    atelier: noeuds.lienAtelier,
+  };
+
+  const fermees = masquerDestinationsFermees(liens, null);
+
+  assert.equal(noeuds.lienParcelle.hidden, false);
+  assert.equal(noeuds.lienAtelier.hidden, false);
+  assert.deepEqual(fermees, []);
 });
 
 test("le fragment d'URL désigne la destination", () => {
