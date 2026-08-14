@@ -35,30 +35,51 @@ cluster le 30/07/2026** — ce ne sont pas des souvenirs.
    `roll-image.sh` est l'**unique** chemin. N'attendez pas une synchronisation : elle ne
    viendra pas.
 
-2. **`roll-image.sh` ne synchronise pas la ConfigMap — et l'écart est déjà là.** Le
-   script change l'image et `APP_VERSION`, rien d'autre. Relevé sur le cluster, la
-   ConfigMap vivante **ne contient pas** les clés de la V3 :
+2. **`roll-image.sh` ne synchronise pas la ConfigMap.** Le script change l'image et
+   `APP_VERSION`, rien d'autre. Les clés de la V3 ont été ajoutées à la main le
+   14/08/2026, en même temps que le déploiement de `0.6.77`.
 
-   ```
-   PARCELLES_ENABLED   absent      VISION_ENABLED     absent
-   RAPPORTS_ENABLED    absent      VISION_TIMEOUT_S   absent
-   PROFIL_MATERIEL     absent
-   ```
+   > ⚠ **NE JAMAIS FAIRE `kubectl apply -f deploy/k8s/api.yaml`.** Ce fichier contient
+   > le Deployment *et* la ConfigMap, et son image y vaut `opencacao-api` — un nom nu,
+   > sans registre ni tag, destiné à être réécrit par `kustomization.yaml`. L'appliquer
+   > tel quel fait résoudre `docker.io/library/opencacao-api:latest`, qui n'existe pas :
+   > **`ImagePullBackOff`, production à terre.** Cette recommandation figurait ici et
+   > était fausse ; elle n'a jamais été exécutée.
+   >
+   > Le fichier ferait de surcroît **régresser cinq valeurs réglées à la main**, relevées
+   > le 14/08 : `AUTH_EMAIL_FROM` repasserait de `waopron@` à `noreply@` — que ZeptoMail
+   > **refuse** (SM_147), ce qui casse la connexion par lien magique — et `RAG_TOP_K`,
+   > `RAG_MIN_SIMILARITE`, `RAG_CANDIDATS`, `APP_VERSION` changeraient aussi.
 
-   Le code retombe donc sur ses défauts — qui valent `false`, `false`, `false`, `30` et
-   `cpu`, soit exactement les valeurs voulues aujourd'hui. **On est juste par chance, pas
-   par construction.** Avant d'activer quoi que ce soit :
+   Pour ajouter une clé sans rien écraser, on la patche, et on ne touche qu'à elle :
 
    ```bash
-   kubectl -n opencacao apply -f deploy/k8s/api.yaml   # réaligne la ConfigMap
+   kubectl -n opencacao patch configmap api-config --type merge \
+     -p '{"data":{"MA_CLE":"valeur"}}'
    kubectl -n opencacao rollout restart deploy/api
+   ```
+
+   Avant tout patch large, comparer d'abord — le vivant a raison sur le fichier :
+
+   ```bash
+   kubectl -n opencacao get cm api-config -o jsonpath='{.data}'
    ```
 
 3. **Cloudflare coupe une réponse d'origine vers 100 secondes** (erreur 524). Toute
    réponse longue doit émettre un premier octet vite. C'est déjà vrai du chat et des
    rapports ; ne l'oubliez pas en changeant un timeout.
 
-**État relevé le 30/07/2026**, pour comparaison :
+**État relevé le 14/08/2026, après déploiement**, pour comparaison :
+
+| | |
+|---|---|
+| Image servie | `ghcr.io/couldevlop/opencacao-api:0.6.77` (api, curation, web) |
+| `APP_VERSION` | `0.6.77` |
+| Drapeaux V3 | `PARCELLES_ENABLED` et `RAPPORTS_ENABLED` à **`true`**, `VISION_ENABLED` à `false` |
+| Interface | fenêtre unique, trois destinations dans la barre latérale |
+| Accès au cluster | **le port 6443 est filtré** depuis l'extérieur ; on passe par `ssh root@62.238.11.20`, où `kubectl` est configuré. Le nœud n'a **pas** de vrai `bash` (`set -o pipefail` échoue) : y exécuter les scripts du dépôt ne marche pas, on déroule les commandes |
+
+**État relevé le 30/07/2026**, pour mémoire :
 
 | | |
 |---|---|
