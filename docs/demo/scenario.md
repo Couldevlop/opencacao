@@ -21,14 +21,23 @@ Elles ne sont pas négociables et doivent façonner le scénario, pas le subir.
 | Une seule génération à la fois | Ne pas lancer une étude et une question de chat en parallèle |
 | Le cache est invalidé par `APP_VERSION` | **Le pré-chauffage est la DERNIÈRE opération avant d'entrer en scène** |
 | Les drapeaux V3 sont à `false` | Les activer et les vérifier la veille, pas le matin |
+| **Profil CPU retenu** (arbitrage du 14/08) | Le VLM est éteint : **le constat visuel n'est pas montré**. Le GPU reste une option ouverte pour le 17 — voir §3 bis |
+| L'interface est une **seule fenêtre** | Les trois destinations sont dans la barre latérale : **aucune URL à taper en scène** |
 
 ---
 
 ## 1. Préparation, la veille
 
-- [ ] Bascule GPU exécutée et chronométrée (runbook §2), retour CPU vérifié
-- [ ] Drapeaux activés : `PARCELLES_ENABLED`, `VISION_ENABLED`, `RAPPORTS_ENABLED`
-- [ ] Budget de latence de la vision tranché (runbook §3)
+- [ ] Migration des manifestes d'inférence faite (runbook §2.0) — **une seule fois, à un
+      moment calme** : elle redémarre l'inférence CPU
+- [ ] Bascule chronométrée dans les deux sens : `profil.sh gpu` puis `profil.sh cpu`
+      (runbook §2), durées reportées au §6 du runbook
+- [ ] Drapeaux activés : `PARCELLES_ENABLED`, `RAPPORTS_ENABLED`
+      — **`VISION_ENABLED` reste à `false`** tant qu'on est en profil CPU (§3 bis)
+- [ ] Une étude complète produite et chronométrée avant d'ouvrir l'atelier au public
+      (5 générations pour l'étude de marché, 4 pour le benchmark)
+- [ ] **L'interface regardée sur un vrai écran, et sur un téléphone** — les tests
+      vérifient le contrat entre le balisage et le code, jamais la mise en page
 - [ ] Parcelle de démonstration créée, avec ses photos déposées
 - [ ] Scénario joué **en entier**, en production, deux fois
 - [ ] Plan de secours hors-ligne produit (runbook §5, palier 4)
@@ -75,6 +84,24 @@ télécharge.
 > **À vérifier en répétition, pas en scène :** une étude sur un sujet hors filière ou
 > portant un dosage est **refusée** — c'est voulu. Le sujet choisi doit passer les
 > garde-fous. Le vérifier une fois, à l'avance.
+
+### 3 bis. La parcelle : ce qui est montré, et ce qui ne l'est pas
+
+**Arbitrage du 14/08 : on montre la cartographie, pas le diagnostic visuel.** En profil
+CPU, le modèle de vision est absent — et c'est écrit dans la spec (§7.7) : l'API le
+**dit** plutôt que d'inventer une description. Ce qui tient sans GPU, et qui se montre :
+
+- le **tour de la parcelle** au GPS, et la **superficie calculée** — jamais saisie ;
+- le **verdict de recevabilité** d'une photo (netteté, exposition), rendu sans aucun
+  modèle d'apprentissage, avec son conseil de reprise en français simple ;
+- le **dossier de parcelle** produit en Word, Excel et PowerPoint, mention
+  « document préparatoire » comprise.
+
+C'est déjà l'argument de fond : la plateforme sait **ce qu'elle ne sait pas**, et le dit.
+
+**Si le GPU est debout le 17** (runbook §2.3 bis), le constat descriptif s'ajoute à ce
+déroulé — il ne le remplace pas. Décider **le 17 au soir**, pas le matin du 19 : un
+scénario qui change la veille est un scénario qu'on n'a pas répété.
 
 ---
 
