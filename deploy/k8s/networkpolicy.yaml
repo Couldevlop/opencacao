@@ -6,8 +6,41 @@ kind: NetworkPolicy
 metadata:
   name: inference-from-api-only
 spec:
+  # Sélecteur sur `app`, PAS sur `role`, et une politique par profil (celle du GPU
+  # suit, à l'identique). Deux raisons.
+  #
+  # 1. Un pod que ne sélectionne AUCUNE politique est en ingress ouvert. Basculer
+  #    cette politique sur `role: inference` — le label commun aux deux profils —
+  #    ouvrait une fenêtre pendant la migration : appliquée avant que les pods ne
+  #    soient recréés avec leur nouveau label, elle ne sélectionnait plus rien et
+  #    l'inférence devenait joignable par n'importe quel pod du cluster, garde-fous
+  #    et journalisation contournés (D1). Sur `app`, l'ordre d'application n'a plus
+  #    d'importance : chaque pod reste couvert du début à la fin.
+  # 2. Deux politiques qui se recouvrent s'ADDITIONNENT, elles ne s'annulent pas :
+  #    en couvrir un de trop est sans effet, en couvrir un de moins est une brèche.
   podSelector:
     matchLabels: { app: inference }
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app: api }
+      ports:
+        - protocol: TCP
+          port: 8000
+---
+# Même cloisonnement pour le profil GPU, qui porte un `app` distinct (le sélecteur d'un
+# Deployment étant immuable, les deux profils ne peuvent pas partager ce label — cf.
+# inference-gpu.yaml). Cette politique existe même quand le déploiement GPU est à zéro
+# réplique : une politique sans pod ne coûte rien, une politique manquante le jour de la
+# bascule coûte le cloisonnement.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: inference-gpu-from-api-only
+spec:
+  podSelector:
+    matchLabels: { app: inference-gpu }
   policyTypes: ["Ingress"]
   ingress:
     - from:

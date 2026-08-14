@@ -112,6 +112,29 @@ voulu : sous pression, on ne veut pas apprendre une seconde commande.
 **À répéter et chronométrer au moins deux fois avant le jour J** (spec §9.6), aller
 **et** retour. Une bascule découverte le jour même est une bascule ratée.
 
+### 2.0 Migration à faire UNE FOIS, hors répétition
+
+Jusqu'au 14/08/2026, `inference.yaml` et `inference-gpu.yaml` portaient **le même nom
+d'objet** : appliquer l'un supprimait l'autre. Le retour au CPU imposait donc de
+recharger le GGUF — plusieurs minutes — là où la spec §4.5 promet « moins de deux
+minutes » par un simple `kubectl scale`. C'est corrigé : deux Deployments distincts
+(`inference` en CPU, `inference-gpu`), un seul Service qui suit le label `role:
+inference`, porté par les deux.
+
+Cette bascule de labels demande **une** application, qui **redémarre l'inférence CPU**
+(le gabarit de pod change, donc le pod est recréé — comptez le rechargement du GGUF).
+À faire à un moment calme, jamais pendant une répétition. L'ordre des deux `apply` est
+indifférent : chaque profil est cloisonné par sa propre NetworkPolicy, sur un label que
+les pods portent avant comme après.
+
+```bash
+export KUBECONFIG=kubeconfig-hetzner.yaml
+kubectl -n opencacao apply -f deploy/k8s/inference.yaml
+kubectl -n opencacao apply -f deploy/k8s/networkpolicy.yaml
+kubectl -n opencacao rollout status deploy/inference --timeout=300s
+deploy/scripts/profil.sh etat        # doit montrer des endpoints et profil=cpu
+```
+
 ### 2.1 Prérequis, à vérifier la veille
 
 ```bash
@@ -133,28 +156,28 @@ fournisseur. **Sans eux, le pod peut rester `Pending` sans explication visible.*
 
 ```bash
 export KUBECONFIG=kubeconfig-hetzner.yaml
+deploy/scripts/profil.sh gpu
+```
 
-# 1. Remplacer l'inférence CPU par vLLM (même nom de Service : rien à changer côté API)
-kubectl -n opencacao apply -f deploy/k8s/inference-gpu.yaml
+**C'est tout, et c'est voulu** : sous pression, on ne veut pas exécuter cinq commandes
+dans le bon ordre. Le script monte le pod GPU, attend qu'il soit prêt, **puis seulement**
+descend le CPU à zéro réplique (jamais l'inverse : descendre d'abord ouvrirait un trou de
+plusieurs minutes), patche `PROFIL_MATERIEL` et `INFERENCE_BACKEND`, redémarre l'API,
+vérifie `/v1/ready` et **affiche la durée à reporter au §6**.
 
-# 2. Attendre que le modèle soit chargé (peut prendre plusieurs minutes)
-kubectl -n opencacao rollout status deploy/inference --timeout=15m
+`deploy/scripts/profil.sh etat` ne change rien et dit où on en est — y compris si le
+Service n'a aucun endpoint, la panne la plus silencieuse du lot.
 
-# 3. Déployer le modèle de vision
+**La vision n'est pas allumée par la bascule**, délibérément : c'est un drapeau de
+fonctionnalité, pas une capacité matérielle, et son budget de latence se décide en
+connaissance de cause (§3). Une fois le GPU en place :
+
+```bash
 kubectl -n opencacao apply -f deploy/k8s/vision.yaml
-kubectl -n opencacao apply -f deploy/k8s/networkpolicy.yaml   # cloisonne « vision »
 kubectl -n opencacao rollout status deploy/vision --timeout=15m
-
-# 4. Dire à l'API qu'elle est sur GPU (roll-image.sh ne fait PAS cela)
-kubectl -n opencacao patch configmap api-config --type merge -p '{"data":{
-  "PROFIL_MATERIEL": "gpu",
-  "INFERENCE_BACKEND": "vllm",
-  "VISION_ENABLED": "true"
-}}'
-
-# 5. Redémarrer l'API pour qu'elle relise la ConfigMap
+kubectl -n opencacao patch configmap api-config --type merge \
+  -p '{"data":{"VISION_ENABLED":"true"}}'
 kubectl -n opencacao rollout restart deploy/api
-kubectl -n opencacao rollout status deploy/api --timeout=5m
 ```
 
 ### 2.3 Vérifier
@@ -174,19 +197,20 @@ perdu.
 ### 2.4 Retour au CPU
 
 ```bash
-kubectl -n opencacao apply -f deploy/k8s/inference.yaml     # revient à llama.cpp
-kubectl -n opencacao delete deploy vision --ignore-not-found
-kubectl -n opencacao patch configmap api-config --type merge -p '{"data":{
-  "PROFIL_MATERIEL": "cpu",
-  "INFERENCE_BACKEND": "llama-cpp",
-  "VISION_ENABLED": "false"
-}}'
-kubectl -n opencacao rollout restart deploy/api
-kubectl -n opencacao rollout status deploy/api --timeout=10m
+deploy/scripts/profil.sh cpu
 ```
 
+**La même commande, dans l'autre sens** — c'est le seul geste à retenir des deux. Le
+script remonte le CPU **avant** d'éteindre le GPU (s'il lâche en scène, on ne commence
+pas par éteindre ce qui répond encore), remet `PROFIL_MATERIEL`, `INFERENCE_BACKEND` et
+`VISION_ENABLED` à leurs valeurs CPU, et redémarre l'API.
+
+Le déploiement GPU n'est pas supprimé, seulement mis à zéro réplique : repartir sur GPU
+ne repaiera pas la création de l'objet.
+
 > **Le repli CPU est le plan de secours du plan de secours.** Il doit être chronométré
-> lui aussi : c'est ce qu'on exécutera sous pression si le GPU lâche en scène.
+> lui aussi : c'est ce qu'on exécutera sous pression si le GPU lâche en scène. Le script
+> affiche la durée ; elle va au §6.
 
 ---
 
