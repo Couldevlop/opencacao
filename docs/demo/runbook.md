@@ -194,6 +194,40 @@ time curl -s -X POST https://opencacao.openlabconsulting.com/v1/chat \
 **Noter les temps mesurés dans le tableau du §6.** Un chiffre non écrit est un chiffre
 perdu.
 
+### 2.3 bis Bascule vers un GPU LOUÉ (RunPod) — le chemin réellement retenu
+
+`profil.sh gpu` suppose une carte **dans** le cluster. Or la décision matérielle de la
+spec §4.3 est **RunPod**, le Hetzner GEX44 étant indisponible : l'inférence part alors
+**hors** du cluster et il n'y a aucun pod GPU à mettre à l'échelle. Ce qui bascule est
+`INFERENCE_URL`.
+
+```bash
+export KUBECONFIG=kubeconfig-hetzner.yaml
+export INFERENCE_API_KEY=<le même jeton que le --api-key de vLLM>   # pour la vérification
+deploy/scripts/profil.sh runpod http://100.x.y.z:8000              # adresse du TUNNEL
+```
+
+Le script interroge le point de terminaison **avant de toucher à quoi que ce soit**. Un
+`401` est une bonne nouvelle — vLLM répond et il est protégé. Un endpoint injoignable
+annule la bascule sans rien modifier : le CPU continue de servir.
+
+Il **refuse** une adresse `*.proxy.runpod.net` : D1 interdit d'exposer l'inférence, et
+§4.5 impose un tunnel privé. L'échappatoire existe (`AUTORISER_ENDPOINT_PUBLIC=1`) mais
+elle est hors doctrine.
+
+**Le CPU n'est pas éteint automatiquement** dans ce mode. Le script vous rend la main
+avec la commande à lancer quand vous aurez vu le service répondre — de la RAM
+immobilisée coûte moins cher qu'une salle devant une page blanche.
+
+**Les quatre prérequis, dans l'ordre où ils bloquent** (§4.5) :
+
+| | État au 14/08/2026 |
+|---|---|
+| Modèle fusionné quantifié AWQ, poussé sur un dépôt privé | **à faire** — aucun script AWQ dans le dépôt |
+| Image vLLM téléchargeant le modèle au démarrage | **à faire** — le manifeste actuel monte un `hostPath` |
+| Tunnel privé Tailscale/WireGuard entre le CX53 et le pod | **à faire** — rien dans `deploy/` |
+| `--api-key` côté vLLM + Secret `opencacao-inference` côté API | **fait** (14/08) — le client porte le jeton |
+
 ### 2.4 Retour au CPU
 
 ```bash

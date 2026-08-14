@@ -35,6 +35,7 @@ class InferenceClient:
         frequency_penalty: float = 0.3,
         client: httpx.AsyncClient | None = None,
         system_prompt: str = SYSTEM_PROMPT,
+        api_key: str = "",
     ) -> None:
         """Initialise le client d'inférence.
 
@@ -48,7 +49,12 @@ class InferenceClient:
             frequency_penalty: Pénalité de répétition (réduit le remplissage).
             client: Client httpx injectable (pour les tests).
             system_prompt: Message système injecté dans chaque requête (réchauffé ou strict).
+            api_key: Jeton présenté à l'inférence, vide si elle est interne au cluster.
         """
+        # En-têtes portés PAR REQUÊTE et non posés sur le client httpx : celui-ci est
+        # injectable (tests, et un jour un client partagé), et une authentification qui
+        # dépend de qui a construit le transport est une authentification qu'on oublie.
+        self._entetes = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self._base_url = base_url.rstrip("/")
         self._model_name = model_name
         self._max_tokens = max_tokens
@@ -72,6 +78,7 @@ class InferenceClient:
             system_prompt=SYSTEM_PROMPT
             if settings.dialogue_naturel_enabled
             else SYSTEM_PROMPT_STRICT,
+            api_key=settings.inference_api_key,
         )
 
     def _params_decodage(self, temperature: float | None) -> dict:
@@ -133,7 +140,7 @@ class InferenceClient:
         }
         try:
             response = await self._client.post(
-                f"{self._base_url}/v1/chat/completions", json=payload
+                f"{self._base_url}/v1/chat/completions", json=payload, headers=self._entetes
             )
             response.raise_for_status()
             data = response.json()
@@ -183,7 +190,10 @@ class InferenceClient:
         }
         try:
             async with self._client.stream(
-                "POST", f"{self._base_url}/v1/chat/completions", json=payload
+                "POST",
+                f"{self._base_url}/v1/chat/completions",
+                json=payload,
+                headers=self._entetes,
             ) as response:
                 response.raise_for_status()
                 async for ligne in response.aiter_lines():
@@ -205,7 +215,7 @@ class InferenceClient:
     async def ready(self) -> bool:
         """Indique si le service d'inférence répond (readiness)."""
         try:
-            response = await self._client.get(f"{self._base_url}/health")
+            response = await self._client.get(f"{self._base_url}/health", headers=self._entetes)
             return response.status_code == 200
         except httpx.HTTPError:
             return False

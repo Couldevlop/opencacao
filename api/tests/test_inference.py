@@ -38,6 +38,70 @@ async def test_generer_reponse_nominale() -> None:
     await client.close()
 
 
+class TestAuthentificationDeLInference:
+    """Clé d'API vers l'inférence — indispensable dès qu'elle sort du cluster.
+
+    D1 interdit que l'inférence soit joignable autrement que par l'API. Tant qu'elle
+    tourne dans le cluster, c'est la NetworkPolicy qui le garantit. Déportée sur un
+    GPU loué (spec V3 §4.5), il n'y a plus de cloisonnement réseau à invoquer : vLLM
+    est démarré avec ``--api-key`` et n'accepte plus que les requêtes porteuses du
+    jeton. Sans en-tête, l'API se ferait refuser par son propre moteur.
+    """
+
+    async def test_sans_cle_aucun_entete_d_autorisation(self) -> None:
+        """Non-régression : l'inférence interne n'attend aucun jeton et n'en reçoit pas."""
+        vus: list[str | None] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            vus.append(request.headers.get("authorization"))
+            return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+        client = _client(handler)
+        await client.generer("Question ?")
+        assert vus == [None]
+        await client.close()
+
+    async def test_la_cle_est_portee_par_chaque_appel(self) -> None:
+        """Génération, flux et sonde de disponibilité : les trois sortent du cluster."""
+        vus: list[str | None] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            vus.append(request.headers.get("authorization"))
+            if request.url.path == "/health":
+                return httpx.Response(200)
+            if request.headers.get("accept") == "text/event-stream":
+                return httpx.Response(200, text="data: [DONE]\n")
+            return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+        transport = httpx.MockTransport(handler)
+        http = httpx.AsyncClient(transport=transport)
+        client = InferenceClient(
+            "http://gpu-loue:8000", "opencacao-8b", 10.0, client=http, api_key="jeton-secret"
+        )
+        await client.generer("Question ?")
+        async for _ in client.generer_stream("Question ?"):
+            pass
+        await client.ready()
+        assert vus == ["Bearer jeton-secret"] * 3
+        await client.close()
+
+    async def test_la_cle_vient_des_parametres(self) -> None:
+        """Elle arrive par Secret, jamais par la ConfigMap : elle transite par Settings."""
+        reglages = Settings(inference_api_key="jeton-du-secret")
+        client = InferenceClient.from_settings(reglages)
+        vus: list[str | None] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            vus.append(request.headers.get("authorization"))
+            return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+        await client.close()
+        client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        await client.generer("Question ?")
+        assert vus == ["Bearer jeton-du-secret"]
+        await client.close()
+
+
 async def test_generer_erreur_http_leve_indisponible() -> None:
     """Une erreur HTTP 500 lève InferenceUnavailable."""
     client = _client(lambda req: httpx.Response(500, json={"error": "boom"}))
