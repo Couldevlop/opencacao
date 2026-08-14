@@ -23,8 +23,14 @@ def cache_neuf():
     vider_cache()
 
 
-def test_les_trois_gabarits_de_la_spec_sont_livres():
-    assert set(lister_gabarits()) == {"etude_filiere", "dossier_parcelle", "bulletin_regional"}
+def test_les_gabarits_attendus_sont_livres():
+    assert set(lister_gabarits()) == {
+        "etude_filiere",
+        "etude_marche",
+        "benchmark_filiere",
+        "dossier_parcelle",
+        "bulletin_regional",
+    }
 
 
 def test_sans_dossier_de_gabarits_la_liste_est_vide(monkeypatch, tmp_path):
@@ -64,6 +70,52 @@ def test_l_etude_de_filiere_a_des_sections_ordonnees():
         "Pression sur le couvert forestier",
         "Limites de la présente étude",
     ]
+
+
+def test_l_etude_de_marche_a_des_sections_ordonnees():
+    """L ordre EST le plan : le prix officiel vient AVANT toute evolution rapportee."""
+    gabarit = charger_gabarit("etude_marche")
+    assert [section.titre for section in gabarit.sections] == [
+        "Structure du marché",
+        "Prix officiel en vigueur",
+        "Évolution documentée des prix",
+        "Débouchés et transformation locale",
+        "Facteurs d'incertitude",
+        "Limites de la présente étude",
+    ]
+
+
+def test_le_benchmark_de_filiere_a_des_sections_ordonnees():
+    """Le perimetre est pose AVANT le moindre chiffre : sans lui, la comparaison ment."""
+    gabarit = charger_gabarit("benchmark_filiere")
+    assert [section.titre for section in gabarit.sections] == [
+        "Périmètre de la comparaison",
+        "Position de la Côte d'Ivoire",
+        "Points de comparaison documentés",
+        "Écarts constatés",
+        "Limites de la comparaison",
+    ]
+
+
+@pytest.mark.parametrize("identifiant", ["etude_marche", "benchmark_filiere"])
+def test_les_nouveaux_gabarits_mobilisent_le_prix_officiel(identifiant):
+    """Le prix officiel est ADMINISTRE : une etude de marche qui ne le cite pas invente.
+
+    Le bug 850-vs-1200 (v0.6.47) a montre que les prix historiques du RAG prennent le
+    dessus si la source autoritaire n est pas explicitement demandee.
+    """
+    sources = {
+        source for section in charger_gabarit(identifiant).sections for source in section.sources
+    }
+    assert "prix" in sources
+
+
+@pytest.mark.parametrize("identifiant", ["etude_marche", "benchmark_filiere"])
+def test_les_nouveaux_gabarits_ferment_sur_leurs_limites(identifiant):
+    """Derniere section sans source : elle enonce ce que les sources NE permettent PAS."""
+    derniere = charger_gabarit(identifiant).sections[-1]
+    assert derniere.sources == ()
+    assert "limites" in derniere.titre.lower()
 
 
 def test_chaque_section_declare_des_sources_connues():
@@ -189,7 +241,10 @@ def test_le_titre_accepte_un_champ_a_substituer():
     assert "{sujet}" in charger_gabarit("etude_filiere").titre
 
 
-@pytest.mark.parametrize("identifiant", ["etude_filiere", "dossier_parcelle", "bulletin_regional"])
+@pytest.mark.parametrize(
+    "identifiant",
+    ["etude_filiere", "etude_marche", "benchmark_filiere", "dossier_parcelle", "bulletin_regional"],
+)
 def test_les_titres_livres_se_substituent_sans_surprise(identifiant):
     """Un champ inattendu casserait en KeyError au rendu, tres loin du chargement."""
     gabarit = charger_gabarit(identifiant)

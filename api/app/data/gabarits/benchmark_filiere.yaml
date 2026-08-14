@@ -1,0 +1,37 @@
+# Benchmark de filière — comparaison entre pays producteurs, coopératives ou
+# certifications. Destiné aux institutions et aux bailleurs. Registre ANALYTIQUE.
+#
+# Le piège d'un benchmark est le classement. Deux chiffres qui ne portent ni la même
+# définition ni la même période ne se comparent pas, et un tableau les met pourtant
+# côte à côte comme s'ils se valaient. D'où l'ordre imposé du plan : le périmètre est
+# écrit AVANT le premier chiffre, et les limites disent ce qui n'a pas pu être comparé.
+# Ce gabarit reste dans la filière cacao (garde-fou HORS_FILIERE inchangé) : il compare
+# des producteurs de cacao entre eux, pas des secteurs entre eux.
+id: benchmark_filiere
+titre: "Benchmark — {sujet}"
+sous_titre: "Filière cacao — comparaison documentée"
+public: "institutions, bailleurs, chercheurs"
+mention: ""
+# « filière » est déclaré ici en plus de « benchmark » et « comparaison » pour la même
+# raison d'accumulation que dans etude_marche : « un benchmark de la filière » touche
+# deux déclencheurs ici contre un seul dans etude_filiere, et se résout donc sans poser
+# de question. Le prix payé est un titre parfois maigre sur cette tournure, le sujet
+# étant amputé du mot « filière » — un document juste avec un titre perfectible vaut
+# mieux qu'une clarification de plus en scène.
+declencheurs: ["benchmark", "comparaison", "comparatif", "filière", "positionnement"]
+sections:
+  - titre: "Périmètre de la comparaison"
+    sources: [rag]
+    consigne: "Énoncer ce qui est comparé, sur quelle période et d'après quelles sources, avant tout chiffre."
+  - titre: "Position de la Côte d'Ivoire"
+    sources: [prix, rag]
+    consigne: "Rapporter ce que les sources établissent de la position ivoirienne : volumes, prix officiel en vigueur, organisation de la filière."
+  - titre: "Points de comparaison documentés"
+    sources: [rag]
+    consigne: "Rapporter point par point ce que les sources établissent pour chaque terme de la comparaison, en datant chaque chiffre."
+  - titre: "Écarts constatés"
+    sources: [rag]
+    consigne: "Exposer les écarts que les sources permettent d'établir. Ne produire aucun classement à partir de données de définition ou de période différentes."
+  - titre: "Limites de la comparaison"
+    sources: []
+    consigne: "Énoncer ce que les sources ne permettent pas de comparer : données absentes, périmètres divergents, périodes non recouvrantes."

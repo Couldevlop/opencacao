@@ -90,10 +90,16 @@ def test_une_demande_en_nfd_est_reconnue(client: TestClient):
     # recevait la question de clarification, systematiquement.
     import unicodedata
 
-    demande = unicodedata.normalize("NFD", "Fais-moi une étude sur Abengourou")
+    # « de la filière » est nécessaire depuis qu il existe DEUX études (filière et
+    # marché) : « une étude » tout court est légitimement ambigu et partirait en
+    # clarification, ce qui masquerait ce que ce test doit prouver — que le NFD est
+    # composé avant la reconnaissance. Le mot porteur reste accentué, donc le NFD est
+    # toujours exercé.
+    demande = unicodedata.normalize("NFD", "Fais-moi une étude de la filière sur Abengourou")
     corps = _comprendre(client, demande).json()
     assert corps["gabarit"] == "etude_filiere"
     assert corps["certaine"] is True
+    assert corps["sujet"] == "Abengourou"
 
 
 def test_le_debit_est_limite_comme_les_autres_post(client: TestClient):
