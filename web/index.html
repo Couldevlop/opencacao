@@ -73,13 +73,31 @@
   <body>
     <div class="flag-strip" aria-hidden="true"></div>
 
-    <aside id="sidebar" class="sidebar" aria-label="Mes conversations">
+    <aside id="sidebar" class="sidebar" aria-label="Navigation et conversations">
       <div class="sidebar-head">
-        <span class="sidebar-titre">Conversations</span>
+        <span class="sidebar-titre">OpenCacao</span>
         <button id="nouvelleConv" class="btn-nouvelle" type="button">
           <span aria-hidden="true">＋</span> Nouvelle
         </button>
       </div>
+
+      <!-- Les trois destinations de l'application. Elles vivaient dans trois pages
+           séparées, dont deux n'étaient atteignables qu'en tapant l'URL. -->
+      <nav class="sidebar-nav" aria-label="Destinations">
+        <a class="nav-lien" id="lienChat" href="#/chat">
+          <span class="nav-icone" aria-hidden="true">💬</span>
+          <span class="nav-nom">Conversation</span>
+        </a>
+        <a class="nav-lien" id="lienParcelle" href="#/parcelle">
+          <span class="nav-icone" aria-hidden="true">🌱</span>
+          <span class="nav-nom">Ma parcelle</span>
+        </a>
+        <a class="nav-lien" id="lienAtelier" href="#/atelier">
+          <span class="nav-icone" aria-hidden="true">📄</span>
+          <span class="nav-nom">L'atelier</span>
+        </a>
+      </nav>
+
       <div class="sidebar-recherche">
         <input
           id="rechercheConv"
@@ -110,9 +128,11 @@
         <p class="logo-caption">République de Côte d'Ivoire</p>
       </div>
 
+      <!-- Le titre suit la destination : c'est la seule chose que portaient les
+           en-têtes des trois pages et que le regroupement aurait fait perdre. -->
       <div class="brand-center">
-        <h1 class="wordmark">OpenCacao</h1>
-        <p class="tagline">Conseil agronomique cacao · Côte d'Ivoire</p>
+        <h1 class="wordmark" id="wordmark">OpenCacao</h1>
+        <p class="tagline" id="tagline">Conseil agronomique cacao · Côte d'Ivoire</p>
       </div>
 
       <div class="brand-side right">
@@ -131,6 +151,8 @@
       </div>
     </header>
 
+    <!-- ================= Destination 1 : la conversation ================= -->
+    <section class="vue" id="vueChat">
     <main class="chat" id="chat">
       <div class="thread" id="thread">
         <section class="welcome" id="welcome">
@@ -170,6 +192,202 @@
         Conseil du Café-Cacao.
       </p>
     </div>
+    </section>
+
+    <!-- ================= Destination 2 : « Ma parcelle » =================
+         Contenu repris tel quel de parcelle.html. Seul `statut` a été renommé :
+         l'atelier portait le même identifiant, et deux nœuds de même id dans une
+         page unique en laissent un seul joignable. -->
+    <section class="vue" id="vueParcelle" hidden>
+      <main class="parcelle-page">
+        <p class="statut" id="statutParcelle" role="status" aria-live="polite" hidden></p>
+
+        <section class="carte" aria-labelledby="titreCreation">
+          <h2 id="titreCreation">Enregistrer une parcelle</h2>
+          <form class="form-parcelle" id="formCreation" autocomplete="off">
+            <label for="champNom">Nom de la parcelle</label>
+            <input
+              id="champNom"
+              type="text"
+              maxlength="120"
+              placeholder="Bloc Est, derrière la case"
+              required
+            />
+            <label for="champLocalite">Localité</label>
+            <input
+              id="champLocalite"
+              type="text"
+              maxlength="120"
+              placeholder="Daloa, Soubré, Divo…"
+              required
+            />
+            <p class="aide">
+              La localité sert à situer la parcelle et à retrouver votre direction
+              régionale ANADER. Si la localisation du téléphone ne fonctionne pas,
+              elle suffit : rien ne vous bloque.
+            </p>
+            <button class="btn-primary" id="btnCreer" type="submit">Enregistrer la parcelle</button>
+          </form>
+        </section>
+
+        <section class="carte" aria-labelledby="titreListe">
+          <h2 id="titreListe">Mes parcelles</h2>
+          <ul class="parcelles" id="listeParcelles"></ul>
+        </section>
+
+        <section class="carte" id="panneauCapture" aria-labelledby="titreParcelle" hidden>
+          <h2 id="titreParcelle"></h2>
+          <div class="meta-parcelle" id="metaParcelle"></div>
+
+          <h3 class="sous-titre">Documenter la parcelle</h3>
+          <div class="modalites">
+            <button class="btn-modalite" id="btnPhotos" type="button">
+              <span class="modalite-icone" aria-hidden="true">📷</span>
+              <span class="modalite-nom">Photos</span>
+              <span class="modalite-aide">Jusqu'à 12 vues</span>
+            </button>
+            <button class="btn-modalite" id="btnVideo" type="button">
+              <span class="modalite-icone" aria-hidden="true">🎬</span>
+              <span class="modalite-nom">Vidéo</span>
+              <span class="modalite-aide">Découpée sur le téléphone</span>
+            </button>
+            <button class="btn-modalite" id="btnParcours" type="button">
+              <span class="modalite-icone" aria-hidden="true">🧭</span>
+              <span class="modalite-nom">Parcours</span>
+              <span class="modalite-aide">Tour de la parcelle</span>
+            </button>
+            <button class="btn-modalite" id="btnParcoursVideo" type="button">
+              <span class="modalite-icone" aria-hidden="true">🎥</span>
+              <span class="modalite-nom">Parcours + vidéo</span>
+              <span class="modalite-aide">Le tour, en filmant</span>
+            </button>
+          </div>
+
+          <!-- Sélecteurs de fichier : l'attribut capture ouvre directement l'appareil
+               photo du téléphone. La vidéo n'est JAMAIS téléversée telle quelle :
+               elle est découpée en images sur l'appareil (1 image / 2 s, 12 maximum). -->
+          <input
+            class="fichier-cache"
+            id="fichierPhotos"
+            type="file"
+            accept="image/*"
+            capture="environment"
+            multiple
+          />
+          <input
+            class="fichier-cache"
+            id="fichierVideo"
+            type="file"
+            accept="video/*"
+            capture="environment"
+          />
+
+          <div class="parcours" id="zoneParcours" hidden>
+            <p class="parcours-etat" id="parcoursEtat"></p>
+            <button class="btn-primary" id="btnArreter" type="button">Terminer le tour</button>
+          </div>
+
+          <!-- Second temps de « Parcours + vidéo » : le tour est déjà enregistré, la
+               vidéo se demande par une NOUVELLE action du producteur. Ouvrir le
+               sélecteur de fichier tout seul après l'envoi du parcours ne marcherait
+               pas : le navigateur exige un geste récent pour ouvrir la caméra. -->
+          <div class="parcours" id="zoneVideoTour" hidden>
+            <p class="parcours-etat">
+              Le tour est enregistré. Ajoutez maintenant la vidéo filmée pendant le tour :
+              elle sera découpée en images sur votre téléphone.
+            </p>
+            <button class="btn-primary" id="btnVideoTour" type="button">
+              Ajouter la vidéo du tour
+            </button>
+          </div>
+
+          <div class="resultats" id="resultats"></div>
+        </section>
+
+        <section class="carte alerte" id="geoAide" hidden>
+          <h2>Localisation indisponible</h2>
+          <p id="geoAideTexte"></p>
+          <button class="btn-ghost" id="btnSaisieManuelle" type="button">
+            Saisir ma localité à la main
+          </button>
+        </section>
+
+        <p class="note-bas">
+          Vos photos servent à documenter votre parcelle. OpenCacao est un outil d'aide à
+          la décision — il ne remplace ni l'ANADER ni le Conseil du Café-Cacao.
+        </p>
+      </main>
+    </section>
+
+    <!-- ================= Destination 3 : l'atelier ================= -->
+    <section class="vue" id="vueAtelier" hidden>
+      <main class="atelier-page">
+        <p class="statut" id="statutAtelier" role="status" aria-live="polite" hidden></p>
+
+        <!-- On demande un document, on ne le configure pas. Le type se déduit de la
+             phrase ; il ne se coche pas. -->
+        <section class="carte demande" aria-labelledby="titreDemande">
+          <h2 id="titreDemande">Que voulez-vous produire ?</h2>
+          <form class="form-demande" id="formDemande" autocomplete="off">
+            <label class="sr-only" for="champDemande">Votre demande</label>
+            <div class="demande-boite">
+              <textarea
+                id="champDemande"
+                rows="2"
+                maxlength="2000"
+                placeholder="Une étude de la filière sur la campagne 2025-2026"
+                required
+              ></textarea>
+              <button class="btn-primary" id="btnProduire" type="submit">Produire</button>
+            </div>
+          </form>
+
+          <!-- Les exemples ne décorent pas : ils enseignent le vocabulaire que le
+               serveur sait reconnaître, et remplissent l'écran vide par une action. -->
+          <ul class="exemples" id="exemples"></ul>
+        </section>
+
+        <!-- Ce qui n'est pas certain se demande. Une seule question, jamais un
+             formulaire, et le sujet déjà compris n'est pas redemandé. -->
+        <section class="carte question" id="panneauQuestion" aria-labelledby="questionTitre" hidden>
+          <h2 class="question-titre" id="questionTitre" tabindex="-1"></h2>
+          <div class="question-choix" id="questionChoix"></div>
+        </section>
+
+        <!-- Le sommaire. Il s'affiche dès qu'un type est choisi — le plan vient du
+             gabarit, pas du modèle — puis se remplit section par section pendant la
+             rédaction. C'est l'écran, pas un journal d'exécution. -->
+        <section class="carte document" id="panneauDocument" aria-labelledby="titreDocument" hidden>
+          <p class="document-mention" id="mentionDocument" hidden></p>
+          <p class="document-compris" id="comprisDocument" hidden></p>
+          <h2 id="titreDocument">Sommaire</h2>
+          <p class="document-etat" id="etatDocument" role="status" aria-live="polite"></p>
+          <ol class="sommaire" id="sommaire"></ol>
+
+          <div class="exports" id="exports" hidden>
+            <p class="exports-titre">Télécharger</p>
+            <div class="exports-boutons">
+              <button class="btn-ghost" data-format="docx" type="button">Word</button>
+              <button class="btn-ghost" data-format="xlsx" type="button">Excel</button>
+              <button class="btn-ghost" data-format="pptx" type="button">PowerPoint</button>
+              <button class="btn-ghost" data-format="md" type="button">Markdown</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="carte" id="panneauHistorique" aria-labelledby="titreHistorique" hidden>
+          <h2 id="titreHistorique">Mes documents</h2>
+          <ul class="documents" id="listeDocuments"></ul>
+        </section>
+
+        <p class="note-bas">
+          Chaque document porte son manifeste de génération : le modèle, sa version et les
+          sources mobilisées. Une section sans source le dit — elle n'est pas estimée.
+          OpenCacao est un outil d'aide à la décision, il ne remplace ni l'ANADER ni le
+          Conseil du Café-Cacao.
+        </p>
+      </main>
+    </section>
 
     <div class="modal-overlay" id="modal" hidden>
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">

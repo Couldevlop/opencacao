@@ -35,7 +35,7 @@ const IDS = [
   "exports",
   "panneauHistorique",
   "listeDocuments",
-  "statut",
+  "statutAtelier",
   "settingsBtn",
   "modal",
   "apiUrl",
@@ -289,8 +289,8 @@ describe("les paramètres de connexion", () => {
     noeuds.modalSave.click();
     await pause();
 
-    assert.equal(noeuds.statut.hidden, false);
-    assert.match(noeuds.statut.textContent, /http/);
+    assert.equal(noeuds.statutAtelier.hidden, false);
+    assert.match(noeuds.statutAtelier.textContent, /http/);
     assert.equal(localStorage.getItem("opencacao.apiUrl"), null, "rien ne doit être retenu");
   });
 

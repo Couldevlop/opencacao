@@ -43,7 +43,8 @@ const refs = {
   exports: $("exports"),
   panneauHistorique: $("panneauHistorique"),
   listeDocuments: $("listeDocuments"),
-  statut: $("statut"),
+  // Voir parcelle-main.js : identifiant dédoublé depuis le regroupement en une page.
+  statut: $("statutAtelier"),
   settingsBtn: $("settingsBtn"),
   modal: $("modal"),
   apiUrl: $("apiUrl"),
