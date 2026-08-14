@@ -1,0 +1,346 @@
+# Runbook jour J — OpenCacao V3
+
+> **Critère d'acceptation de ce document (spec §9.6) : il doit être utilisable par
+> quelqu'un d'autre que Waopron.** Si une étape suppose un savoir qui n'est écrit
+> nulle part, c'est un défaut du runbook, pas du lecteur.
+
+Chaque commande est donnée telle qu'elle se tape. Les valeurs à remplacer sont en
+`MAJUSCULES`.
+
+---
+
+## 0. Avant de commencer — les cinq choses à savoir
+
+| | |
+|---|---|
+| **Cluster** | `nexusrh-preprod`, K3s v1.35.x, nœud unique `62.238.11.20` |
+| **Accès** | `export KUBECONFIG=kubeconfig-hetzner.yaml` (racine du dépôt), namespace `opencacao` |
+| **Déploiement** | `deploy/scripts/roll-image.sh` **et rien d'autre** — voir §1 |
+| **Domaine** | `opencacao.openlabconsulting.com`, derrière Cloudflare |
+| **Console** | `curation.opencacao.openlabconsulting.com` — publique, protégée par mot de passe |
+
+**Les trois pièges qui ont déjà coûté du temps.** Les trois ont été **vérifiés sur le
+cluster le 30/07/2026** — ce ne sont pas des souvenirs.
+
+1. **ArgoCD ne déploie pas OpenCacao.** Une seule Application existe sur le cluster, et
+   c'est `openlab-website` :
+
+   ```
+   $ kubectl get applications -A
+   NAMESPACE   NAME              SYNC STATUS   HEALTH STATUS
+   argocd      openlab-website   Synced        Healthy
+   ```
+
+   L'Application `opencacao` a été retirée après l'incident du 06/07/2026.
+   `roll-image.sh` est l'**unique** chemin. N'attendez pas une synchronisation : elle ne
+   viendra pas.
+
+2. **`roll-image.sh` ne synchronise pas la ConfigMap — et l'écart est déjà là.** Le
+   script change l'image et `APP_VERSION`, rien d'autre. Relevé sur le cluster, la
+   ConfigMap vivante **ne contient pas** les clés de la V3 :
+
+   ```
+   PARCELLES_ENABLED   absent      VISION_ENABLED     absent
+   RAPPORTS_ENABLED    absent      VISION_TIMEOUT_S   absent
+   PROFIL_MATERIEL     absent
+   ```
+
+   Le code retombe donc sur ses défauts — qui valent `false`, `false`, `false`, `30` et
+   `cpu`, soit exactement les valeurs voulues aujourd'hui. **On est juste par chance, pas
+   par construction.** Avant d'activer quoi que ce soit :
+
+   ```bash
+   kubectl -n opencacao apply -f deploy/k8s/api.yaml   # réaligne la ConfigMap
+   kubectl -n opencacao rollout restart deploy/api
+   ```
+
+3. **Cloudflare coupe une réponse d'origine vers 100 secondes** (erreur 524). Toute
+   réponse longue doit émettre un premier octet vite. C'est déjà vrai du chat et des
+   rapports ; ne l'oubliez pas en changeant un timeout.
+
+**État relevé le 30/07/2026**, pour comparaison :
+
+| | |
+|---|---|
+| Image servie | `ghcr.io/couldevlop/opencacao-api:0.6.74` |
+| `APP_VERSION` | `0.6.74` (la release `0.6.75` existe sur GHCR, non déployée) |
+| Nœud | `nexusrh-preprod`, K3s `v1.35.4+k3s1` |
+| Mémoire de l'inférence | **4,9 Gi** consommés sur 12 Gi de limite |
+| Drapeaux actifs | `AGENTS_ENABLED`, `SEMANTIC_CACHE_ENABLED`, `DIALOGUE_NATUREL_ENABLED` |
+
+---
+
+## 1. Déployer une version
+
+```bash
+export KUBECONFIG=kubeconfig-hetzner.yaml
+deploy/scripts/roll-image.sh X.Y.Z          # ex. 0.6.75
+```
+
+Le script patche `APP_VERSION` dans la ConfigMap, bascule les images de `api`,
+`curation` et `web`, purge le cache de réponses Redis (`cache:chat:*`) et, si
+`CF_API_TOKEN` et `CF_ZONE_ID` sont exportés, purge le cache Cloudflare.
+
+**Vérifier ce qui tourne réellement** — le tag Git le plus récent ne dit rien :
+
+```bash
+kubectl -n opencacao get deploy api \
+  -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+kubectl -n opencacao get rs -l app=api --sort-by=.metadata.creationTimestamp
+curl -s https://opencacao.openlabconsulting.com/v1/health
+curl -s https://opencacao.openlabconsulting.com/v1/ready
+```
+
+> **Précédent, 06/07/2026 :** trois minutes après une release, quelqu'un a lancé
+> `roll-image.sh` avec un **ancien** tag, faisant régresser la production de quatre
+> versions pendant 24 h. La signature était visible dans `APP_VERSION`. **Après chaque
+> déploiement, relisez le tag effectivement servi.**
+
+### Retour arrière
+
+```bash
+deploy/scripts/roll-image.sh TAG_PRECEDENT
+```
+
+C'est la même commande. Le retour arrière n'est pas une procédure spéciale, ce qui est
+voulu : sous pression, on ne veut pas apprendre une seconde commande.
+
+---
+
+## 2. Bascule GPU
+
+**À répéter et chronométrer au moins deux fois avant le jour J** (spec §9.6), aller
+**et** retour. Une bascule découverte le jour même est une bascule ratée.
+
+### 2.0 Migration à faire UNE FOIS, hors répétition
+
+Jusqu'au 14/08/2026, `inference.yaml` et `inference-gpu.yaml` portaient **le même nom
+d'objet** : appliquer l'un supprimait l'autre. Le retour au CPU imposait donc de
+recharger le GGUF — plusieurs minutes — là où la spec §4.5 promet « moins de deux
+minutes » par un simple `kubectl scale`. C'est corrigé : deux Deployments distincts
+(`inference` en CPU, `inference-gpu`), un seul Service qui suit le label `role:
+inference`, porté par les deux.
+
+Cette bascule de labels demande **une** application, qui **redémarre l'inférence CPU**
+(le gabarit de pod change, donc le pod est recréé — comptez le rechargement du GGUF).
+À faire à un moment calme, jamais pendant une répétition. L'ordre des deux `apply` est
+indifférent : chaque profil est cloisonné par sa propre NetworkPolicy, sur un label que
+les pods portent avant comme après.
+
+```bash
+export KUBECONFIG=kubeconfig-hetzner.yaml
+kubectl -n opencacao apply -f deploy/k8s/inference.yaml
+kubectl -n opencacao apply -f deploy/k8s/networkpolicy.yaml
+kubectl -n opencacao rollout status deploy/inference --timeout=300s
+deploy/scripts/profil.sh etat        # doit montrer des endpoints et profil=cpu
+```
+
+### 2.1 Prérequis, à vérifier la veille
+
+```bash
+# Le nœud expose-t-il un GPU ?
+kubectl get nodes -o json | grep -c "nvidia.com/gpu"
+
+# Les poids sont-ils en place sur le nœud ? (modèle fusionné, PAS le GGUF)
+ls -la /opt/opencacao/models/opencacao-8b/
+# et, pour la vision :
+ls -la /opt/opencacao/models/qwen3-vl-8b-Q4_K_M.gguf \
+       /opt/opencacao/models/qwen3-vl-8b-mmproj-f16.gguf
+```
+
+Renseigner le `nodeSelector` et les `tolerations` de `deploy/k8s/inference-gpu.yaml`
+selon les labels réels du nœud — commentés par défaut, car ils dépendent du
+fournisseur. **Sans eux, le pod peut rester `Pending` sans explication visible.**
+
+### 2.2 Bascule (chronométrer à partir d'ici)
+
+```bash
+export KUBECONFIG=kubeconfig-hetzner.yaml
+deploy/scripts/profil.sh gpu
+```
+
+**C'est tout, et c'est voulu** : sous pression, on ne veut pas exécuter cinq commandes
+dans le bon ordre. Le script monte le pod GPU, attend qu'il soit prêt, **puis seulement**
+descend le CPU à zéro réplique (jamais l'inverse : descendre d'abord ouvrirait un trou de
+plusieurs minutes), patche `PROFIL_MATERIEL` et `INFERENCE_BACKEND`, redémarre l'API,
+vérifie `/v1/ready` et **affiche la durée à reporter au §6**.
+
+`deploy/scripts/profil.sh etat` ne change rien et dit où on en est — y compris si le
+Service n'a aucun endpoint, la panne la plus silencieuse du lot.
+
+**La vision n'est pas allumée par la bascule**, délibérément : c'est un drapeau de
+fonctionnalité, pas une capacité matérielle, et son budget de latence se décide en
+connaissance de cause (§3). Une fois le GPU en place :
+
+```bash
+kubectl -n opencacao apply -f deploy/k8s/vision.yaml
+kubectl -n opencacao rollout status deploy/vision --timeout=15m
+kubectl -n opencacao patch configmap api-config --type merge \
+  -p '{"data":{"VISION_ENABLED":"true"}}'
+kubectl -n opencacao rollout restart deploy/api
+```
+
+### 2.3 Vérifier
+
+```bash
+curl -s https://opencacao.openlabconsulting.com/v1/ready
+curl -s https://opencacao.openlabconsulting.com/v1/version
+# Une vraie question, chronométrée :
+time curl -s -X POST https://opencacao.openlabconsulting.com/v1/chat \
+  -H 'Content-Type: application/json' -H 'X-Device-Id: recette-jour-j' \
+  -d '{"question":"Quand récolter le cacao ?","langue":"fr"}' | head -c 300
+```
+
+**Noter les temps mesurés dans le tableau du §6.** Un chiffre non écrit est un chiffre
+perdu.
+
+### 2.4 Retour au CPU
+
+```bash
+deploy/scripts/profil.sh cpu
+```
+
+**La même commande, dans l'autre sens** — c'est le seul geste à retenir des deux. Le
+script remonte le CPU **avant** d'éteindre le GPU (s'il lâche en scène, on ne commence
+pas par éteindre ce qui répond encore), remet `PROFIL_MATERIEL`, `INFERENCE_BACKEND` et
+`VISION_ENABLED` à leurs valeurs CPU, et redémarre l'API.
+
+Le déploiement GPU n'est pas supprimé, seulement mis à zéro réplique : repartir sur GPU
+ne repaiera pas la création de l'objet.
+
+> **Le repli CPU est le plan de secours du plan de secours.** Il doit être chronométré
+> lui aussi : c'est ce qu'on exécutera sous pression si le GPU lâche en scène. Le script
+> affiche la durée ; elle va au §6.
+
+---
+
+## 3. Les drapeaux de la V3
+
+Trois fonctionnalités sont livrées mais **coupées**, chacune par un drapeau. Les
+activer se fait à chaud, sans redéploiement d'image.
+
+| Drapeau | État | Ce qu'il ouvre | À savoir avant d'activer |
+|---|---|---|---|
+| `PARCELLES_ENABLED` | `false` | Parcelles et captures terrain (C1) | Crée `parcelles.db` sur `/data` |
+| `VISION_ENABLED` | `false` | Analyse visuelle des captures (C2) | **Inerte sans GPU** : `PROFIL_MATERIEL` doit valoir `gpu`, sinon l'API répond 503 |
+| `RAPPORTS_ENABLED` | `false` | Atelier de livrables (C3) | Une étude enchaîne **une génération par section** : mesurer le budget CPU total avant |
+
+```bash
+kubectl -n opencacao patch configmap api-config --type merge \
+  -p '{"data":{"PARCELLES_ENABLED":"true"}}'
+kubectl -n opencacao rollout restart deploy/api
+```
+
+**Budget de latence — le point à trancher avant d'activer la vision.** Le constat visuel
+est **synchrone** : il enchaîne `VISION_TIMEOUT_S` puis `REQUEST_TIMEOUT_S`. Valeurs
+réellement en ConfigMap aujourd'hui :
+
+```
+REQUEST_TIMEOUT_S = 300      <-- relevé sur le cluster, et non 120 (défaut du code)
+VISION_TIMEOUT_S  =  30      <-- défaut du code, la clé est absente de la ConfigMap
+```
+
+Le cumul brut atteindrait **330 s** quand Cloudflare coupe vers 100 : le client verrait
+un 524 et la génération continuerait côté serveur pour rien.
+
+**C'est réglé, mais par une borne explicite, pas par ces deux valeurs.** Le service du
+constat s'accorde un budget total de **75 s** (`BUDGET_CONSTAT_S` dans
+`api/app/services/constats.py`) : au-delà, il abandonne et rend la consigne qui oriente
+vers l'ANADER — le repli déjà prévu par la cascade — plutôt que de laisser l'edge
+couper. `REQUEST_TIMEOUT_S` reste à 300 volontairement : il est aligné sur le
+`proxy-read-timeout` de l'ingress et sert le flux du chat, où une composition
+multi-agents prend jusqu'à trois minutes. **Le baisser casserait ce que le correctif du
+524 de juillet avait réparé.**
+
+Ce qui reste à surveiller après la bascule GPU : si le budget de 75 s se révèle trop
+court pour une analyse d'image sur GPU, l'ajuster **là** — pas en touchant au timeout
+global.
+
+---
+
+## 4. Surveillance en direct
+
+```bash
+# Journaux de l'API, filtrés sur ce qui compte
+kubectl -n opencacao logs -f deploy/api | grep -E "error|warning|refus|echoue"
+
+# Mémoire de l'inférence — la cause de l'OOM-kill du 28/06/2026
+kubectl -n opencacao top pod -l app=inference
+
+# Redémarrages : un compteur qui bouge est le premier signe d'un OOM
+kubectl -n opencacao get pods -w
+```
+
+**Seuils d'alerte.** Le pod d'inférence est plafonné à 12 Gi et a déjà été tué pour
+dépassement. Si `top pod` approche cette limite, ne pas attendre : vérifier que
+`--cache-ram` est bien à 1024 dans le manifeste servi.
+
+**Alertes automatiques.** Un CronJob `watchdog-enrichissement` tourne chaque jour à
+04:30 UTC et alerte par email si l'enrichissement du corpus n'a pas réussi depuis plus
+de 26 h. L'email part par ZeptoMail.
+
+> **L'expéditeur DOIT être `waopron@openlabconsulting.com`.** `noreply@` est refusé par
+> ZeptoMail (erreur `SM_147`). Si les alertes cessent, vérifier d'abord cela.
+
+---
+
+## 5. Plan de secours — à dégainer sans hésiter
+
+L'ordre compte : chaque palier est plus sûr et plus rapide que le précédent.
+
+| Palier | Quand | Comment |
+|---|---|---|
+| **1. Couper la fonctionnalité fautive** | Une seule brique déraille | Passer son drapeau à `false` + `rollout restart deploy/api` (~1 min) |
+| **2. Repli CPU** | Le GPU lâche ou vLLM ne charge pas | §2.4 (chronométré à l'avance) |
+| **3. Retour arrière d'image** | La version déployée est en cause | `roll-image.sh TAG_PRECEDENT` |
+| **4. Hors-ligne** | Le service est inaccessible | Captures d'écran et enregistrements préparés — voir ci-dessous |
+
+**Le palier 4 doit être prêt AVANT le jour J**, pas improvisé : enregistrement vidéo du
+scénario complet joué en production, et captures des écrans clés. Sans lui, une panne
+réseau dans la salle suffit à interrompre la démonstration.
+
+- [ ] Enregistrement du scénario complet — **à produire**
+- [ ] Captures des écrans clés — **à produire**
+- [ ] Fichiers de livrables (`.docx`, `.xlsx`, `.pptx`) déjà générés, sur la machine de
+      présentation — **à produire**
+
+---
+
+## 6. Mesures — à remplir pendant les répétitions
+
+### Où en sont les critères d'acceptation (spec §9.6)
+
+| Critère | État |
+|---|---|
+| Sous charge simulée, la file annonce une position et aucune requête ne meurt en silence | **Acquis.** Vérifié en continu par `api/tests/test_charge_file_attente.py` : douze demandes concurrentes pour une place, chacune repart avec une issue nette — servie ou refusée lisiblement. |
+| Bascule GPU puis retour CPU, deux fois, chronométrés | **En attente du GPU.** Rien ne peut être mesuré avant. |
+| Scénario complet joué en production, deux fois de suite | **En attente** des questions de Waopron et de la bascule. |
+| Plan de secours utilisable par quelqu'un d'autre | **À éprouver** — le seul juge est quelqu'un qui n'a pas écrit ce document. |
+
+Le premier critère est le seul qui ne dépend ni du matériel ni d'une répétition : il est
+donc verrouillé par un test plutôt que par une observation ponctuelle. Ce test a d'ailleurs
+trouvé une incohérence à l'écrit : une demande s'entendait annoncer « position 9 » alors
+que le plafond d'attente est à 8, puis se faisait refuser dans la foulée. On ne promet plus
+une place qui n'existe pas.
+
+### Chronométrage des répétitions
+
+Un tableau vide le jour J signifie que les répétitions n'ont pas eu lieu.
+
+| Répétition | Date | Bascule GPU | Retour CPU | Latence 1ʳᵉ question | Incident |
+|---|---|---|---|---|---|
+| 1 | | | | | |
+| 2 | | | | | |
+
+---
+
+## 7. Qui fait quoi
+
+À remplir avant le jour J : un runbook sans noms laisse chacun supposer que l'autre
+s'en occupe.
+
+| Rôle | Personne | Joignable à |
+|---|---|---|
+| Pilote de la démonstration | | |
+| Surveillance technique (journaux, mémoire) | | |
+| Décision de repli | | |

@@ -22,13 +22,15 @@ from app.core.journal import JournalFichier
 from app.core.logging import configure_logging, get_logger
 from app.core.parametres import ParametresStore
 from app.core.parcelles_store import ParcelleStore
+from app.core.rapports_store import RapportStore
 from app.core.security import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 from app.core.sessions import SessionStore
-from app.routers import auth, chat, feedback, health, parcelles, sessions
+from app.routers import auth, chat, feedback, health, parcelles, rapports, sessions
 from app.services.constats import ServiceConstats
 from app.services.inference import InferenceClient
 from app.services.notifier import construire_notifier
 from app.services.parcelles import ServiceParcelles
+from app.services.rapports import ServiceRapports
 from app.services.vision.indisponible import VisionIndisponible
 from app.services.vision.vlm import ClientVLM
 
@@ -59,6 +61,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         espace_libre_min_octets=settings.captures_espace_libre_min_octets,
     )
     app.state.purge_captures_task = None
+    app.state.purge_rapports_task = None
     if settings.parcelles_enabled:
         await app.state.parcelles.initialiser()
         app.state.purge_captures_task = _lancer_purge_captures(app)
@@ -76,6 +79,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         ServiceConstatVisuel(app.state.vision, app.state.inference),
         dossier_captures=Path(settings.captures_dir),
     )
+
+    # Atelier de livrables (V3, chantier C3).
+    app.state.rapports = RapportStore.from_settings(settings)
+    if settings.rapports_enabled:
+        await app.state.rapports.initialiser()
+        # Un job « en cours » après un redémarrage est orphelin : personne ne le
+        # reprendra, et le laisser ainsi ferait attendre un client indéfiniment.
+        await app.state.rapports.reprendre_orphelins()
+        app.state.purge_rapports_task = _lancer_purge_rapports(app, settings)
+    app.state.service_rapports = _construire_service_rapports(app, settings)
 
     app.state.auth_store = AuthStore.from_settings(settings)
     app.state.parametres = ParametresStore.from_settings(settings)
@@ -110,6 +123,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             app.state.purge_task.cancel()
         if app.state.purge_captures_task is not None:
             app.state.purge_captures_task.cancel()
+        if app.state.purge_rapports_task is not None:
+            app.state.purge_rapports_task.cancel()
         await app.state.inference.close()
         await app.state.cache.close()
         if app.state.embeddings is not None:
@@ -119,6 +134,38 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if hasattr(app.state.vision, "close"):
             await app.state.vision.close()
         logger.info("arret")
+
+
+def _construire_service_rapports(app: FastAPI, settings: Settings) -> ServiceRapports:
+    """Compose l'atelier de livrables.
+
+    Le moteur est construit à CHAQUE exécution (fabrique) : il porte l'état d'un
+    document en cours, qui n'a pas à être partagé entre deux rapports.
+
+    Args:
+        app: Application dont l'état porte l'inférence, le cache et le RAG.
+        settings: Paramètres applicatifs, reportés au manifeste.
+
+    Returns:
+        Le service des rapports, prêt à créer et exécuter des jobs.
+    """
+    from app.api_deps import construire_collecteurs
+    from app.application.redaction import ContexteGeneration, MoteurRedaction
+
+    contexte = ContexteGeneration(
+        modele=settings.model_name,
+        version_modele=settings.model_version,
+        version_app=settings.app_version,
+        profil_materiel=settings.profil_materiel,
+    )
+    return ServiceRapports(
+        app.state.rapports,
+        lambda: MoteurRedaction(
+            app.state.inference,
+            construire_collecteurs(app.state.cache, app.state.rag),
+            contexte,
+        ),
+    )
 
 
 def _lancer_purge_sessions(app: FastAPI, settings: Settings) -> object | None:
@@ -172,6 +219,36 @@ def _lancer_purge_captures(app: FastAPI) -> asyncio.Task[None]:
                     logger.info("captures_purgees_disque", nombre=nombre)
             except Exception as exc:  # noqa: BLE001 - la purge ne doit jamais tuer l'app
                 logger.warning("purge_captures_echouee", error=str(exc))
+
+    return asyncio.create_task(boucle())
+
+
+def _lancer_purge_rapports(app: FastAPI, settings: Settings) -> asyncio.Task[None] | None:
+    """Lance la purge périodique des rapports expirés (moule des captures).
+
+    Un livrable se télécharge le jour même. Le conserver indéfiniment ferait croître
+    ``/data`` — partagé avec l'index RAG, les sessions et les captures — jusqu'à une
+    saturation qui toucherait TOUTE l'API, pas seulement les rapports.
+
+    Args:
+        app: Application dont l'état porte le dépôt des rapports.
+        settings: Paramètres applicatifs (rétention).
+
+    Returns:
+        La tâche asyncio créée, ou None si la rétention est désactivée.
+    """
+    if settings.rapports_retention_jours <= 0:
+        return None
+
+    async def boucle() -> None:
+        while True:
+            try:
+                nombre = await app.state.rapports.purger_anciens(settings.rapports_retention_jours)
+                if nombre:
+                    logger.info("rapports_purges", nombre=nombre)
+            except Exception as exc:  # noqa: BLE001 - la purge ne doit jamais tuer l'app
+                logger.warning("purge_rapports_echouee", error=type(exc).__name__)
+            await asyncio.sleep(24 * 3600)
 
     return asyncio.create_task(boucle())
 
@@ -300,6 +377,8 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     if settings.parcelles_enabled:
         app.include_router(parcelles.router)
+    if settings.rapports_enabled:
+        app.include_router(rapports.router)
     _monter_interface(app, settings)
     return app
 

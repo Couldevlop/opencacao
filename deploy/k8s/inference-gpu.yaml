@@ -1,0 +1,87 @@
+# Inférence GPU : vLLM servant le modèle fusionné (V3, chantier C4, spec §9.1).
+# JAMAIS exposé publiquement (ClusterIP), comme son homologue CPU.
+#
+# CE MANIFESTE NE REMPLACE PLUS `inference.yaml` — il vient À CÔTÉ. C'est ce que
+# demande la spec V3 §4.5 : « Garder le Deployment CPU à zéro réplique, jamais
+# supprimé : le retour arrière est un kubectl scale plus un revert de ConfigMap, en
+# moins de deux minutes. » Les deux portaient auparavant le même nom d'objet, ce qui
+# rendait cette promesse intenable : appliquer l'un DÉTRUISAIT l'autre, et revenir au
+# CPU imposait de recharger le GGUF au lieu de rallumer un pod déjà là.
+#
+# Trois labels, trois rôles distincts :
+#   app: inference-gpu   -> l'identité du ReplicaSet. DIFFÉRENT du CPU, sans quoi le
+#                           ReplicaSet CPU (sélecteur immuable `app: inference`)
+#                           adopterait ces pods et les supprimerait.
+#   role: inference      -> ce que suit le Service `inference`. Commun aux deux profils.
+#   profil: gpu          -> lecture humaine et journaux.
+#
+# Répliques à 0 par défaut : l'objet existe, prêt à être mis à l'échelle, et ne
+# réserve rien tant qu'on ne bascule pas. Bascule et retour : `deploy/scripts/profil.sh`.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inference-gpu
+  labels: { app: inference-gpu }
+spec:
+  replicas: 0
+  selector:
+    matchLabels: { app: inference-gpu }
+  strategy: { type: Recreate } # un seul GPU : pas deux pods à la fois
+  template:
+    metadata:
+      labels: { app: inference-gpu, role: inference, profil: gpu }
+    spec:
+      # À renseigner selon le nœud GPU réellement provisionné : sans sélecteur, le
+      # planificateur peut placer le pod sur un nœud sans carte et il restera Pending.
+      # nodeSelector: { "nvidia.com/gpu.present": "true" }
+      # tolerations:
+      #   - { key: "nvidia.com/gpu", operator: "Exists", effect: "NoSchedule" }
+      containers:
+        - name: vllm
+          # Épinglé : « latest » sur un serveur d'inférence, c'est une régression un
+          # matin de démonstration. Version alignée sur la spec §2.1 (vLLM ≥ 0.12).
+          image: vllm/vllm-openai:v0.12.0
+          args:
+            - "--model"
+            - "/models/opencacao-8b" # modèle fusionné, PAS le GGUF
+            - "--served-model-name"
+            - "opencacao-8b" # doit égaler MODEL_NAME de la ConfigMap
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8000"
+            - "--max-model-len"
+            - "8192"
+            # Laisse de la mémoire à la carte pour l'activation et le cache KV ; à
+            # relever seulement après mesure, jamais par optimisme.
+            - "--gpu-memory-utilization"
+            - "0.85"
+            - "--dtype"
+            - "bfloat16"
+          ports:
+            - containerPort: 8000
+          volumeMounts:
+            - name: modele
+              mountPath: /models
+              readOnly: true
+            # vLLM compile des noyaux au premier démarrage : sans cache, chaque
+            # redémarrage repaie plusieurs minutes.
+            - name: cache-vllm
+              mountPath: /root/.cache
+          resources:
+            requests: { cpu: "2", memory: "16Gi", nvidia.com/gpu: "1" }
+            limits: { cpu: "8", memory: "32Gi", nvidia.com/gpu: "1" }
+          readinessProbe:
+            httpGet: { path: /v1/models, port: 8000 }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 60 # le 1er chargement + compilation peut être long
+      volumes:
+        - name: modele
+          hostPath:
+            path: /opt/opencacao/models
+            type: Directory
+        - name: cache-vllm
+          emptyDir: {}
+# Pas de Service ici : celui de `inference.yaml` sert les deux profils. En déclarer un
+# second, de même nom, redonnerait exactement le conflit que ce découpage supprime.

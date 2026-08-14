@@ -31,8 +31,10 @@ src/
   la seule insertion HTML (réponse du modèle) passe par un rendu markdown qui
   **échappe d'abord tout le HTML**, puis n'autorise que gras/italique/listes.
 - **CSP** : `Content-Security-Policy` stricte en `<meta>` (`script-src 'self'`,
-  pas de JS/CSS inline, `object-src 'none'`, `frame-ancestors 'none'`,
-  `base-uri 'none'`). Aucun gestionnaire d'événement inline (`onerror`, etc.).
+  pas de JS/CSS inline, `object-src 'none'`, `base-uri 'none'`, `form-action 'none'`).
+  Aucun gestionnaire d'événement inline (`onerror`, etc.). `frame-ancestors` **ne peut
+  pas** être porté par une balise `<meta>` : c'est `X-Frame-Options: DENY` dans
+  `deploy/web.nginx.conf` qui interdit l'encadrement.
 - **Aucune dépendance tierce / CDN** : 100 % local (souveraineté + surface
   d'attaque réduite, pas de risque de chaîne d'approvisionnement).
 - **Aucun secret côté client** : seule l'URL de l'API est stockée (localStorage).

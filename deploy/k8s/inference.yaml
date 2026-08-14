@@ -4,6 +4,10 @@
 # Cluster mono-nœud : le GGUF est déposé sur le nœud (/opt/opencacao/models) et
 # monté en hostPath (lecture seule). Le serveur llama.cpp expose
 # /v1/chat/completions (compatible OpenAI), ce que consomme l'API.
+#
+# CE DÉPLOIEMENT N'EST JAMAIS SUPPRIMÉ (spec V3 §4.5). Il est mis à zéro réplique
+# quand le profil GPU prend la main, de sorte que le retour arrière soit un
+# `kubectl scale` et non un rechargement de manifeste. Voir `deploy/scripts/profil.sh`.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -11,12 +15,20 @@ metadata:
   labels: { app: inference }
 spec:
   replicas: 1
+  # Sélecteur INCHANGÉ, et il ne doit pas changer : le sélecteur d'un Deployment est
+  # immuable, le modifier imposerait de supprimer puis recréer l'objet en production.
+  # C'est aussi la raison pour laquelle les pods GPU portent un `app` DIFFÉRENT : avec
+  # le même, ce ReplicaSet-ci les adopterait — donc les supprimerait, croyant avoir une
+  # réplique de trop.
   selector:
     matchLabels: { app: inference }
   strategy: { type: Recreate }   # volume RWO mono-attache
   template:
     metadata:
-      labels: { app: inference }
+      # `role: inference` est le label que suit le Service, et le SEUL point commun
+      # entre les deux profils. `profil` n'est là que pour la lecture humaine
+      # (`kubectl get pods -L profil`) et les journaux.
+      labels: { app: inference, role: inference, profil: cpu }
     spec:
       containers:
         - name: llamacpp
@@ -74,12 +86,16 @@ spec:
             path: /opt/opencacao/models
             type: Directory
 ---
+# Service UNIQUE des deux profils : c'est lui qui rend la bascule invisible côté API.
+# Il ne sélectionne pas `app`, mais `role` — porté par les pods CPU comme par les pods
+# GPU. Celui des deux qui a des répliques fournit les endpoints ; l'autre, à zéro, n'en
+# fournit aucun. `INFERENCE_URL` ne change donc jamais.
 apiVersion: v1
 kind: Service
 metadata:
   name: inference
 spec:
-  selector: { app: inference }
+  selector: { role: inference }
   ports:
     - port: 8000
       targetPort: 8000

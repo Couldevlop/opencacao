@@ -122,6 +122,12 @@ data:
   # déployé : l'API répond alors 503 avec une consigne qui oriente vers l'ANADER,
   # jamais une description inventée. Le VLM ne tient que sur GPU — même à "true",
   # un PROFIL_MATERIEL "cpu" laisse la source neutre branchée.
+  # Atelier de livrables (V3, chantier C3). OFF au premier déploiement : on vérifie
+  # que le schéma SQLite se crée bien sur /data avant d'ouvrir les routes. La
+  # génération enchaîne un appel d'inférence PAR SECTION — ne pas l'activer sans
+  # avoir mesuré le budget CPU d'une étude complète.
+  RAPPORTS_ENABLED: "false"
+  RAPPORTS_DB_PATH: "/data/rapports.db"
   VISION_ENABLED: "false"
   VISION_URL: "http://vision:8000"
   VISION_MODELE: "qwen3-vl"

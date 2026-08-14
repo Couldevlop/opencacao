@@ -19,6 +19,12 @@ dependencies = [
     # Géolocalisation IP -> pays EN LOCAL (base GeoLite2), pour l'analytique des
     # visites. L'IP n'est jamais stockée : on ne garde que le code pays.
     "maxminddb==2.*",
+    # Rendu des livrables V3 (chantier C3) en Word, Excel et PowerPoint. Trois
+    # bibliothèques pures Python, sans dépendance système. Dépendances hors spec §2.1
+    # autorisées par Waopron le 28/07/2026 (demande explicite de ces trois formats).
+    "python-docx==1.1.*",
+    "openpyxl==3.1.*",
+    "python-pptx==1.0.*",
 ]
 
 [project.optional-dependencies]
@@ -53,4 +59,7 @@ testpaths = ["tests"]
 # à des institutions, un défaut y coûte la crédibilité de la thèse, pas seulement un
 # bug. La couverture réelle est de 100 % ; le point de marge évite qu'un seul ajout de
 # code fasse échouer la suite et pousse à abuser des « # pragma: no cover ».
-addopts = "--cov=app --cov-report=term-missing --cov-fail-under=99"
+# --cov-branch : la couverture par LIGNES seule masquait une branche entière et fausse
+# (un `if` dont seule la sortie négative était exercée). 100 % de lignes ne veut pas
+# dire que les deux issues d'un test ont été prises.
+addopts = "--cov=app --cov-branch --cov-report=term-missing --cov-fail-under=99"

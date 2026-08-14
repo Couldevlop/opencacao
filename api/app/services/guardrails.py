@@ -632,6 +632,31 @@ _DILUTION = re.compile(
 )
 
 
+def contient_prescription(texte: str) -> bool:
+    """Indique si un texte PRESCRIT un traitement chiffré.
+
+    Plus étroit que :func:`verifier_reponse`, et c'est délibéré. Le garde-fou de
+    sortie du conseil se déclenche sur tout taux de dose, ``kg/ha`` compris : pour un
+    producteur, un faux positif ne coûte qu'une redirection vers l'ANADER. Dans un
+    **document d'analyse**, un rendement en kilogrammes par hectare est au contraire
+    le chiffre le plus banal qui soit — l'y refuser viderait toute section agronomique
+    de sa substance.
+
+    Ce qui reste interdit partout, c'est la **prescription** : un dosage associé à un
+    produit ou à un geste de traitement.
+
+    Args:
+        texte: Texte à vérifier.
+
+    Returns:
+        ``True`` si le texte prescrit un traitement chiffré.
+    """
+    normalise = _normaliser(texte)
+    if _DILUTION.search(normalise):
+        return True
+    return bool(_TAUX_DOSE.search(normalise)) and _contient(normalise, _RE_PHYTO)
+
+
 def verifier_reponse(reponse: str) -> Refus | None:
     """Garde-fou de SORTIE : bloque une réponse contenant un dosage phytosanitaire.
 

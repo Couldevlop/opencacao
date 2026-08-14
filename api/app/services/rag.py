@@ -394,29 +394,59 @@ class RagRecuperateur:
         self._hybride = hybride
         self._passage_max_chars = passage_max_chars
 
-    async def contexte_pour(self, question: str) -> str | None:
-        """Retourne le bloc de contexte pour la question, ou None si rien de pertinent."""
+    async def passages_pour(self, question: str, ancre: str = "") -> list[Passage]:
+        """Retourne les passages pertinents, sources comprises.
+
+        Le formatage en bloc de contexte détruit la source de chaque passage ; la
+        provenance d'un livrable en a besoin (C3). On sépare donc la récupération du
+        formatage, sans changer le comportement de l'une ni de l'autre.
+
+        **Le canal dense et le canal lexical n'ont pas la même entrée**, et c'est
+        délibéré. Le recouvrement lexical (F9) a pour dénominateur le nombre de mots de
+        la requête : une requête de section — titre, consigne et sujet — le multiplie
+        par trois ou quatre, et le meilleur recouvrement du corpus tombe sous le seuil.
+        Mesuré sur l'index de production : 0,75 avec le sujet seul, 0,27 avec la requête
+        de section, soit **plus aucun document éligible par la voie lexicale**. Cette
+        voie est précisément ce qui rattrape les termes rares — maladie, variété, nom de
+        source. On raffine donc le dense par section, et on garde l'ancre lexicale
+        courte.
+
+        Args:
+            question: Requête sémantique — sujet, ou requête propre à une section.
+            ancre: Texte court servant au canal lexical. À défaut, ``question``.
+
+        Returns:
+            Les passages retenus, ``[]`` si le service d'embeddings est absent ou si
+            rien ne passe le seuil.
+        """
+        lexicale = ancre or question
         vecteurs = await self._embeddings.embed([question])
         if not vecteurs:
-            return None
+            return []
         if self._hybride:
-            viviers = self._index.vivier_hybride(vecteurs[0], question, self._candidats)
+            viviers = self._index.vivier_hybride(vecteurs[0], lexicale, self._candidats)
         else:
             viviers = self._index.candidats(vecteurs[0], self._candidats)
         passages = reranker(
-            question,
+            lexicale,
             viviers,
             top_k=self._top_k,
             poids_lexical=self._poids_lexical,
             seuil_dense=self._seuil,
             seuil_lexical=self._seuil_lexical,
         )
+        if passages:
+            logger.info(
+                "rag_contexte",
+                passages=len(passages),
+                meilleur=round(passages[0].score, 3),
+                viviers=len(viviers),
+            )
+        return passages
+
+    async def contexte_pour(self, question: str) -> str | None:
+        """Retourne le bloc de contexte pour la question, ou None si rien de pertinent."""
+        passages = await self.passages_pour(question)
         if not passages:
             return None
-        logger.info(
-            "rag_contexte",
-            passages=len(passages),
-            meilleur=round(passages[0].score, 3),
-            viviers=len(viviers),
-        )
         return formater_contexte(passages, self._passage_max_chars or None)

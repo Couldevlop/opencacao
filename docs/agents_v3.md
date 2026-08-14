@@ -279,6 +279,46 @@ Deux conséquences de sécurité, toutes deux traitées : ces routes voient les 
 
 ---
 
+## 12. L'atelier de livrables — `application/redaction.py`, `services/gabarits.py`, `services/rendu/`
+
+*Chantier C3, livré le 29/07/2026. Spec : `docs/superpowers/specs/2026-07-28-v3-operationnelle-design.md` §8.*
+
+### Le concept
+
+Un bailleur ne lit pas un chat. Il lit une **étude** : un document qui a un plan, des tableaux, une bibliographie, et surtout qui dit **d'où vient chaque chiffre**. L'atelier produit ce document — étude de filière, dossier de parcelle, bulletin régional — en Markdown, Word, Excel et PowerPoint.
+
+Le retournement à comprendre : ce n'est pas « le chat, mais en plus long ». C'est un objet différent, avec une exigence que le chat n'a pas — la **provenance vérifiable** — et un registre que le corpus ne connaît pas.
+
+### Les décisions
+
+**Le modèle n'écrit jamais un titre.** L'analyse du corpus du 28/07 est sans appel : 10 000 paires, réponses de 583 caractères en médiane, 1 201 au maximum, et **0,0 %** de titres, de puces, de listes ou de tableaux. Un 8B qui n'a jamais lu de document de 30 000 caractères ne peut pas en écrire un d'un seul jet. Mais il peut écrire quarante paragraphes de 700 caractères, ce qui est le même document. La structure vient donc du **gabarit YAML**, la prose du modèle. Le découpage par section n'est pas seulement une parade au time-out edge : *c'est ce qui rend l'étude possible*.
+
+**Ajouter un livrable est un fichier YAML, pas du code.** Même discipline que « ajouter un agent = un adaptateur ». Le chargeur valide ce que le moteur ne pourra plus rattraper : une section sans titre resterait sans titre, une source inconnue serait ignorée en silence. Et parce que l'identifiant vient d'une requête HTTP, la sélection passe par une liste blanche calculée depuis le disque — jamais un chemin assemblé avec une donnée client.
+
+**D4 — une section sans source ne mobilise pas le modèle.** Elle rend un **constat de lacune** qui dit ce qui manque et ce qu'il faudrait fournir. Ce n'est pas une dégradation, c'est la règle : générer sans contexte est exactement la fabrication qui a coûté un correctif en v0.6.48. Un test vérifie que l'inférence n'est **pas appelée** dans ce cas — c'est là que se joue la garantie, pas dans le texte produit.
+
+**Aucune affirmation sans source, et c'est vérifié.** Chaque `Affirmation` porte source, date, méthode, confiance et l'empreinte du passage d'origine. `affirmations_sans_source` est le filet, et il ne se laisse pas contourner par un blanc, un tiret ou un « n/a ». Un tableau de provenance figure en annexe de tout livrable, et en **feuille dédiée** dans l'export Excel — c'est là qu'un auditeur voudra trier.
+
+**Le registre analytique se joue sur deux fronts, pas un.** Le corpus est intégralement en registre *conseil au producteur* (« rendez-vous auprès de votre agent ANADER ») : sollicitée sur une section d'étude, la LoRA s'adresserait au producteur et renverrait vers l'ANADER — faux dans un document destiné à un bailleur. Un prompt système dédié redresse le registre… mais l'en-tête de contexte par défaut, injecté dans le tour **utilisateur**, disait précisément « oriente vers l'ANADER ». Le tour utilisateur étant plus proche de la génération, c'est lui que le modèle suivait : le redressement n'était appliqué qu'à moitié. `build_messages` accepte donc un en-tête de contexte et un libellé de demande, et la rédaction passe les siens.
+
+**Les garde-fous du conseil ne sont pas ceux du livrable.** Distinction arbitrée le 29/07. Ce qui ne doit **jamais** être produit — dosage, avis médical, autre culture, diagnostic sur image — reste refusé, y compris sur le *sujet*, qui atterrit dans le titre sans jamais passer par le modèle et échapperait sinon à tout contrôle. Mais ce qui relève de *à qui l'assistant s'adresse* ne s'applique pas : un producteur à Korhogo est redirigé parce qu'on n'y cultive pas de cacao, alors qu'une **étude** sur la limite nord de la ceinture cacaoyère, ou sur la transformation locale, est un travail d'analyse légitime — c'est même ce qu'un bailleur commande. Même raisonnement pour `contient_diagnostic`, verrou du constat visuel : citer une maladie depuis une source n'est pas la diagnostiquer sur une photo.
+
+**Chaque format porte SES garanties, sans les faire fuir dans les autres.** Préfixer d'une apostrophe une valeur commençant par `=` neutralise l'injection de formule dans un tableur (CWE-1236 — `openpyxl` n'échappe rien, et la cellule serait évaluée à l'ouverture chez le bailleur) et corromprait le Markdown. C'est pourquoi la parade vit dans l'adaptateur et non dans le domaine. Les trois formats binaires purgent par ailleurs les caractères de contrôle : un octet nul venant du modèle produit un XML invalide, donc un fichier que le destinataire ne peut pas ouvrir — le genre de défaut qui se découvre en démonstration.
+
+**Le job survit au redémarrage.** Une étude représente 10 à 30 générations : le synchrone est exclu, et l'edge coupe de toute façon vers 100 s. Le job est persisté, exécuté en flux, et **le premier événement part avant toute génération** — c'est ce qui évite le 524. Un job resté inachevé après un redémarrage est orphelin : personne ne le reprendra, et le laisser ainsi ferait attendre un client indéfiniment. On l'assainit au démarrage.
+
+**On demande un document, on ne le configure pas.** Arbitrage du 30/07, après une première interface à cases à cocher : personne ne remplit un formulaire pour demander une étude — on l'écrit. L'écran est donc une phrase libre, et `application/intention_rapport.py` la résout en un couple *(gabarit, sujet)*. Trois choix s'y jouent. La résolution est **déterministe** : faire trancher au modèle « de quel type de document s'agit-il ? » coûterait une génération complète *avant* la première section, pour une question à laquelle un vocabulaire déclaré répond en microsecondes. Le vocabulaire vit dans les gabarits (`declencheurs:`), donc ajouter un livrable reste un fichier YAML — y compris pour être reconnu à l'oral. Et ce qui n'est pas certain **n'est pas deviné** : une demande ambiguë ressort avec ses candidats et un statut 200, à charge pour l'écran de poser *une* question — la même doctrine de clarification que le reste d'OpenCacao. Le sujet est enfin dégagé de ce qui ne fait que renommer le type : « un bulletin pour la région de Daloa » donne *Daloa*, parce que « Bulletin régional — la région de Daloa » bégaie.
+
+**La répétition entre sections était un défaut de COLLECTE, pas de génération.** Cinq sections d'une étude déclarent `rag` ; interrogées avec le seul sujet, elles recevaient les mêmes passages, et il ne restait au modèle qu'à inventer la différence. Aucun réglage de prompt n'aurait corrigé cela. Chaque section interroge donc le corpus avec sa propre requête — titre, consigne et sujet. Symétriquement, un outil (prix, météo) n'est **pas** réinterrogé par section : le prix officiel est le même au chapitre 1 et au 5, et l'outil continue de recevoir le *sujet nu*, jamais le titre, parce que la détection de localité lit dedans.
+
+Mais la correction naïve aurait aggravé le mal. Le recouvrement lexical du RAG (F9) a pour dénominateur le nombre de mots de la requête : passer de 4 mots à 15 fait tomber le meilleur recouvrement du corpus de 0,75 à 0,27, sous le seuil de 0,5 — mesuré sur l'index de production, **plus aucun des 10 021 passages n'était éligible par la voie lexicale**, celle-là même qui rattrape les termes rares (maladie, variété, nom de source). Le canal **dense** se raffine donc par section, le canal **lexical** reste ancré sur le sujet court. Deux entrées, une seule récupération. Un défaut de ce genre ne se voit pas en test : il se serait manifesté en production par une hausse silencieuse du taux de lacunes.
+
+### Modèle mental
+
+> Le chat répond. L'atelier **produit une pièce** — un objet qui sortira de la plateforme, sera relu par un tiers et devra tenir devant lui. D'où trois obsessions que le chat n'a pas : *ce document dit d'où vient chacun de ses chiffres, il ne prétend rien qu'il ne puisse sourcer, et il ne fait rien d'inattendu sur la machine de celui qui l'ouvre.*
+
+---
+
 ## Recette — Ajouter un agent en 4 étapes (appliquée à l'agent EUDR)
 
 C'est l'aboutissement du socle : l'extensibilité prouvée. L'**agent n°5 — Réglementation EUDR** a été ajouté en suivant exactement cette recette :

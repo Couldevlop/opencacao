@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- OWASP : durcissement navigateur, aligné sur index.html. Aucun script ni style
+         inline. Pas de `blob:` : un `<a download href="blob:…">` est un téléchargement,
+         pas une sous-ressource — aucune directive de fetch ne s'y applique.
+         `frame-ancestors` ne peut pas être porté par une balise meta : c'est
+         `X-Frame-Options: DENY` (deploy/web.nginx.conf) qui l'assure. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' http: https:; base-uri 'none'; form-action 'none'; object-src 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
+
+    <title>L'atelier — OpenCacao</title>
+    <meta
+      name="description"
+      content="Produisez une étude de filière, un dossier de parcelle ou un bulletin régional. Chaque document dit d'où vient chacun de ses chiffres."
+    />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="theme-color" content="#4a3424" />
+
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+    <link rel="apple-touch-icon" href="assets/cacao.png" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="page-atelier">
+    <div class="flag-strip" aria-hidden="true"></div>
+
+    <header class="app-header">
+      <div class="brand-side left">
+        <img
+          class="logo logo-ci"
+          src="assets/armoirie-ci.png"
+          alt="Armoiries de la République de Côte d'Ivoire"
+        />
+        <p class="logo-caption">République de Côte d'Ivoire</p>
+      </div>
+
+      <div class="brand-center">
+        <h1 class="wordmark">L'atelier</h1>
+        <p class="tagline">Des documents qui disent d'où ils viennent</p>
+      </div>
+
+      <div class="brand-side right">
+        <a class="lien-retour" href="index.html">Conversation</a>
+        <img class="logo logo-openlab" src="assets/openlab.png" alt="OpenLab Consulting" />
+        <button
+          id="settingsBtn"
+          class="icon-btn"
+          title="Paramètres de connexion"
+          aria-label="Paramètres"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="20"
+            height="20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="3" />
+            <path
+              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+            />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="atelier-page">
+      <p class="statut" id="statut" role="status" aria-live="polite" hidden></p>
+
+      <!-- On demande un document, on ne le configure pas. Le type se déduit de la
+           phrase ; il ne se coche pas. -->
+      <section class="carte demande" aria-labelledby="titreDemande">
+        <h2 id="titreDemande">Que voulez-vous produire ?</h2>
+        <form class="form-demande" id="formDemande" autocomplete="off">
+          <label class="sr-only" for="champDemande">Votre demande</label>
+          <div class="demande-boite">
+            <textarea
+              id="champDemande"
+              rows="2"
+              maxlength="2000"
+              placeholder="Une étude de la filière sur la campagne 2025-2026"
+              required
+            ></textarea>
+            <button class="btn-primary" id="btnProduire" type="submit">Produire</button>
+          </div>
+        </form>
+
+        <!-- Les exemples ne décorent pas : ils enseignent le vocabulaire que le
+             serveur sait reconnaître, et remplissent l'écran vide par une action. -->
+        <ul class="exemples" id="exemples"></ul>
+      </section>
+
+      <!-- Ce qui n'est pas certain se demande. Une seule question, jamais un
+           formulaire, et le sujet déjà compris n'est pas redemandé. -->
+      <section class="carte question" id="panneauQuestion" aria-labelledby="questionTitre" hidden>
+        <h2 class="question-titre" id="questionTitre" tabindex="-1"></h2>
+        <div class="question-choix" id="questionChoix"></div>
+      </section>
+
+      <!-- Le sommaire. Il s'affiche dès qu'un type est choisi — le plan vient du
+           gabarit, pas du modèle — puis se remplit section par section pendant la
+           rédaction. C'est l'écran, pas un journal d'exécution. -->
+      <section class="carte document" id="panneauDocument" aria-labelledby="titreDocument" hidden>
+        <p class="document-mention" id="mentionDocument" hidden></p>
+        <p class="document-compris" id="comprisDocument" hidden></p>
+        <h2 id="titreDocument">Sommaire</h2>
+        <p class="document-etat" id="etatDocument" role="status" aria-live="polite"></p>
+        <ol class="sommaire" id="sommaire"></ol>
+
+        <div class="exports" id="exports" hidden>
+          <p class="exports-titre">Télécharger</p>
+          <div class="exports-boutons">
+            <button class="btn-ghost" data-format="docx" type="button">Word</button>
+            <button class="btn-ghost" data-format="xlsx" type="button">Excel</button>
+            <button class="btn-ghost" data-format="pptx" type="button">PowerPoint</button>
+            <button class="btn-ghost" data-format="md" type="button">Markdown</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="carte" id="panneauHistorique" aria-labelledby="titreHistorique" hidden>
+        <h2 id="titreHistorique">Mes documents</h2>
+        <ul class="documents" id="listeDocuments"></ul>
+      </section>
+
+      <p class="note-bas">
+        Chaque document porte son manifeste de génération : le modèle, sa version et les
+        sources mobilisées. Une section sans source le dit — elle n'est pas estimée.
+        OpenCacao est un outil d'aide à la décision, il ne remplace ni l'ANADER ni le
+        Conseil du Café-Cacao.
+      </p>
+    </main>
+
+    <div class="modal-overlay" id="modal" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <h3 id="modalTitle">Connexion à l'API</h3>
+        <label for="apiUrl">URL de l'API OpenCacao</label>
+        <input id="apiUrl" type="url" placeholder="http://localhost:8080" />
+        <p class="modal-hint">
+          Exemple local : <code>http://localhost:8080</code>. Cet écran appelle
+          <code>/v1/rapports</code>.
+        </p>
+        <div class="modal-actions">
+          <button class="btn-ghost" id="modalCancel" type="button">Annuler</button>
+          <button class="btn-primary" id="modalSave" type="button">Enregistrer</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="src/rapport-main.js"></script>
+  </body>
+</html>

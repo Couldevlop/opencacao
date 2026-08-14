@@ -1,0 +1,41 @@
+# Étude de marché — destinée aux institutions, bailleurs, exportateurs.
+# Registre ANALYTIQUE, comme l'étude de filière : troisième personne, aucune adresse
+# au lecteur, aucun renvoi ANADER.
+#
+# Ce que ce gabarit REFUSE de faire, et pourquoi. Une étude de marché appelle
+# naturellement une prévision de prix — c'est précisément ce que le projet ne produira
+# pas. Le prix bord-champ est ADMINISTRÉ par le Conseil du Café-Cacao ; annoncer une
+# tendance chiffrée devant des producteurs qui vendront sur ce prix serait la faute la
+# plus coûteuse que ce système puisse commettre. Chaque consigne borne donc la section
+# à ce que les sources établissent, datation comprise.
+id: etude_marche
+titre: "Étude de marché — {sujet}"
+sous_titre: "Cacao ivoirien — analyse documentée"
+public: "institutions, bailleurs, exportateurs"
+mention: ""
+# « étude » est déclaré ICI AUSSI, en plus de « marché ». Ce n'est pas une redondance :
+# la reconnaissance compte les déclencheurs touchés, donc « étude de marché » en touche
+# deux ici contre un seul dans etude_filiere, et c'est ce qui départage. Sans « étude »,
+# les deux gabarits seraient à égalité et la demande partirait en clarification.
+# Conséquence assumée : « fais-moi une étude » tout court devient ambigu et pose une
+# question — ce qui est le comportement voulu, il y a bien deux études.
+declencheurs: ["étude", "marché", "commercialisation", "débouché", "export"]
+sections:
+  - titre: "Structure du marché"
+    sources: [rag]
+    consigne: "Situer le marché du cacao ivoirien d'après les sources : volumes, acteurs, circuits de commercialisation, place dans les échanges."
+  - titre: "Prix officiel en vigueur"
+    sources: [prix, rag]
+    consigne: "Rapporter le prix bord-champ officiel et la campagne à laquelle il se rattache. Ce prix est administré : il prime sur tout autre chiffre rencontré."
+  - titre: "Évolution documentée des prix"
+    sources: [rag]
+    consigne: "Rapporter les évolutions établies par les sources en datant chaque chiffre. Ne rien extrapoler au-delà de la période couverte, ne formuler aucune prévision."
+  - titre: "Débouchés et transformation locale"
+    sources: [rag]
+    consigne: "Exposer ce que les sources établissent sur les débouchés et la part transformée localement."
+  - titre: "Facteurs d'incertitude"
+    sources: [rag]
+    consigne: "Énoncer les facteurs que les sources désignent comme pesant sur le marché, sans en déduire de tendance chiffrée."
+  - titre: "Limites de la présente étude"
+    sources: []
+    consigne: "Énoncer ce que les sources mobilisées ne permettent pas d'établir."

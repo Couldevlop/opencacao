@@ -28,6 +28,7 @@ from app.domain.ports import (
 )
 from app.services.constats import ServiceConstats
 from app.services.parcelles import ServiceParcelles
+from app.services.rapports import ServiceRapports
 
 
 def get_app_settings() -> Settings:
@@ -68,6 +69,60 @@ def get_service_parcelles(request: Request) -> ServiceParcelles:
 def get_service_constats(request: Request) -> ServiceConstats:
     """Retourne le service du constat visuel stocké dans l'état de l'application."""
     return request.app.state.service_constats
+
+
+def get_service_rapports(request: Request) -> ServiceRapports:
+    """Retourne le service des rapports stocké dans l'état de l'application."""
+    return request.app.state.service_rapports
+
+
+def construire_collecteurs(cache: CachePort, rag: object | None) -> dict[str, object]:
+    """Assemble les sources mobilisables par les gabarits de livrables.
+
+    Reprend **exactement** la façon dont les agents construisent déjà leurs outils
+    (voir la fabrique du registre) : on n'instancie pas ces sources d'une seconde
+    manière. Les sources ``parcelle`` et ``constats`` ne sont pas câblées — elles
+    dépendent du demandeur, et les sections qui les déclarent rendent donc un constat
+    de lacune, ce qui est le comportement voulu tant que le rattachement n'est pas fait.
+
+    Args:
+        cache: Port de cache, réutilisé par les outils (fail-soft).
+        rag: Récupérateur RAG, ou ``None`` si le RAG n'est pas configuré.
+
+    Returns:
+        Les collecteurs indexés par le nom déclaré dans les gabarits.
+    """
+    from app.services.collecteurs import CollecteurOutil, CollecteurRag
+    from app.services.outils.indisponible import SatelliteIndisponible
+    from app.services.outils.meteo import OutilMeteo
+    from app.services.outils.meteo_openmeteo import MeteoOpenMeteo
+    from app.services.outils.prix import OutilPrix
+    from app.services.outils.prix_campagne import PrixCampagne
+    from app.services.outils.satellite import OutilSatellite
+    from app.services.outils.satellite_gfw import SatelliteGfw
+
+    settings = get_settings()
+    meteo = MeteoOpenMeteo(timeout_s=settings.meteo_timeout_s)
+    prix = PrixCampagne(settings.prix_bord_champ_fcfa_kg, settings.prix_campagne)
+    satellite = (
+        SatelliteGfw(settings.gfw_api_key, timeout_s=settings.gfw_timeout_s)
+        if settings.gfw_api_key
+        else SatelliteIndisponible()
+    )
+    return {
+        "rag": CollecteurRag(rag),
+        "meteo": CollecteurOutil(
+            OutilMeteo(meteo, cache=cache, ttl_s=settings.outil_cache_meteo_ttl_s),
+            "Open-Meteo",
+            "localite",
+        ),
+        "prix": CollecteurOutil(OutilPrix(prix), "Conseil du Café-Cacao"),
+        "satellite": CollecteurOutil(
+            OutilSatellite(satellite, cache=cache, ttl_s=settings.outil_cache_satellite_ttl_s),
+            "Global Forest Watch",
+            "localite",
+        ),
+    }
 
 
 def get_auth_store(request: Request) -> AuthStorePort:
