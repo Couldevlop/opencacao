@@ -39,27 +39,36 @@ export function nomDepuisHash(hash, noms, defaut) {
 const CAPACITE_PAR_DESTINATION = { parcelle: "parcelles", atelier: "rapports" };
 
 /**
- * Retire de la barre latérale les destinations que l'API ne sert pas.
+ * Annonce comme « à venir » les destinations que l'API ne sert pas encore.
  *
- * « Ma parcelle » et l'atelier vivent derrière des drapeaux qu'on baisse — après une
- * démonstration, ou parce qu'une étude coûte des minutes de CPU quand l'inférence ne
- * sert qu'une requête à la fois. Les proposer quand même donnerait une porte qui ne
- * mène nulle part.
+ * **On ne les fait pas disparaître, et c'est le point.** « Ma parcelle » et l'atelier
+ * vivent derrière des drapeaux qu'on baisse — après une démonstration, ou parce qu'une
+ * étude coûte des minutes de CPU quand l'inférence ne sert qu'une requête à la fois.
+ * Les retirer de l'écran laisserait croire qu'ils n'existent pas ; les laisser ouverts
+ * mènerait sur une erreur. On les montre, et on dit qu'ils ne sont pas encore ouverts.
  *
- * @param {Object<string, object>} liens Nœud cliquable de chaque destination.
+ * @param {Object<string, {lien: object, contenu: object, annonce: object}>} destinations
+ *   Pour chaque destination : son entrée de barre latérale, son contenu, et le panneau
+ *   qui annonce sa mise à disposition.
  * @param {object|null} capacites Capacités déclarées par `/v1/version`, ou `null` si
- *   l'API n'a pas répondu — auquel cas on ne masque RIEN : le chat ne fonctionne pas
- *   davantage, et faire disparaître les destinations donnerait à croire qu'elles ont
- *   été retirées.
- * @returns {Array<string>} Les destinations effectivement fermées.
+ *   l'API n'a pas répondu — auquel cas on ne touche à RIEN : annoncer « bientôt » sur
+ *   une panne passagère serait un mensonge, et masquer serait pire.
+ * @returns {Array<string>} Les destinations pas encore ouvertes.
  */
-export function masquerDestinationsFermees(liens, capacites) {
+export function appliquerCapacites(destinations, capacites) {
   if (!capacites) return [];
   const fermees = [];
-  for (const [destination, capacite] of Object.entries(CAPACITE_PAR_DESTINATION)) {
+  for (const [nom, capacite] of Object.entries(CAPACITE_PAR_DESTINATION)) {
+    const cible = destinations[nom];
+    if (!cible) continue;
     const ouverte = capacites[capacite] === true;
-    if (liens[destination]) liens[destination].hidden = !ouverte;
-    if (!ouverte) fermees.push(destination);
+    // `data-etat` plutôt qu'une classe : l'état vient du serveur, la feuille de style
+    // s'y accroche, et rien dans le code ne dépend d'un nom de classe décoratif.
+    if (ouverte) cible.lien.removeAttribute("data-etat");
+    else cible.lien.setAttribute("data-etat", "bientot");
+    cible.annonce.hidden = ouverte;
+    cible.contenu.hidden = !ouverte;
+    if (!ouverte) fermees.push(nom);
   }
   return fermees;
 }
@@ -89,6 +98,9 @@ export function creerNavigation({
   const noms = Object.keys(vues);
   const defaut = noms[0];
   const charges = new Set();
+  // Destinations pas encore ouvertes. Renseignées après coup : les capacités arrivent
+  // de l'API, donc plus tard que la première activation.
+  const fermees = new Set();
   let courante = null;
   let enCours = Promise.resolve();
 
@@ -111,7 +123,11 @@ export function creerNavigation({
     surChangement(cible);
     // La vue est montrée AVANT le chargement : on préfère un écran vide qui se
     // remplit à un clic qui ne produit rien pendant que le module arrive.
-    if (chargeurs[cible] && !charges.has(cible)) {
+    //
+    // Une destination pas encore ouverte ne charge RIEN : son module appellerait des
+    // routes non montées, et l'erreur réseau s'afficherait par-dessus l'annonce — un
+    // écran qui dit deux choses à la fois.
+    if (chargeurs[cible] && !charges.has(cible) && !fermees.has(cible)) {
       try {
         await chargeurs[cible]();
         // Mémorisé seulement en cas de succès : une coupure réseau passagère ne doit
@@ -136,6 +152,15 @@ export function creerNavigation({
       return enCours;
     },
     actuelle: () => courante,
+    /**
+     * Déclare les destinations pas encore ouvertes : elles ne chargeront pas de module.
+     *
+     * @param {Array<string>} noms Destinations annoncées comme à venir.
+     */
+    fermer(noms_fermes) {
+      fermees.clear();
+      for (const nom of noms_fermes) fermees.add(nom);
+    },
     /** Promesse de l'activation en cours — les écouteurs de clic sont asynchrones. */
     enAttente: () => enCours,
   };

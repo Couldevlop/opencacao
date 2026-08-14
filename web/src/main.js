@@ -10,11 +10,7 @@ import { creerClientApi } from "./infrastructure/api-client.js";
 import { ecrireCompte, lireCompte } from "./infrastructure/auth-store-local.js";
 import { ecrireSessionActive, lireSessionActive } from "./infrastructure/session-store-local.js";
 import { creerVue } from "./ui/chat-view.js";
-import {
-  creerNavigation,
-  masquerDestinationsFermees,
-  nomDepuisHash,
-} from "./ui/navigation.js";
+import { appliquerCapacites, creerNavigation, nomDepuisHash } from "./ui/navigation.js";
 import { creerSidebar } from "./ui/sidebar-view.js";
 
 const CLE_API = "opencacao.apiUrl";
@@ -399,10 +395,29 @@ if (vues.chat && vues.parcelle && vues.atelier) {
     } catch {
       // API injoignable : on ne masque rien (cf. masquerDestinationsFermees).
     }
-    const fermees = masquerDestinationsFermees(liensVues, capacites);
-    // Un lien partagé vers une destination depuis fermée ne doit pas laisser un écran
-    // vide : on ramène à la conversation.
-    if (fermees.includes(navigation.actuelle())) navigation.activer("chat");
+    const fermees = appliquerCapacites(
+      {
+        parcelle: {
+          lien: liensVues.parcelle,
+          contenu: $("contenuParcelle"),
+          annonce: $("annonceParcelle"),
+        },
+        atelier: {
+          lien: liensVues.atelier,
+          contenu: $("contenuAtelier"),
+          annonce: $("annonceAtelier"),
+        },
+      },
+      capacites,
+    );
+    // Une destination annoncée ne charge pas son module : il appellerait des routes
+    // non montées, et l'erreur s'afficherait par-dessus l'annonce.
+    navigation.fermer(fermees);
+    // Si l'on est DÉJÀ sur une destination pas encore ouverte — lien partagé, ou
+    // capacités arrivées après l'affichage — on la réactive pour montrer l'annonce à
+    // la place du contenu, sans quitter la destination : la personne a demandé cet
+    // écran, on lui répond, on ne la renvoie pas ailleurs sans explication.
+    if (fermees.includes(navigation.actuelle())) navigation.activer(navigation.actuelle());
   })();
 }
 

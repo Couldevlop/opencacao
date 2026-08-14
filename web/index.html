@@ -199,7 +199,24 @@
          l'atelier portait le même identifiant, et deux nœuds de même id dans une
          page unique en laissent un seul joignable. -->
     <section class="vue" id="vueParcelle" hidden>
-      <main class="parcelle-page">
+      <!-- Affiché à la place du contenu tant que PARCELLES_ENABLED est baissé. On ne
+           retire pas la destination de la barre latérale : la faire disparaître
+           laisserait croire qu'elle n'existe pas. -->
+      <main class="parcelle-page a-venir" id="annonceParcelle" hidden>
+        <section class="carte">
+          <h2>Ma parcelle arrive bientôt</h2>
+          <p>
+            Vous pourrez y enregistrer vos parcelles, en faire le tour au GPS pour en
+            calculer la superficie, et y déposer des photos depuis votre téléphone.
+          </p>
+          <p class="aide">
+            La fonction est prête ; elle n'est pas encore ouverte au public. En
+            attendant, posez vos questions dans la conversation.
+          </p>
+        </section>
+      </main>
+
+      <main class="parcelle-page" id="contenuParcelle">
         <p class="statut" id="statutParcelle" role="status" aria-live="polite" hidden></p>
 
         <section class="carte" aria-labelledby="titreCreation">
@@ -321,7 +338,25 @@
 
     <!-- ================= Destination 3 : l'atelier ================= -->
     <section class="vue" id="vueAtelier" hidden>
-      <main class="atelier-page">
+      <!-- Même principe que pour la parcelle. Sur le profil CPU, une étude enchaîne
+           une génération PAR SECTION et l'inférence ne sert qu'une requête à la fois :
+           l'atelier reste fermé au public jusqu'à ce que ce budget soit tenable. -->
+      <main class="atelier-page a-venir" id="annonceAtelier" hidden>
+        <section class="carte">
+          <h2>L'atelier arrive bientôt</h2>
+          <p>
+            Il produira des études de filière, des études de marché et des benchmarks,
+            en Word, Excel et PowerPoint — chacun accompagné des sources qui l'ont
+            nourri, et disant lui-même ce que ces sources ne permettent pas d'établir.
+          </p>
+          <p class="aide">
+            La fonction est prête ; elle n'est pas encore ouverte au public. En
+            attendant, posez vos questions dans la conversation.
+          </p>
+        </section>
+      </main>
+
+      <main class="atelier-page" id="contenuAtelier">
         <p class="statut" id="statutAtelier" role="status" aria-live="polite" hidden></p>
 
         <!-- On demande un document, on ne le configure pas. Le type se déduit de la

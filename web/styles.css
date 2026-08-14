@@ -647,6 +647,28 @@ body {
 }
 .nav-icone { font-size: 16px; line-height: 1; }
 
+/* Une destination pas encore ouverte reste LISIBLE et cliquable — on l'atténue, on ne
+   la cache pas : la faire disparaître laisserait croire qu'elle n'existe pas. La
+   pastille dit l'état sans qu'il faille cliquer pour l'apprendre. */
+.nav-lien[data-etat="bientot"] { color: var(--ink-soft); }
+.nav-lien[data-etat="bientot"]::after {
+  content: "bientôt";
+  margin-left: auto;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-soft);
+}
+
+/* Panneau d'annonce, à la place du contenu. Volontairement sobre : il annonce, il ne
+   vend pas, et il ne promet aucune date — on ne tient pas ce qu'on ne maîtrise pas. */
+.a-venir .carte { text-align: left; }
+.a-venir h2 { margin-top: 0; }
+
 /* Sans sessions (API injoignable), la barre latérale RESTE — elle porte désormais la
    navigation, et la masquer rendrait la parcelle et l'atelier inatteignables. Seule
    la partie « conversations » s'efface. */

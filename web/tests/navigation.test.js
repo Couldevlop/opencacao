@@ -12,11 +12,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { monterDom } from "./dom-minimal.js";
-import {
-  creerNavigation,
-  masquerDestinationsFermees,
-  nomDepuisHash,
-} from "../src/ui/navigation.js";
+import { appliquerCapacites, creerNavigation, nomDepuisHash } from "../src/ui/navigation.js";
 
 test("le changement est signalé pour tenir l'URL à jour", async () => {
   const noeuds = monterDom(["vueChat", "vueParcelle", "lienChat", "lienParcelle"]);
@@ -167,45 +163,93 @@ test("cliquer un lien active sa destination", async () => {
   assert.equal(navigation.actuelle(), "parcelle");
 });
 
-test("une destination fermée disparaît de la barre latérale", () => {
-  // Depuis que les trois ecrans partagent une fenetre, la barre laterale propose ses
-  // destinations en permanence. Baisser RAPPORTS_ENABLED apres la demonstration
-  // laisserait sinon une porte qui ne mene nulle part.
-  const noeuds = monterDom(["lienChat", "lienParcelle", "lienAtelier"]);
-  const liens = {
-    chat: noeuds.lienChat,
-    parcelle: noeuds.lienParcelle,
-    atelier: noeuds.lienAtelier,
+/** Monte les noeuds d une destination : son lien, son contenu, son annonce. */
+function monterDestinations() {
+  const noeuds = monterDom([
+    "lienParcelle",
+    "lienAtelier",
+    "contenuParcelle",
+    "contenuAtelier",
+    "annonceParcelle",
+    "annonceAtelier",
+  ]);
+  return {
+    noeuds,
+    destinations: {
+      parcelle: {
+        lien: noeuds.lienParcelle,
+        contenu: noeuds.contenuParcelle,
+        annonce: noeuds.annonceParcelle,
+      },
+      atelier: {
+        lien: noeuds.lienAtelier,
+        contenu: noeuds.contenuAtelier,
+        annonce: noeuds.annonceAtelier,
+      },
+    },
   };
+}
 
-  const fermees = masquerDestinationsFermees(liens, {
+test("une destination fermée reste visible et s'annonce à venir", () => {
+  // La faire DISPARAITRE laisserait croire qu elle n existe pas. On la montre, on dit
+  // qu elle n est pas encore ouverte, et on n ouvre pas une porte sur le vide.
+  const { noeuds, destinations } = monterDestinations();
+
+  const fermees = appliquerCapacites(destinations, {
     parcelles: true,
     rapports: false,
     vision: false,
   });
 
-  assert.equal(noeuds.lienAtelier.hidden, true);
-  assert.equal(noeuds.lienParcelle.hidden, false);
-  // La conversation ne se ferme jamais : c'est le produit.
-  assert.equal(noeuds.lienChat.hidden, false);
+  assert.equal(noeuds.lienAtelier.hidden, false);
+  assert.equal(noeuds.lienAtelier.getAttribute("data-etat"), "bientot");
+  // Ce qu on voit en arrivant : l annonce, pas le formulaire qui echouerait.
+  assert.equal(noeuds.annonceAtelier.hidden, false);
+  assert.equal(noeuds.contenuAtelier.hidden, true);
   assert.deepEqual(fermees, ["atelier"]);
 });
 
-test("sans réponse de l'API, rien n'est masqué", () => {
-  // L API injoignable, le chat ne marche pas non plus : masquer les destinations
-  // ajouterait une panne a une panne, et donnerait a croire qu elles ont ete retirees.
-  const noeuds = monterDom(["lienChat", "lienParcelle", "lienAtelier"]);
-  const liens = {
-    chat: noeuds.lienChat,
-    parcelle: noeuds.lienParcelle,
-    atelier: noeuds.lienAtelier,
-  };
+test("une destination ouverte montre son contenu, pas l'annonce", () => {
+  // Contre-epreuve : sans elle, un code qui annonce TOUT resterait vert.
+  const { noeuds, destinations } = monterDestinations();
 
-  const fermees = masquerDestinationsFermees(liens, null);
+  appliquerCapacites(destinations, { parcelles: true, rapports: true, vision: false });
 
-  assert.equal(noeuds.lienParcelle.hidden, false);
-  assert.equal(noeuds.lienAtelier.hidden, false);
+  assert.equal(noeuds.annonceParcelle.hidden, true);
+  assert.equal(noeuds.contenuParcelle.hidden, false);
+  assert.equal(noeuds.lienParcelle.getAttribute("data-etat"), null);
+});
+
+test("sans réponse de l'API, l'écran reste exactement dans son état", () => {
+  // L API injoignable, le chat ne marche pas non plus : annoncer « bientot » sur une
+  // panne passagere serait un mensonge, et masquer serait pire. On ne touche a rien.
+  const { noeuds, destinations } = monterDestinations();
+  // Etat de depart tel qu il est dans la page : l annonce est repliee.
+  noeuds.annonceAtelier.hidden = true;
+  noeuds.contenuAtelier.hidden = false;
+
+  const fermees = appliquerCapacites(destinations, null);
+
+  assert.equal(noeuds.annonceAtelier.hidden, true);
+  assert.equal(noeuds.contenuAtelier.hidden, false);
+  assert.equal(noeuds.lienAtelier.getAttribute("data-etat"), null);
   assert.deepEqual(fermees, []);
+});
+
+test("une destination fermée ne charge pas son module", async () => {
+  // Le module appellerait des routes qui ne sont pas montees : une erreur reseau
+  // s afficherait par-dessus l annonce, et l ecran dirait deux choses a la fois.
+  let charge = false;
+  const { navigation } = monterCoquille({
+    atelier: async () => {
+      charge = true;
+    },
+  });
+  navigation.fermer(["atelier"]);
+
+  await navigation.activer("atelier");
+
+  assert.equal(charge, false);
 });
 
 test("le fragment d'URL désigne la destination", () => {
