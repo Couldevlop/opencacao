@@ -10,6 +10,11 @@ import { creerClientApi } from "./infrastructure/api-client.js";
 import { ecrireCompte, lireCompte } from "./infrastructure/auth-store-local.js";
 import { ecrireSessionActive, lireSessionActive } from "./infrastructure/session-store-local.js";
 import { creerVue } from "./ui/chat-view.js";
+import {
+  creerNavigation,
+  masquerDestinationsFermees,
+  nomDepuisHash,
+} from "./ui/navigation.js";
 import { creerSidebar } from "./ui/sidebar-view.js";
 
 const CLE_API = "opencacao.apiUrl";
@@ -321,6 +326,86 @@ document.querySelectorAll("img.logo").forEach((img) => {
   img.addEventListener("error", () => img.classList.add("logo-missing"));
 });
 
+/* ---------- coquille unique : trois destinations, une fenêtre ---------- */
+// La barre latérale existe toujours désormais : elle porte la navigation, et non
+// plus seulement les conversations. Sa présence ne dépend donc plus de l'API.
+if (refs.sidebar) {
+  document.body.classList.add("avec-sidebar");
+  if (refs.toggle) refs.toggle.hidden = false;
+}
+
+const NOMS_VUES = ["chat", "parcelle", "atelier"];
+// Ce que portaient les en-têtes des trois anciennes pages. Le nom du produit reste
+// dans la barre latérale ; l'en-tête dit où l'on se trouve.
+const TITRES_VUES = {
+  chat: ["OpenCacao", "Conseil agronomique cacao · Côte d'Ivoire"],
+  parcelle: ["Ma parcelle", "Photos, vidéo et tour de la parcelle"],
+  atelier: ["L'atelier", "Des documents qui disent d'où ils viennent"],
+};
+const vues = { chat: $("vueChat"), parcelle: $("vueParcelle"), atelier: $("vueAtelier") };
+const liensVues = { chat: $("lienChat"), parcelle: $("lienParcelle"), atelier: $("lienAtelier") };
+
+if (vues.chat && vues.parcelle && vues.atelier) {
+  const navigation = creerNavigation({
+    vues,
+    liens: liensVues,
+    // Chargés à la demande : la racine de composition de chaque destination
+    // s'exécute à l'import, et personne ne doit payer l'initialisation de l'atelier
+    // pour venir poser une question sur son cacao.
+    chargeurs: {
+      parcelle: () => import("./parcelle-main.js"),
+      atelier: () => import("./rapport-main.js"),
+    },
+    surChangement: (nom) => {
+      const [titre, sous_titre] = TITRES_VUES[nom];
+      // textContent, jamais innerHTML : ces chaînes sont à nous, la règle ne l'est pas.
+      if ($("wordmark")) $("wordmark").textContent = titre;
+      if ($("tagline")) $("tagline").textContent = sous_titre;
+      // L'adresse d'accueil reste propre : on n'écrit un fragment que si l'on quitte
+      // la destination par défaut, ou si l'URL en portait déjà un. Sinon, la page
+      // publique deviendrait « /#/chat » au premier chargement, pour rien.
+      const fragment = `#/${nom}`;
+      const aDejaUnFragment = window.location.hash !== "";
+      if ((nom !== "chat" || aDejaUnFragment) && window.location.hash !== fragment) {
+        window.location.hash = fragment;
+      }
+      // Sur téléphone, la barre latérale est un tiroir : le clic doit le refermer,
+      // sinon la destination choisie s'ouvre derrière un panneau opaque.
+      refs.sidebar?.classList.remove("ouvert");
+      if (refs.backdrop) refs.backdrop.hidden = true;
+    },
+    surEchec: (nom, erreur) => {
+      // Une destination en panne ne doit pas emporter le chat. On le dit à la
+      // console plutôt que de laisser un écran vide sans explication.
+      console.error(`Destination « ${nom} » indisponible`, erreur);
+    },
+  });
+
+  window.addEventListener("hashchange", () => {
+    navigation.activer(nomDepuisHash(window.location.hash, NOMS_VUES, "chat"));
+  });
+  navigation.activer(nomDepuisHash(window.location.hash, NOMS_VUES, "chat"));
+
+  // Ce que l'API ouvre RÉELLEMENT. Les drapeaux se baissent — après une démonstration,
+  // ou parce qu'une étude coûte des minutes de CPU quand l'inférence ne sert qu'une
+  // requête à la fois. La barre latérale doit suivre, sinon elle propose une porte qui
+  // ne mène nulle part. Interrogé après le premier affichage : la conversation ne
+  // dépend pas de cette réponse et ne doit pas l'attendre.
+  (async () => {
+    let capacites = null;
+    try {
+      const reponse = await fetch(`${baseUrl}/v1/version`);
+      if (reponse.ok) capacites = (await reponse.json()).capacites;
+    } catch {
+      // API injoignable : on ne masque rien (cf. masquerDestinationsFermees).
+    }
+    const fermees = masquerDestinationsFermees(liensVues, capacites);
+    // Un lien partagé vers une destination depuis fermée ne doit pas laisser un écran
+    // vide : on ramène à la conversation.
+    if (fermees.includes(navigation.actuelle())) navigation.activer("chat");
+  })();
+}
+
 /* ---------- amorçage des conversations ---------- */
 async function initialiserSessions() {
   if (!refs.sidebar) {
@@ -331,17 +416,19 @@ async function initialiserSessions() {
   try {
     liste = await sessions.lister();
   } catch {
-    // Serveur sans sessions (ou injoignable) : repli V1 « sans état », sidebar masquée.
+    // Serveur sans sessions (ou injoignable) : repli V1 « sans état ».
+    // La barre latérale RESTE — elle porte la navigation entre les trois
+    // destinations depuis le regroupement en une seule fenêtre. La masquer, comme
+    // on le faisait, rendrait « Ma parcelle » et l'atelier inatteignables dès que
+    // l'API des sessions bronche. Seule la liste des conversations s'efface.
     sessionsDispo = false;
     sessionActive = null;
-    document.body.classList.remove("avec-sidebar");
-    if (refs.toggle) refs.toggle.hidden = true;
+    document.body.classList.remove("avec-conversations");
     return;
   }
 
   sessionsDispo = true;
-  document.body.classList.add("avec-sidebar");
-  if (refs.toggle) refs.toggle.hidden = false;
+  document.body.classList.add("avec-conversations");
 
   // Reprise de la dernière conversation ouverte (persistée localement, C4).
   const stocke = lireSessionActive();

@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     Attributes:
         inference_backend: Backend servant le modèle ("vllm" ou "llama-cpp").
         inference_url: URL interne de l'API d'inférence (OpenAI-compatible).
+        inference_api_key: Jeton porté vers l'inférence, vide si elle est interne.
         model_path: Chemin du modèle servi côté inférence.
         model_name: Nom du modèle, transmis à l'API d'inférence.
         model_version: Version du modèle, exposée par /v1/version.
@@ -47,6 +48,16 @@ class Settings(BaseSettings):
 
     inference_backend: Literal["vllm", "llama-cpp"] = "vllm"
     inference_url: str = "http://inference:8000"
+    # Jeton présenté à l'inférence (`Authorization: Bearer`). VIDE par défaut, et
+    # c'est le bon défaut tant que l'inférence tourne DANS le cluster : elle n'y
+    # attend aucun jeton, et c'est la NetworkPolicy qui la cloisonne.
+    #
+    # Il devient obligatoire dès qu'elle est déportée sur un GPU loué (spec V3 §4.5) :
+    # il n'y a alors plus de cloisonnement réseau à invoquer, vLLM est démarré avec
+    # `--api-key` et refuse toute requête sans jeton. Arrive par le Secret
+    # `opencacao-inference`, JAMAIS par la ConfigMap — un jeton versionné est un
+    # jeton public.
+    inference_api_key: str = ""
     model_path: str = "/models/opencacao-8b"
     model_name: str = "opencacao-8b"
     model_version: str = "0.1.0"

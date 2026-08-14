@@ -7,9 +7,22 @@
 # sous pression devant une salle. Tenu ici, c'est un mot.
 #
 # Usage :
-#   KUBECONFIG=kubeconfig-hetzner.yaml deploy/scripts/profil.sh gpu
 #   KUBECONFIG=kubeconfig-hetzner.yaml deploy/scripts/profil.sh cpu
+#   KUBECONFIG=kubeconfig-hetzner.yaml deploy/scripts/profil.sh gpu
+#   KUBECONFIG=kubeconfig-hetzner.yaml deploy/scripts/profil.sh runpod http://100.x.y.z:8000
 #   deploy/scripts/profil.sh etat        # ne change rien, dit où on en est
+#
+# TROIS profils, et `gpu` n'est PAS `runpod` :
+#
+#   cpu     llama.cpp dans le cluster, le GGUF sur le nœud. Le défaut, et le repli.
+#   gpu     vLLM DANS le cluster, sur un nœud porteur d'une carte. Bascule par
+#           `kubectl scale` : les deux déploiements partagent le Service.
+#   runpod  vLLM HORS du cluster, sur un GPU loué (décision matérielle de la spec
+#           §4.3, le Hetzner GEX44 étant indisponible). Il n'y a alors aucun pod à
+#           mettre à l'échelle côté GPU : ce qui bascule est `INFERENCE_URL`. Le
+#           déploiement CPU n'est éteint qu'APRÈS vérification du service public —
+#           on ne coupe pas ce qui répond encore pour un point de terminaison qu'on
+#           n'a pas vu fonctionner.
 #
 # Idempotent : rejouer `profil.sh cpu` alors qu'on est déjà en CPU ne casse rien.
 #
@@ -28,6 +41,8 @@ DEPL_GPU="${DEPL_GPU:-inference-gpu}"
 RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MANIFESTE_GPU="${RACINE}/deploy/k8s/inference-gpu.yaml"
 URL_PUBLIQUE="${URL_PUBLIQUE:-https://opencacao.openlabconsulting.com}"
+# Adresse du Service interne : ce à quoi `INFERENCE_URL` doit revenir hors RunPod.
+URL_INTERNE="${URL_INTERNE:-http://inference:8000}"
 # Le premier chargement d'un modèle est long (compilation des noyaux vLLM, lecture des
 # poids). Le RETOUR, lui, doit tenir la promesse des deux minutes.
 ATTENTE_GPU="${ATTENTE_GPU:-900s}"
@@ -87,6 +102,8 @@ vers_gpu() {
     echo "  Création du déploiement ${DEPL_GPU} (absent)"
     k apply -f "${MANIFESTE_GPU}"
   fi
+  k patch configmap api-config --type merge \
+    -p "{\"data\":{\"INFERENCE_URL\":\"${URL_INTERNE}\"}}"
   k scale deploy "${DEPL_GPU}" --replicas=1
   echo "  Attente du chargement du modèle (jusqu'à ${ATTENTE_GPU})…"
   # Le GPU monte AVANT que le CPU descende : pendant le recouvrement, le Service a des
@@ -113,9 +130,69 @@ vers_cpu() {
   if k get deploy "${DEPL_GPU}" >/dev/null 2>&1; then
     k scale deploy "${DEPL_GPU}" --replicas=0
   fi
+  # `INFERENCE_URL` est remise à l'adresse interne : c'est ce qui ramène aussi depuis
+  # le profil runpod, où elle pointait hors du cluster. L'oublier laisserait l'API
+  # parler à un pod loué déjà détruit — panne muette et coûteuse à diagnostiquer.
   k patch configmap api-config --type merge \
-    -p '{"data":{"PROFIL_MATERIEL":"cpu","INFERENCE_BACKEND":"llama-cpp","VISION_ENABLED":"false"}}'
+    -p "{\"data\":{\"PROFIL_MATERIEL\":\"cpu\",\"INFERENCE_BACKEND\":\"llama-cpp\",\"VISION_ENABLED\":\"false\",\"INFERENCE_URL\":\"${URL_INTERNE}\"}}"
   k rollout restart "deploy/${DEPL_API:-api}"
+}
+
+vers_runpod() {
+  local cible="$1"
+  case "${cible}" in
+    http://* | https://*) ;;
+    *)
+      echo "✗ URL invalide : « ${cible} ». Attendu http(s)://hôte:port" >&2
+      exit 2
+      ;;
+  esac
+
+  # D1 : l'inférence n'est JAMAIS exposée publiquement. Un point de terminaison proxy
+  # RunPod l'est par défaut — la spec §4.5 impose un tunnel privé (Tailscale ou
+  # WireGuard) précisément pour cela. On refuse par défaut, et l'échappatoire est
+  # explicite : personne ne doit pouvoir exposer le modèle par distraction.
+  case "${cible}" in
+    *proxy.runpod.net* | *.ngrok.* )
+      if [ "${AUTORISER_ENDPOINT_PUBLIC:-0}" != "1" ]; then
+        echo "✗ « ${cible} » est un point de terminaison PUBLIC." >&2
+        echo "  D1 interdit d'exposer l'inférence ; la spec §4.5 impose un tunnel privé." >&2
+        echo "  Passer par l'adresse du tunnel, ou forcer avec AUTORISER_ENDPOINT_PUBLIC=1." >&2
+        exit 3
+      fi
+      echo "  ⚠ Point de terminaison public FORCÉ — hors doctrine, à ne pas laisser ainsi."
+      ;;
+  esac
+
+  echo "→ Bascule vers un GPU loué : ${cible}"
+  # On interroge le point de terminaison AVANT de toucher à quoi que ce soit. Un 401
+  # est une bonne nouvelle : il prouve que vLLM répond ET qu'il est protégé par
+  # `--api-key`. C'est un 000 (injoignable) qui doit arrêter la bascule.
+  local code
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+    ${INFERENCE_API_KEY:+-H "Authorization: Bearer ${INFERENCE_API_KEY}"} \
+    "${cible}/v1/models" || echo 000)"
+  echo "  ${cible}/v1/models -> HTTP ${code}"
+  case "${code}" in
+    200) ;;
+    401 | 403) echo "  ℹ Protégé par jeton : le Secret opencacao-inference doit porter le même." ;;
+    *)
+      echo "✗ Point de terminaison injoignable (HTTP ${code}) — bascule annulée." >&2
+      echo "  Le profil CPU n'a pas été touché, le service continue de répondre." >&2
+      exit 4
+      ;;
+  esac
+
+  k patch configmap api-config --type merge \
+    -p "{\"data\":{\"PROFIL_MATERIEL\":\"gpu\",\"INFERENCE_BACKEND\":\"vllm\",\"INFERENCE_URL\":\"${cible}\"}}"
+  k rollout restart "deploy/${DEPL_API:-api}"
+  verifier
+  # Le CPU n'est éteint qu'ICI, une fois le service public vérifié. Si `verifier` a
+  # signalé une anomalie, on garde les deux : de la RAM immobilisée coûte moins cher
+  # qu'une salle devant une page blanche.
+  echo "  Le déploiement CPU reste allumé jusqu'à votre confirmation :"
+  echo "    kubectl -n ${NS} scale deploy ${DEPL_CPU} --replicas=0"
+  echo "  Retour arrière, à tout instant : deploy/scripts/profil.sh cpu"
 }
 
 CIBLE="${1:-}"
@@ -124,17 +201,28 @@ case "${CIBLE}" in
     etat
     exit 0
     ;;
+  runpod)
+    [ -n "${2:-}" ] || {
+      echo "Usage : profil.sh runpod <URL du tunnel, ex. http://100.x.y.z:8000>" >&2
+      exit 2
+    }
+    ;;
   gpu | cpu) ;;
   *)
-    echo "Usage : profil.sh gpu|cpu|etat" >&2
+    echo "Usage : profil.sh cpu|gpu|runpod <URL>|etat" >&2
     exit 2
     ;;
 esac
 
 DEPART="${SECONDS}"
 echo "→ Profil de départ : $(profil_actuel)"
-if [ "${CIBLE}" = "gpu" ]; then vers_gpu; else vers_cpu; fi
-verifier
+case "${CIBLE}" in
+  gpu) vers_gpu ;;
+  cpu) vers_cpu ;;
+  runpod) vers_runpod "$2" ;;
+esac
+# `vers_runpod` a déjà vérifié : le refaire ne dirait rien de plus.
+[ "${CIBLE}" = "runpod" ] || verifier
 DUREE="$((SECONDS - DEPART))"
 
 echo

@@ -599,6 +599,65 @@ body {
 }
 
 /* ============================================================================
+   Coquille unique — une fenêtre, trois destinations (14/08/2026).
+
+   Le chat, « Ma parcelle » et l'atelier vivaient dans trois pages ; seules les deux
+   dernières renvoyaient vers l'accueil, et rien n'y menait depuis lui. Ils partagent
+   désormais une seule fenêtre : la barre latérale porte les destinations, la zone
+   centrale change sans rechargement.
+   ========================================================================== */
+
+.vue {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+/* Indispensable : `display: flex` l'emporterait sur le comportement natif de
+   [hidden], et les trois destinations s'empileraient à l'écran. */
+.vue[hidden] { display: none; }
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.nav-lien {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border-left: 3px solid transparent;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.nav-lien:hover { background: var(--surface-2); }
+.nav-lien:focus-visible { outline: 2px solid var(--cocoa); outline-offset: 2px; }
+/* La destination active porte l'orange du drapeau, déjà présent en bandeau de tête :
+   un seul accent, et il vient de l'identité ivoirienne, pas d'une couleur d'emprunt. */
+.nav-lien[aria-current="page"] {
+  background: var(--cocoa-tint);
+  border-left-color: var(--ci-orange);
+  color: var(--cocoa-dark);
+}
+.nav-icone { font-size: 16px; line-height: 1; }
+
+/* Sans sessions (API injoignable), la barre latérale RESTE — elle porte désormais la
+   navigation, et la masquer rendrait la parcelle et l'atelier inatteignables. Seule
+   la partie « conversations » s'efface. */
+body:not(.avec-conversations) .sidebar-recherche,
+body:not(.avec-conversations) .session-list,
+body:not(.avec-conversations) .sidebar-note,
+body:not(.avec-conversations) .btn-nouvelle {
+  display: none;
+}
+
+/* ============================================================================
    Écran « Ma parcelle » (V3, C1) — quatre modalités de capture terrain.
    Cibles : téléphones d'entrée de gamme, en plein soleil. D'où des cibles
    tactiles larges, des contrastes francs et aucune fioriture animée.

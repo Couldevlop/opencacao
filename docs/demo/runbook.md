@@ -112,6 +112,42 @@ voulu : sous pression, on ne veut pas apprendre une seconde commande.
 **À répéter et chronométrer au moins deux fois avant le jour J** (spec §9.6), aller
 **et** retour. Une bascule découverte le jour même est une bascule ratée.
 
+### Les deux commandes, et laquelle choisir
+
+```bash
+deploy/scripts/jour-j.sh ouvrir            # l'ÉVÉNEMENT : matériel + fonctionnalités
+deploy/scripts/profil.sh gpu               # le MATÉRIEL seul
+```
+
+`profil.sh` bascule le matériel et rien d'autre. `jour-j.sh` bascule l'événement : il
+appelle `profil.sh`, monte le service de vision, **puis** ouvre au public les
+fonctionnalités que le GPU débloque — et sait tout refermer.
+
+La séparation est volontaire. Un drapeau de fonctionnalité n'est pas une capacité
+matérielle ; les confondre, c'est ouvrir l'atelier au public parce qu'on voulait un
+GPU. **En répétition, on utilise `profil.sh`** : on éprouve la bascule sans rien ouvrir.
+
+```bash
+deploy/scripts/jour-j.sh ouvrir http://100.x.y.z:8000   # sur un GPU loué (§2.3 bis)
+deploy/scripts/jour-j.sh fermer                         # après la démonstration
+deploy/scripts/jour-j.sh etat                           # ne change rien
+```
+
+**`fermer` ferme d'abord, éteint ensuite** — l'ordre inverse laisserait l'API annoncer
+la vision et l'atelier alors que le GPU n'est déjà plus là. Il baisse `RAPPORTS_ENABLED`
+et `VISION_ENABLED`, revient au CPU, met la vision à zéro réplique, et affiche ce qu'il
+ne peut pas faire : **arrêter un pod loué, facturé à l'heure**.
+
+`PARCELLES_ENABLED` reste levé : la cartographie ne mobilise aucun modèle. `RAPPORTS`
+redescend parce qu'une étude coûte plusieurs minutes de CPU et que l'inférence ne sert
+**qu'une requête à la fois** — un visiteur lançant un document bloquerait le chat pour
+tout le monde. La spec §4.1 prévoit la file nocturne par cron pour cet usage ; elle
+n'existe pas encore.
+
+> Depuis le 14/08, l'interface **suit** ces drapeaux : `/v1/version` déclare ses
+> capacités et la barre latérale masque les destinations fermées. Baisser un drapeau
+> ne laisse donc plus une porte qui ne mène nulle part.
+
 ### 2.0 Migration à faire UNE FOIS, hors répétition
 
 Jusqu'au 14/08/2026, `inference.yaml` et `inference-gpu.yaml` portaient **le même nom
@@ -193,6 +229,40 @@ time curl -s -X POST https://opencacao.openlabconsulting.com/v1/chat \
 
 **Noter les temps mesurés dans le tableau du §6.** Un chiffre non écrit est un chiffre
 perdu.
+
+### 2.3 bis Bascule vers un GPU LOUÉ (RunPod) — le chemin réellement retenu
+
+`profil.sh gpu` suppose une carte **dans** le cluster. Or la décision matérielle de la
+spec §4.3 est **RunPod**, le Hetzner GEX44 étant indisponible : l'inférence part alors
+**hors** du cluster et il n'y a aucun pod GPU à mettre à l'échelle. Ce qui bascule est
+`INFERENCE_URL`.
+
+```bash
+export KUBECONFIG=kubeconfig-hetzner.yaml
+export INFERENCE_API_KEY=<le même jeton que le --api-key de vLLM>   # pour la vérification
+deploy/scripts/profil.sh runpod http://100.x.y.z:8000              # adresse du TUNNEL
+```
+
+Le script interroge le point de terminaison **avant de toucher à quoi que ce soit**. Un
+`401` est une bonne nouvelle — vLLM répond et il est protégé. Un endpoint injoignable
+annule la bascule sans rien modifier : le CPU continue de servir.
+
+Il **refuse** une adresse `*.proxy.runpod.net` : D1 interdit d'exposer l'inférence, et
+§4.5 impose un tunnel privé. L'échappatoire existe (`AUTORISER_ENDPOINT_PUBLIC=1`) mais
+elle est hors doctrine.
+
+**Le CPU n'est pas éteint automatiquement** dans ce mode. Le script vous rend la main
+avec la commande à lancer quand vous aurez vu le service répondre — de la RAM
+immobilisée coûte moins cher qu'une salle devant une page blanche.
+
+**Les quatre prérequis, dans l'ordre où ils bloquent** (§4.5) :
+
+| | État au 14/08/2026 |
+|---|---|
+| Modèle fusionné quantifié AWQ, poussé sur un dépôt privé | **à faire** — aucun script AWQ dans le dépôt |
+| Image vLLM téléchargeant le modèle au démarrage | **à faire** — le manifeste actuel monte un `hostPath` |
+| Tunnel privé Tailscale/WireGuard entre le CX53 et le pod | **à faire** — rien dans `deploy/` |
+| `--api-key` côté vLLM + Secret `opencacao-inference` côté API | **fait** (14/08) — le client porte le jeton |
 
 ### 2.4 Retour au CPU
 

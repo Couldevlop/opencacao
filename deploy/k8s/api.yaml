@@ -177,6 +177,17 @@ spec:
             - secretRef:
                 name: opencacao-gfw
                 optional: true
+            # Jeton présenté à l'inférence quand elle est DÉPORTÉE sur un GPU loué
+            # (spec V3 §4.5) : vLLM y tourne avec --api-key et refuse toute requête
+            # sans jeton. optional : tant que l'inférence est interne au cluster, ce
+            # Secret n'existe pas et l'API n'envoie aucun en-tête — c'est la
+            # NetworkPolicy qui cloisonne. Créé hors Git, au moment de la bascule :
+            #   kubectl -n opencacao create secret generic opencacao-inference \
+            #     --from-literal=INFERENCE_API_KEY=<jeton>
+            # Le MÊME jeton est passé à vLLM par --api-key côté pod.
+            - secretRef:
+                name: opencacao-inference
+                optional: true
           volumeMounts:
             - name: dataset
               mountPath: /data

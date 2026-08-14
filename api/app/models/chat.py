@@ -81,6 +81,20 @@ class FeedbackRequest(BaseModel):
     vote: Literal["up", "down"]
 
 
+class Capacites(BaseModel):
+    """Ce que l'API ouvre réellement, à cet instant.
+
+    L'interface réunit ses trois destinations dans une seule fenêtre : sans cette
+    déclaration, baisser un drapeau laisserait dans la barre latérale une porte qui ne
+    mène nulle part. Ce n'est pas divulguer — l'existence d'une route se découvre en
+    l'appelant — c'est dire honnêtement ce qui est disponible.
+    """
+
+    parcelles: bool
+    rapports: bool
+    vision: bool
+
+
 class VersionResponse(BaseModel):
     """Réponse de /v1/version."""
 
@@ -88,3 +102,7 @@ class VersionResponse(BaseModel):
     model_name: str
     model_version: str
     inference_backend: str
+    # Déclaré à côté du backend, qui dit COMMENT on sert ; celui-ci dit AVEC QUOI.
+    # Utile en scène : on vérifie d'un coup d'œil sur quoi tourne la production.
+    profil_materiel: str
+    capacites: Capacites

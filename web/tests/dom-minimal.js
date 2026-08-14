@@ -68,6 +68,10 @@ class Noeud {
     return this.attributs.has(nom) ? this.attributs.get(nom) : null;
   }
 
+  removeAttribute(nom) {
+    this.attributs.delete(nom);
+  }
+
   addEventListener(type, rappel) {
     if (!this.ecouteurs.has(type)) this.ecouteurs.set(type, []);
     this.ecouteurs.get(type).push(rappel);

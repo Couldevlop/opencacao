@@ -40,7 +40,10 @@ const refs = {
   geoAide: $("geoAide"),
   geoAideTexte: $("geoAideTexte"),
   btnSaisieManuelle: $("btnSaisieManuelle"),
-  statut: $("statut"),
+  // « statutParcelle » et non « statut » : l'atelier portait le même identifiant, et
+  // depuis que les trois écrans partagent une seule page, deux nœuds de même id n'en
+  // laissent qu'un joignable — les messages de l'un seraient partis chez l'autre.
+  statut: $("statutParcelle"),
   resultats: $("resultats"),
   settingsBtn: $("settingsBtn"),
   modal: $("modal"),

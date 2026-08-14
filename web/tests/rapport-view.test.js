@@ -15,7 +15,7 @@ import { beforeEach, describe, it } from "node:test";
 import { monterDom } from "./dom-minimal.js";
 
 const REFS = [
-  "statut",
+  "statutAtelier",
   "exemples",
   "panneauQuestion",
   "questionTitre",
@@ -55,7 +55,7 @@ beforeEach(async () => {
   // Le module de vue lit `document` à l'import : on le charge APRÈS le montage.
   ({ creerVueRapport } = await import("../src/ui/rapport-view.js"));
   refs = {
-    statut: noeuds.statut,
+    statut: noeuds.statutAtelier,
     exemples: noeuds.exemples,
     panneauQuestion: noeuds.panneauQuestion,
     questionTitre: noeuds.questionTitre,
