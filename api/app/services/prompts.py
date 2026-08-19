@@ -120,6 +120,7 @@ def build_messages(
     consigne: str | None = None,
     entete_contexte: str = CONTEXTE_PROMPT,
     libelle_question: str = "Question",
+    memoire: str = "",
 ) -> list[dict[str, str]]:
     """Construit la liste de messages pour l'API d'inférence.
 
@@ -135,6 +136,10 @@ def build_messages(
             Le défaut oriente vers l'ANADER quand les extraits ne suffisent pas, ce
             qui est juste pour un producteur et **faux** dans un document d'étude :
             la rédaction de livrables passe donc le sien (C3).
+        memoire: Bloc des faits déjà énoncés par le producteur (``services.fiche``).
+            Ajouté au message système pour que le modèle accuse réception et cesse
+            de redemander ce qu'il sait. Vide = message système inchangé, à l'octet
+            près (c'est ce qui rend le repli sans effet).
         libelle_question: Mot introduisant la demande. « Question » réinstalle un
             registre questions-réponses, à éviter pour une section d'étude.
 
@@ -153,4 +158,5 @@ def build_messages(
     else:
         contenu_user = f"{FALLBACK_SANS_CONTEXTE}\n\n{libelle_question} : {question}"
     dialogue = _dialogue_alternant(historique or [], contenu_user)
-    return [{"role": "system", "content": system_prompt}, *dialogue]
+    systeme = f"{system_prompt}\n\n{memoire}" if memoire else system_prompt
+    return [{"role": "system", "content": systeme}, *dialogue]

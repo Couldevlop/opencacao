@@ -14,7 +14,7 @@ from dataclasses import replace
 
 from app.domain.entities import Conseil
 from app.models.domain import Confiance
-from app.services import clarification, contacts
+from app.services import civilites, clarification, contacts, fiche
 
 # Latence : une question de clarification tient en une phrase courte (la consigne
 # l'exige). Le plafond n'est qu'un garde-fou anti-emballement : 40 tronquait des
@@ -108,3 +108,44 @@ async def question_clarification_stream(
         question, consigne=consigne, historique=historique, max_tokens=CLARIF_MAX_TOKENS
     ):
         yield fragment
+
+
+def civilite_ou_none(
+    question: str, historique: list[dict[str, str]] | None, actif: bool
+) -> str | None:
+    """Réponse écrite d'avance si le tour est une pure civilité, sinon ``None``.
+
+    Appelée AVANT les garde-fous : « Qui es-tu ? » y serait refusée comme hors
+    filière, ce qui répond mal à une question de présentation. C'est sans risque
+    parce que ce chemin ne produit aucun texte de modèle — rien à filtrer en sortie.
+
+    Args:
+        question: Dernier tour du producteur.
+        historique: Tours précédents, ou ``None``.
+        actif: Drapeau conversationnel. Faux → toujours ``None`` (repli sans effet).
+
+    Returns:
+        Le texte constant à servir, ou ``None`` si le tour doit suivre le pipeline.
+    """
+    if not actif:
+        return None
+    nature = civilites.detecter(question)
+    if nature is None:
+        return None
+    return civilites.repondre(nature, fiche.rappel_court(fiche.extraire("", historique)))
+
+
+def memoire_du_fil(question: str, historique: list[dict[str, str]] | None, actif: bool) -> str:
+    """Faits déjà énoncés par le producteur, à rappeler au modèle.
+
+    Args:
+        question: Dernier tour du producteur.
+        historique: Tours précédents, ou ``None``.
+        actif: Drapeau conversationnel. Faux → ``""``, donc prompt système inchangé.
+
+    Returns:
+        Le bloc de mémoire, ou ``""`` si rien n'est connu (ou si le drapeau est bas).
+    """
+    if not actif:
+        return ""
+    return fiche.bloc_memoire(fiche.extraire(question, historique))

@@ -118,3 +118,41 @@ def test_agreger_sans_contribution_confiance_moyenne() -> None:
     sources, confiance = AgentReporting.agreger([])
     assert sources == []
     assert confiance is Confiance.MOYENNE
+
+
+class _InferenceMemoire:
+    """Inférence qui retient le bloc de mémoire reçu en flux."""
+
+    def __init__(self) -> None:
+        self.memoire_recue: str | None = None
+
+    async def generer(self, question, **kw) -> str:
+        self.memoire_recue = kw.get("memoire")
+        return "Synthèse."
+
+    async def generer_stream(self, question, **kw):
+        self.memoire_recue = kw.get("memoire")
+        yield "Synthèse."
+
+    async def ready(self) -> bool:
+        return True
+
+
+@pytest.mark.asyncio
+async def test_la_synthese_en_flux_transmet_la_memoire_du_fil() -> None:
+    """La synthèse multi-agents appelle l'inférence DIRECTEMENT, hors AgentBase.
+
+    Sans ce passage explicite, la réponse composée — celle que sert la production —
+    serait la seule à ignorer ce que le producteur a déjà dit.
+    """
+    inference = _InferenceMemoire()
+    agent = AgentReporting(inference)
+    requete = AgentRequete(
+        "fais-moi un bilan", Langue.FR, "fais-moi un bilan", "ip", [], memoire="- Localité : Soubré"
+    )
+    contribution = AgentReponse(
+        "Prix bord-champ : 1200 FCFA/kg.", ["CCC"], Confiance.ELEVEE, "prix"
+    )
+    async for _ in agent.synthetiser_stream(requete, [contribution]):
+        pass
+    assert inference.memoire_recue == "- Localité : Soubré"

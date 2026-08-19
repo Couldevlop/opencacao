@@ -44,6 +44,7 @@ class ConseilService:
         semantic_cache_threshold: float = 0.92,
         semantic_cache_lexical_min: float = 0.75,
         dialogue_naturel: bool = False,
+        conversationnel: bool = False,
     ) -> None:
         """Initialise le service avec ses dépendances (ports).
 
@@ -71,6 +72,7 @@ class ConseilService:
             cache, embeddings, semantic_cache_threshold, semantic_cache_lexical_min
         )
         self._dialogue_naturel = dialogue_naturel
+        self._conversationnel = conversationnel
 
     @staticmethod
     def _conseil_depuis_paquet(donnees: dict) -> Conseil:
@@ -136,6 +138,14 @@ class ConseilService:
         historique = historique or []
         texte_conv = _texte_conversation(question, historique)
 
+        # Civilités : un tour de pure sociabilité reçoit une réponse constante,
+        # sans inférence (parité avec l'orchestrateur V3).
+        politesse = conseil_commun.civilite_ou_none(question, historique, self._conversationnel)
+        if politesse is not None:
+            logger.info("civilite_servie")
+            conseil = Conseil(politesse, Confiance.ELEVEE, [], redirection_anader=False)
+            return await self._journaliser(question, langue, conseil)
+
         # Garde-fous métier : refus sans appeler le modèle (réponse instantanée).
         # Évalués sur la question ANCRÉE au fil (B4) : une intention de dosage étalée
         # sur deux tours est ainsi interceptée comme si elle était posée d'un bloc.
@@ -199,7 +209,12 @@ class ConseilService:
         # récupérer des passages hors sujet sur une question de suivi.
         contexte = await self._contexte(_fil_ancre(question, historique))
         texte = postprocess.nettoyer_tirets(
-            await self._inference.generer(question, contexte=contexte, historique=historique)
+            await self._inference.generer(
+                question,
+                contexte=contexte,
+                historique=historique,
+                memoire=conseil_commun.memoire_du_fil(question, historique, self._conversationnel),
+            )
         )
 
         # Garde-fou de SORTIE (défense en profondeur) : ne jamais livrer un dosage.
@@ -302,6 +317,16 @@ class ConseilService:
         historique = historique or []
         texte_conv = _texte_conversation(question, historique)
 
+        politesse = conseil_commun.civilite_ou_none(question, historique, self._conversationnel)
+        if politesse is not None:
+            logger.info("civilite_servie")
+            for ev in _evenements_token(politesse, politesse):
+                yield ev
+            yield await self._evenement_final(
+                question, langue, politesse, [], Confiance.ELEVEE, redirection=False
+            )
+            return
+
         refus = guardrails.evaluer(_fil_ancre(question, historique), courante=question)
         if refus is not None:
             logger.info("garde_fou_declenche", categorie=refus.categorie.value)
@@ -381,7 +406,10 @@ class ConseilService:
         yield flux.progres(flux.PROGRES_REDACTION)
         contexte = await self._contexte(_fil_ancre(question, historique))
         async for delta in self._inference.generer_stream(
-            question, contexte=contexte, historique=historique
+            question,
+            contexte=contexte,
+            historique=historique,
+            memoire=conseil_commun.memoire_du_fil(question, historique, self._conversationnel),
         ):
             tampon += delta
             while (match := _FIN_PHRASE.search(tampon)) is not None:

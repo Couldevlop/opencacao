@@ -30,6 +30,7 @@ class InferencePort(Protocol):
         system_prompt: str | None = ...,
         entete_contexte: str | None = ...,
         libelle_question: str | None = ...,
+        memoire: str = ...,
     ) -> str:
         """Génère une réponse pour la question. Lève InferenceUnavailable si KO."""
         ...
@@ -41,6 +42,7 @@ class InferencePort(Protocol):
         max_tokens: int = ...,
         contexte: str | None = ...,
         historique: list[dict[str, str]] | None = ...,
+        memoire: str = ...,
     ) -> AsyncIterator[str]:
         """Génère une réponse en flux (deltas). Lève InferenceUnavailable si KO."""
         ...

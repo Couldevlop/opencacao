@@ -99,6 +99,17 @@ data:
   # courte et complète, ~5-6 s de décodage CPU par tour vs scripté instantané.
   # Rollback : repasser à "false" + redémarrage API (~15 s).
   DIALOGUE_NATUREL_ENABLED: "true"
+  # Chat conversationnel (19/08/2026). Les tours de pure sociabilité — « Bonjour »,
+  # « merci », « qui es-tu ? » — reçoivent une réponse écrite d'avance, servie
+  # INSTANTANÉMENT sans inférence : auparavant un simple bonjour traversait tout le
+  # pipeline et le modèle, sommé de conseiller, fabriquait une consultation (maladies
+  # jamais évoquées, source « CNRA » inventée). De plus, les faits déjà énoncés par le
+  # producteur (localité, âge et surface de la parcelle, sujet) lui sont rappelés, pour
+  # qu'il en accuse réception et cesse de les redemander une fois sortis de la fenêtre
+  # glissante de 8 messages.
+  # Rollback : repasser à "false" + redémarrage API (~15 s). Le repli est STRICT —
+  # pipeline, prompt système et chemin CPU redeviennent identiques à ceux d'avant.
+  CHAT_CONVERSATIONNEL: "true"
   # Parcelles & captures terrain (V3, chantier C1). OFF au premier déploiement : on
   # vérifie que le schéma SQLite se crée bien sur /data avant d'ouvrir les routes.
   PARCELLES_ENABLED: "false"

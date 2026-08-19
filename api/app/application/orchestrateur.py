@@ -67,6 +67,7 @@ class Orchestrateur:
         cache_semantique: CacheSemantique | None = None,
         inference: InferencePort | None = None,
         dialogue_naturel: bool = False,
+        conversationnel: bool = False,
     ) -> None:
         """Initialise l'orchestrateur.
 
@@ -83,6 +84,10 @@ class Orchestrateur:
             dialogue_naturel: Si vrai (et ``inference`` fourni), la clarification est
                 formulée par le modèle (naturelle) plutôt que par le texte scripté.
                 Défaut False (inchangé).
+            conversationnel: Si vrai, les tours de pure sociabilité reçoivent une
+                réponse écrite d'avance (sans inférence) et les faits déjà énoncés
+                par le producteur sont rappelés au modèle. Défaut False : le
+                pipeline est alors STRICTEMENT celui d'avant (repli sans effet).
         """
         self._routeur = routeur
         self._journal = journal
@@ -91,6 +96,21 @@ class Orchestrateur:
         self._semantique = cache_semantique or CacheSemantique(cache, embeddings=None)
         self._inference = inference
         self._dialogue_naturel = dialogue_naturel
+        self._conversationnel = conversationnel
+
+    def _civilite(self, question: str, historique: list[dict[str, str]]) -> str | None:
+        """Réponse écrite d'avance si le tour est une pure civilité, sinon ``None``.
+
+        Placée AVANT les garde-fous à dessein : « Qui es-tu ? » y serait refusée comme
+        hors filière, ce qui est une mauvaise réponse à une question de présentation.
+        C'est sans risque parce que ce chemin ne produit aucun texte de modèle — il n'y
+        a donc rien à filtrer en sortie (cf. ``services.civilites``).
+        """
+        return conseil_commun.civilite_ou_none(question, historique, self._conversationnel)
+
+    def _memoire(self, question: str, historique: list[dict[str, str]]) -> str:
+        """Faits déjà énoncés par le producteur, à rappeler au modèle (vide si repli)."""
+        return conseil_commun.memoire_du_fil(question, historique, self._conversationnel)
 
     async def traiter(
         self,
@@ -117,6 +137,14 @@ class Orchestrateur:
         historique = historique or []
         fil = fil_ancre(question, historique)
         texte_conv = texte_conversation(question, historique)
+
+        # 0. Civilités : un « Bonjour » n'est pas une question. Réponse constante,
+        #    instantanée, sans inférence ni source (cf. ``_civilite``).
+        politesse = self._civilite(question, historique)
+        if politesse is not None:
+            logger.info("civilite_servie")
+            conseil = Conseil(politesse, Confiance.ELEVEE, [], redirection_anader=False)
+            return await self._journaliser(question, langue, conseil)
 
         # 1. Garde-fous d'entrée CENTRALISÉS : refus sans solliciter d'agent.
         refus = guardrails.evaluer(fil, courante=question)
@@ -170,6 +198,7 @@ class Orchestrateur:
             fil_ancre=fil,
             client_ip=client_ip,
             historique=historique,
+            memoire=self._memoire(question, historique),
         )
 
         # 4. Routage d'intention AVANT le cache sémantique : le classement révèle une
@@ -265,6 +294,24 @@ class Orchestrateur:
         fil = fil_ancre(question, historique)
         texte_conv = texte_conversation(question, historique)
 
+        # 0 bis. Civilités : mêmes garanties qu'en synchrone, sur le chemin réel
+        #        de la production (/chat/stream).
+        politesse = self._civilite(question, historique)
+        if politesse is not None:
+            logger.info("civilite_servie")
+            for ev in flux.evenements_token(politesse, politesse):
+                yield ev
+            yield await flux.evenement_final(
+                self._journal,
+                question,
+                langue,
+                politesse,
+                [],
+                Confiance.ELEVEE,
+                redirection=False,
+            )
+            return
+
         # 1. Garde-fou d'entrée (refus émis d'un bloc).
         refus = guardrails.evaluer(fil, courante=question)
         if refus is not None:
@@ -336,6 +383,7 @@ class Orchestrateur:
             fil_ancre=fil,
             client_ip=client_ip,
             historique=historique,
+            memoire=self._memoire(question, historique),
         )
 
         # 4. Routage AVANT le cache sémantique : le classement révèle une intention de

@@ -94,14 +94,20 @@ class AgentBase:
         if contexte is _A_CALCULER:
             contexte = await self._contexte(requete)
         async for fragment in self._inference.generer_stream(
-            requete.question, contexte=contexte, historique=requete.historique
+            requete.question,
+            contexte=contexte,
+            historique=requete.historique,
+            memoire=requete.memoire,
         ):
             yield fragment
 
     async def _generer(self, requete: AgentRequete, contexte: str | None) -> AgentReponse:
         """Appelle l'inférence avec un contexte donné et post-traite la sortie."""
         texte = await self._inference.generer(
-            requete.question, contexte=contexte, historique=requete.historique
+            requete.question,
+            contexte=contexte,
+            historique=requete.historique,
+            memoire=requete.memoire,
         )
         # Sources ANCRÉES : on croise le texte avec le contexte injecté -> la confiance
         # ne peut être élevée que si les sources citées sont réellement dans le contexte.

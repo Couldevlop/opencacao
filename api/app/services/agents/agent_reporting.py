@@ -82,7 +82,10 @@ class AgentReporting(AgentBase):
         """
         contexte = _formater_contributions(contributions)
         async for fragment in self._inference.generer_stream(
-            requete.question, contexte=contexte, historique=requete.historique
+            requete.question,
+            contexte=contexte,
+            historique=requete.historique,
+            memoire=requete.memoire,
         ):
             yield fragment
 

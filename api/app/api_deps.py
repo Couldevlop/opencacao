@@ -151,6 +151,7 @@ def _construire_orchestrateur(
     rag: object,
     cache_semantique: CacheSemantique | None = None,
     dialogue_naturel: bool = False,
+    conversationnel: bool = False,
 ) -> Orchestrateur:
     """Composition racine de la plateforme agentique (testable sans FastAPI).
 
@@ -170,6 +171,8 @@ def _construire_orchestrateur(
         cache_semantique: Couche de cache sémantique (paraphrases), ou None → exact seul.
         dialogue_naturel: Si vrai, la clarification est formulée par le modèle
             (naturelle) plutôt que par le texte scripté. Défaut False (inchangé).
+        conversationnel: Si vrai, civilités servies sans inférence et mémoire du
+            fil rappelée au modèle. Défaut False (repli sans effet).
 
     Returns:
         Un orchestrateur prêt à traiter, avec rag/meteo/prix/reglementation/normes/
@@ -222,6 +225,7 @@ def _construire_orchestrateur(
         cache_semantique=cache_semantique,
         inference=inference,  # type: ignore[arg-type]
         dialogue_naturel=dialogue_naturel,
+        conversationnel=conversationnel,
     )
 
 
@@ -250,6 +254,7 @@ def get_orchestrateur(request: Request) -> Orchestrateur:
         journal=request.app.state.journal,
         rag=getattr(request.app.state, "rag", None),
         dialogue_naturel=settings.dialogue_naturel_enabled,
+        conversationnel=settings.chat_conversationnel,
     )
 
 
@@ -277,6 +282,7 @@ def get_conseil_service(request: Request) -> ConseilService | ConseilAgentique:
         semantic_cache_threshold=settings.semantic_cache_threshold,
         semantic_cache_lexical_min=settings.semantic_cache_lexical_min,
         dialogue_naturel=settings.dialogue_naturel_enabled,
+        conversationnel=settings.chat_conversationnel,
     )
 
 

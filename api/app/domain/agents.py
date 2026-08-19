@@ -27,6 +27,9 @@ class AgentRequete:
             multi-tours) — sert au routage et à la récupération.
         client_ip: IP cliente (rate-limit appliqué en amont par l'orchestrateur).
         historique: Tours précédents [{"role", "content"}], ou liste vide.
+        memoire: Bloc des faits durables déjà énoncés par le producteur (cf.
+            ``services.fiche``), à rappeler au modèle. Vide = rien de connu, et
+            rien n'est alors ajouté au prompt.
     """
 
     question: str
@@ -34,6 +37,7 @@ class AgentRequete:
     fil_ancre: str
     client_ip: str
     historique: list[dict[str, str]] = field(default_factory=list)
+    memoire: str = ""
 
 
 @dataclass(frozen=True)

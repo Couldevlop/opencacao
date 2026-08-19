@@ -261,6 +261,23 @@ def besoin_localite(question: str, historique: list[dict[str, str]] | None) -> b
     return contacts.chercher(fil) is None
 
 
+def theme_du_texte(texte: str) -> str | None:
+    """Thème abordé par un texte, SANS la logique de déclenchement du dialogue.
+
+    :func:`detecter_theme` répond « faut-il clarifier ? » et se tait donc dès que le
+    dialogue est déjà engagé (anti-boucle) ou que la question est assez précise. La
+    fiche du producteur, elle, veut savoir « de quoi parle-t-on ? » à tout moment du
+    fil. Les deux s'appuient sur la même table de thèmes, seule source de vérité.
+
+    Args:
+        texte: Texte libre (typiquement tous les tours du producteur).
+
+    Returns:
+        Le thème (``symptome``, ``traitement``…), ou ``None`` si aucun ne ressort.
+    """
+    return _detecter(_normaliser(texte))
+
+
 def consigne_theme(theme: str, besoin_localite: bool) -> str:
     """Consigne au modèle pour formuler la question de clarification du thème.
 

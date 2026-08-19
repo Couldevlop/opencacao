@@ -146,6 +146,13 @@ class Settings(BaseSettings):
     # défaut : à activer après validation manuelle (déploiement en deux temps). Voir
     # docs/superpowers/specs/2026-07-24-dialogue-naturel-design.md.
     dialogue_naturel_enabled: bool = False
+    # Chat conversationnel : les tours de pure sociabilité (« Bonjour », « merci »,
+    # « qui es-tu ? ») reçoivent une réponse écrite d'avance, sans inférence ; et les
+    # faits déjà énoncés par le producteur (localité, âge et surface de la parcelle,
+    # sujet) lui sont rappelés pour qu'il accuse réception et cesse de les redemander.
+    # ÉTEINT = repli strict : pipeline, prompt système et chemin CPU rigoureusement
+    # identiques à ceux d'avant la fonctionnalité (aucune régression possible).
+    chat_conversationnel: bool = True
     # Similarité cosinus minimale pour servir une réponse cachée (conservateur :
     # mieux vaut un miss qu'une réponse hors sujet).
     semantic_cache_threshold: float = 0.92

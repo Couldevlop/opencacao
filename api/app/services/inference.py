@@ -100,6 +100,7 @@ class InferenceClient:
         system_prompt: str | None = None,
         entete_contexte: str | None = None,
         libelle_question: str | None = None,
+        memoire: str = "",
     ) -> str:
         """Génère une réponse agronomique pour la question donnée.
 
@@ -110,6 +111,8 @@ class InferenceClient:
             contexte: Extraits récupérés (RAG) à injecter, ou None.
             historique: Tours précédents de la conversation, ou None.
             consigne: Consigne de clarification à faire poser au modèle, ou None.
+            memoire: Bloc des faits déjà énoncés par le producteur, ajouté au
+                message système. Vide = prompt système inchangé (repli neutre).
 
         Returns:
             Le texte de la réponse du modèle.
@@ -129,6 +132,7 @@ class InferenceClient:
                 # d'étude n'a de toute façon rien en commun avec un tour de chat.
                 system_prompt=system_prompt or self._system_prompt,
                 consigne=consigne,
+                memoire=memoire,
                 **({"entete_contexte": entete_contexte} if entete_contexte else {}),
                 **({"libelle_question": libelle_question} if libelle_question else {}),
             ),
@@ -157,6 +161,7 @@ class InferenceClient:
         contexte: str | None = None,
         historique: list[dict[str, str]] | None = None,
         consigne: str | None = None,
+        memoire: str = "",
     ) -> AsyncIterator[str]:
         """Génère une réponse en flux (SSE), morceau par morceau.
 
@@ -167,6 +172,8 @@ class InferenceClient:
             contexte: Extraits récupérés (RAG) à injecter, ou None.
             historique: Tours précédents de la conversation, ou None.
             consigne: Consigne de clarification à faire poser au modèle, ou None.
+            memoire: Bloc des faits déjà énoncés par le producteur, ajouté au
+                message système. Vide = prompt système inchangé (repli neutre).
 
         Yields:
             Les fragments de texte (deltas) au fur et à mesure de la génération.
@@ -182,6 +189,7 @@ class InferenceClient:
                 historique,
                 system_prompt=self._system_prompt,
                 consigne=consigne,
+                memoire=memoire,
             ),
             "max_tokens": max_tokens if max_tokens is not None else self._max_tokens,
             "stream": True,
