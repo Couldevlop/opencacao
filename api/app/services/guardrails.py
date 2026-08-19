@@ -551,19 +551,34 @@ def _contient(texte: str, motifs: tuple[re.Pattern, ...]) -> bool:
     return any(m.search(texte) for m in motifs)
 
 
-def evaluer(question: str) -> Refus | None:
+def evaluer(question: str, *, courante: str | None = None) -> Refus | None:
     """Évalue une question et retourne un refus si une règle s'applique.
 
     Ordre de priorité : phytosanitaire, médical/vétérinaire, diagnostic sur image,
     hors-filière. Retourne None si la question peut être traitée par le modèle.
 
+    **Deux familles de règles, et la distinction n'est pas cosmétique.** L'appelant
+    passe ici le FIL (dernier tour + question courante, cf. ``contexte.fil_ancre``)
+    pour que les règles de PROTECTION attrapent une intention étalée sur deux tours
+    (« je traite au fongicide » puis « quelle dose ? »). Mais les règles de
+    CORRECTION D'UNE PRÉMISSE — zone non cacaoyère, pays hors Côte d'Ivoire — n'ont
+    aucune raison de survivre au changement de sujet : appliquées au fil, elles
+    resservaient la réponse du tour précédent à une question sans rapport.
+
+    Incident du 19/08/2026 : « plantation à Katiola ? » puis « c'est quoi le FIRCA ? »
+    renvoyait deux fois la correction sur Katiola. Devant un public, c'est le genre de
+    défaut qui décrédibilise tout le reste. Ces règles lisent donc ``courante``.
+
     Args:
-        question: Question brute du producteur.
+        question: Texte évalué par les règles de protection (le fil, en multi-tours).
+        courante: Question du tour en cours, pour les règles de correction. Par
+            défaut, ``question`` — les appelants mono-tour n'ont rien à changer.
 
     Returns:
         Un objet Refus si un garde-fou se déclenche, sinon None.
     """
     texte = _normaliser(question)
+    texte_courant = _normaliser(courante) if courante is not None else texte
 
     # 1. Dosages phytosanitaires : terme phyto + intention de dosage, ou présence
     #    d'une valeur chiffrée associée à une unité de dose.
@@ -592,15 +607,21 @@ def evaluer(question: str) -> Refus | None:
 
     # 5. Localité de savane du Nord + intention de culture du cacao : on corrige
     #    (ce n'est PAS une zone cacaoyère) plutôt que de laisser le modèle l'affirmer.
+    # La LOCALITÉ peut venir du tour précédent (« je suis à Katiola » puis « je veux y
+    # planter ») : c'est le dialogue normal, on ne la fait pas répéter. Mais
+    # l'INTENTION de culture doit être dans la question courante, sinon la correction
+    # s'accroche au fil et répond à une question qui n'est plus posée.
     nord = _localite_nord_detectee(texte)
-    if nord is not None and _contient(texte, _RE_ZONE_DECLENCHEUR):
+    if nord is not None and _contient(texte_courant, _RE_ZONE_DECLENCHEUR):
         return Refus(CategorieRefus.ZONE_NON_CACAO, message=_message_zone(nord))
 
     # 6. Cacao d'un AUTRE pays producteur : le corpus est strictement ivoirien, donc
     #    répondre reviendrait à transposer en silence. On ne refuse que si rien
     #    n'ancre la question en Côte d'Ivoire (mention du pays ou localité citée).
-    pays = _pays_hors_ci_detecte(texte)
-    if pays is not None and not _ancrage_ivoirien(texte):
+    # Même raisonnement : corriger la prémisse d'une question PASSÉE (« le cacao au
+    # Ghana ») sur la question suivante n'a pas de sens. On lit le tour en cours.
+    pays = _pays_hors_ci_detecte(texte_courant)
+    if pays is not None and not _ancrage_ivoirien(texte_courant):
         return Refus(CategorieRefus.HORS_CI, message=_message_pays(pays))
 
     return None

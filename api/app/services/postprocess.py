@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -60,3 +61,36 @@ def estimer_confiance(sources: list[str]) -> Confiance:
     if len(sources) == 1:
         return Confiance.MOYENNE
     return Confiance.FAIBLE
+
+
+# Tiret cadratin et demi-cadratin employés comme PONCTUATION : entourés d'espaces.
+# C'est cette forme-là qui signe un texte généré ; le trait d'union interne aux mots
+# (« San-Pédro », « Café-Cacao », « peut-être ») n'a rien à voir et doit survivre.
+_TIRET_PONCTUATION = re.compile(r"\s+[—–]\s+")
+# Cadratin résiduel, collé à ses voisins : « 2020—2025 ». On le ramène au trait
+# d'union, qui reste lisible et n'évoque pas la génération automatique.
+_TIRET_COLLE = re.compile(r"(?<=\w)[—–](?=\w)")
+
+
+def nettoyer_tirets(texte: str) -> str:
+    """Remplace les tirets cadratins de ponctuation, sans toucher aux traits d'union.
+
+    Le tiret cadratin employé comme incise (« la taille — surtout la première — … »)
+    est une signature de texte généré. Devant un public qui juge la crédibilité d'un
+    outil souverain, cette signature travaille contre le propos.
+
+    Ce qui est délibérément PRÉSERVÉ : les traits d'union internes aux mots (les
+    supprimer produirait « SanPédro » ou « CaféCacao », c'est-à-dire une faute
+    d'orthographe à l'écran), les plages de nombres, et les tirets de liste en début
+    de ligne — une liste d'étapes aide réellement un producteur à suivre.
+
+    Une consigne de prompt ne suffit pas : un modèle l'oublie une fois sur dix, et
+    c'est cette fois-là qui sera projetée. D'où ce nettoyage déterministe.
+
+    Args:
+        texte: Texte généré par le modèle.
+
+    Returns:
+        Le texte, tirets de ponctuation convertis.
+    """
+    return _TIRET_COLLE.sub("-", _TIRET_PONCTUATION.sub(", ", texte))

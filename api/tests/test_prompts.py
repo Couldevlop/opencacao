@@ -73,7 +73,11 @@ def test_system_prompt_condense() -> None:
     # longueur sur SYSTEM_PROMPT.
     from app.services.prompts import SYSTEM_PROMPT_STRICT
 
-    assert len(SYSTEM_PROMPT_STRICT) < 1300
+    # Budget porté de 1300 à 1400 le 19/08/2026 : le vouvoiement est devenu une règle
+    # produit (arbitrage Waopron après lecture des réponses en production, où le
+    # registre alternait entre « tu » et « vous » dans un même échange). La borne reste
+    # un garde-fou contre la dérive, pas une loi physique : on la déplace en le disant.
+    assert len(SYSTEM_PROMPT_STRICT) < 1400
     assert "invente" in SYSTEM_PROMPT_STRICT
 
 

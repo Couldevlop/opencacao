@@ -139,7 +139,7 @@ class ConseilService:
         # Garde-fous métier : refus sans appeler le modèle (réponse instantanée).
         # Évalués sur la question ANCRÉE au fil (B4) : une intention de dosage étalée
         # sur deux tours est ainsi interceptée comme si elle était posée d'un bloc.
-        refus = guardrails.evaluer(_fil_ancre(question, historique))
+        refus = guardrails.evaluer(_fil_ancre(question, historique), courante=question)
         if refus is not None:
             logger.info("garde_fou_declenche", categorie=refus.categorie.value)
             conseil = Conseil(
@@ -198,7 +198,9 @@ class ConseilService:
         # La requête RAG est ré-ancrée sur le thème en cours (multi-tours) pour ne pas
         # récupérer des passages hors sujet sur une question de suivi.
         contexte = await self._contexte(_fil_ancre(question, historique))
-        texte = await self._inference.generer(question, contexte=contexte, historique=historique)
+        texte = postprocess.nettoyer_tirets(
+            await self._inference.generer(question, contexte=contexte, historique=historique)
+        )
 
         # Garde-fou de SORTIE (défense en profondeur) : ne jamais livrer un dosage.
         if guardrails.verifier_reponse(texte) is not None:
@@ -249,7 +251,9 @@ class ConseilService:
             return False
 
         contexte = await self._contexte(question)
-        texte = await self._inference.generer(question, contexte=contexte)
+        texte = postprocess.nettoyer_tirets(
+            await self._inference.generer(question, contexte=contexte)
+        )
         if guardrails.verifier_reponse(texte) is not None:
             return False
 
@@ -298,7 +302,7 @@ class ConseilService:
         historique = historique or []
         texte_conv = _texte_conversation(question, historique)
 
-        refus = guardrails.evaluer(_fil_ancre(question, historique))
+        refus = guardrails.evaluer(_fil_ancre(question, historique), courante=question)
         if refus is not None:
             logger.info("garde_fou_declenche", categorie=refus.categorie.value)
             conseil = self._enrichir_contact(
@@ -415,7 +419,7 @@ class ConseilService:
             )
             return
 
-        texte = "".join(emis)
+        texte = postprocess.nettoyer_tirets("".join(emis))
         sources = postprocess.extraire_sources(texte, contexte)
         confiance = postprocess.estimer_confiance(sources)
         base = Conseil(texte, confiance, sources, redirection_anader=False)

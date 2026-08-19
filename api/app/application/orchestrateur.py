@@ -119,7 +119,7 @@ class Orchestrateur:
         texte_conv = texte_conversation(question, historique)
 
         # 1. Garde-fous d'entrée CENTRALISÉS : refus sans solliciter d'agent.
-        refus = guardrails.evaluer(fil)
+        refus = guardrails.evaluer(fil, courante=question)
         if refus is not None:
             logger.info("garde_fou_declenche", categorie=refus.categorie.value)
             conseil = conseil_commun.enrichir_contact(
@@ -266,7 +266,7 @@ class Orchestrateur:
         texte_conv = texte_conversation(question, historique)
 
         # 1. Garde-fou d'entrée (refus émis d'un bloc).
-        refus = guardrails.evaluer(fil)
+        refus = guardrails.evaluer(fil, courante=question)
         if refus is not None:
             logger.info("garde_fou_declenche", categorie=refus.categorie.value)
             conseil = conseil_commun.enrichir_contact(
@@ -433,7 +433,7 @@ class Orchestrateur:
                 )
                 return
 
-            texte = filtre.texte
+            texte = postprocess.nettoyer_tirets(filtre.texte)
             sources, confiance = synthetiseur.agreger(contributions)  # type: ignore[attr-defined]
             base = Conseil(texte, confiance, sources, redirection_anader=False)
             if not historique:
@@ -486,7 +486,7 @@ class Orchestrateur:
             return
 
         # 8. Post-traitement : sources, confiance, cache, enrichissement, événement final.
-        texte = filtre.texte
+        texte = postprocess.nettoyer_tirets(filtre.texte)
         sources = postprocess.extraire_sources(texte, contexte)
         confiance = postprocess.estimer_confiance(sources)
         base = Conseil(texte, confiance, sources, redirection_anader=False)

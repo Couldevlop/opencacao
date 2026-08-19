@@ -57,6 +57,34 @@ _MOTS_METEO = (
     "fenêtre",
     "irrigation",
     "arrosage",
+    # --- Enrichissement du 19/08/2026 -------------------------------------------
+    # Une question de météo en français courant n'employait pas forcément un des mots
+    # ci-dessus : « quel temps fait-il à Daloa ? » repartait sur le RAG et recevait le
+    # repli souverain (« je n'ai pas accès aux prévisions »). Correct, mais
+    # déconcertant. On n'ajoute PAS « temps » seul — il reste ambigu (« combien de
+    # temps », « en même temps ») ; on ajoute les TOURNURES, que `compter_mots_cles`
+    # cherche comme expression littérale, et les termes régionaux sans ambiguïté.
+    "quel temps",
+    "beau temps",
+    "mauvais temps",
+    # Saison sèche ouest-africaine : le mot que les producteurs emploient réellement.
+    "harmattan",
+    "hivernage",
+    "orage",
+    "orages",
+    "temperature",
+    "température",
+    "temperatures",
+    "températures",
+    "chaleur",
+    "canicule",
+    "chaud",
+    "vent",
+    "vents",
+    "nuageux",
+    "brouillard",
+    "meteorologique",
+    "météorologique",
 )
 
 # Consigne quand aucune commune n'est précisée : on ne fabrique JAMAIS de météo, on
