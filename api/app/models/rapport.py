@@ -111,6 +111,10 @@ class Document:
         tableaux: Tableaux de données réelles.
         manifeste: Manifeste de génération.
         mention: Mention non contournable affichée en tête (D5), ou chaîne vide.
+        resume: Synthèse d'ouverture, rédigée À PARTIR des sections déjà écrites — donc
+            sans fait nouveau. Vide pour les livrables courts (bulletin régional), qui
+            ne doivent pas afficher une rubrique creuse.
+        conclusion: Clôture, construite de la même façon et sous la même contrainte.
     """
 
     titre: str
@@ -119,6 +123,8 @@ class Document:
     tableaux: tuple[Tableau, ...]
     manifeste: Manifeste
     mention: str = ""
+    resume: str = ""
+    conclusion: str = ""
 
 
 # --------------------------------------------------------------- schémas d'API

@@ -81,11 +81,28 @@ def rendu_markdown(document: Document) -> str:
         # D5 : en tête, avant tout contenu, et visuellement distincte.
         lignes += [f"> **{document.mention}**", ""]
 
+    # Sommaire construit depuis la STRUCTURE, jamais demandé au modèle : un sommaire
+    # qui ne correspond pas au contenu est pire que pas de sommaire du tout.
+    lignes += ["## Sommaire", ""]
+    if document.resume:
+        lignes += ["- Résumé"]
+    for rang, section in enumerate(document.sections, start=1):
+        lignes += [f"{rang}. {section.titre}"]
+    if document.conclusion:
+        lignes += ["- Conclusion"]
+    lignes += ["- Annexe — provenance et manifeste", ""]
+
+    if document.resume:
+        lignes += ["## Résumé", "", _corps(texte_xml_sur(document.resume)), ""]
+
     for section in document.sections:
         lignes += [f"## {section.titre}", ""]
         if section.lacune:
             lignes += ["*Section en lacune — aucune source mobilisable.*", ""]
         lignes += [_corps(texte_xml_sur(section.corps)), ""]
+
+    if document.conclusion:
+        lignes += ["## Conclusion", "", _corps(texte_xml_sur(document.conclusion)), ""]
 
     for tableau in document.tableaux:
         lignes += _tableau(tableau)

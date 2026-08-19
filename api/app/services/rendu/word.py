@@ -123,12 +123,38 @@ def rendu_word(document: Document) -> bytes:
     """
     docx = DocxDocument()
     _identifier(docx.core_properties, document)
-    _paragraphe(docx, document.titre, taille=20, gras=True, couleur=_ORANGE)
+
+    # --- Page de garde ---------------------------------------------------------
+    # Seule sur sa page : sans le saut, le sommaire remonte à côté du titre et le
+    # fichier ne ressemble plus à une étude mais à une suite de paragraphes.
+    _paragraphe(docx, document.titre, taille=24, gras=True, couleur=_ORANGE)
     if document.sous_titre:
-        _paragraphe(docx, document.sous_titre, taille=12, couleur=_GRIS, italique=True)
+        _paragraphe(docx, document.sous_titre, taille=13, couleur=_GRIS, italique=True)
     if document.mention:
         # D5 : en tête, avant tout contenu, et visuellement distincte.
         _paragraphe(docx, document.mention, taille=11, gras=True, couleur=_ORANGE)
+    _paragraphe(
+        docx, f"Généré le {document.manifeste.genere_le.isoformat()}", taille=10, couleur=_GRIS
+    )
+    docx.add_page_break()
+
+    # --- Sommaire --------------------------------------------------------------
+    # Construit depuis la structure, jamais demandé au modèle : un sommaire qui ne
+    # correspond pas au contenu est pire que pas de sommaire.
+    _paragraphe(docx, "Sommaire", taille=16, gras=True, couleur=_ORANGE)
+    entrees = list(document.sections)
+    if document.resume:
+        _paragraphe(docx, "Résumé", taille=11, couleur=_GRIS)
+    for rang, section in enumerate(entrees, start=1):
+        _paragraphe(docx, f"{rang}. {section.titre}", taille=11, couleur=_GRIS)
+    if document.conclusion:
+        _paragraphe(docx, "Conclusion", taille=11, couleur=_GRIS)
+    _paragraphe(docx, "Annexe — manifeste et provenance", taille=11, couleur=_GRIS)
+    docx.add_page_break()
+
+    if document.resume:
+        _paragraphe(docx, "Résumé", taille=15, gras=True, couleur=_ORANGE)
+        _paragraphe(docx, document.resume)
 
     for section in document.sections:
         _paragraphe(docx, section.titre, taille=15, gras=True, couleur=_ORANGE)
@@ -141,6 +167,10 @@ def rendu_word(document: Document) -> bytes:
                 italique=True,
             )
         _paragraphe(docx, section.corps)
+
+    if document.conclusion:
+        _paragraphe(docx, "Conclusion", taille=15, gras=True, couleur=_ORANGE)
+        _paragraphe(docx, document.conclusion)
 
     for tableau in document.tableaux:
         _tableau_word(docx, tableau)

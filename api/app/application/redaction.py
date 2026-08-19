@@ -359,6 +359,44 @@ class MoteurRedaction:
             return Section(titre=section.titre, corps=_LACUNE_REFUSEE, affirmations=(), lacune=True)
         return Section(titre=section.titre, corps=corps.strip(), affirmations=affirmations)
 
+    async def _synthetiser(self, sections: list[Section], consigne: str) -> str:
+        """Rédige une synthèse (résumé ou conclusion) à partir des sections ÉCRITES.
+
+        Le contexte n'est pas le corpus mais le document lui-même : on ne redemande
+        rien au RAG. C'est ce qui garantit qu'aucun fait nouveau n'apparaît en
+        ouverture ou en clôture — les deux endroits qu'un lecteur pressé lit en
+        premier, et donc les deux où une invention ferait le plus de dégâts.
+
+        Args:
+            sections: Sections déjà rédigées, lacunes comprises.
+            consigne: Demande adressée au modèle (résumé ou conclusion).
+
+        Returns:
+            La synthèse, ou une chaîne vide si elle échoue ou est refusée — le rendu
+            omet alors la rubrique plutôt que d'afficher un titre creux.
+        """
+        retenues = [s for s in sections if not s.lacune]
+        if not retenues:
+            return ""
+        contexte = "\n\n".join(f"{s.titre} : {s.corps}" for s in retenues)
+        try:
+            texte = await self._inference.generer(
+                question=consigne,
+                contexte=contexte,
+                system_prompt=SYSTEM_PROMPT_REDACTION,
+                entete_contexte=ENTETE_CONTEXTE_ANALYTIQUE,
+                libelle_question=LIBELLE_SECTION,
+                temperature=TEMPERATURE_SECTION,
+                max_tokens=MAX_TOKENS_SECTION,
+            )
+        except Exception as exc:  # noqa: BLE001 — une synthèse manquante n'invalide pas
+            logger.warning("synthese_echec", error=str(exc))
+            return ""
+        if guardrails.contient_prescription(texte):
+            logger.warning("synthese_refusee")
+            return ""
+        return texte.strip()
+
     async def rediger(
         self,
         gabarit: Gabarit,
@@ -427,6 +465,24 @@ class MoteurRedaction:
             sections=total,
             lacunes=sum(1 for section in sections if section.lacune),
         )
+        # Résumé et conclusion en DERNIER : ils synthétisent un document qui existe.
+        # Les produire avant reviendrait à annoncer ce qu'on n'a pas encore écrit.
+        resume = await self._synthetiser(
+            sections,
+            "Rédige le résumé d'ouverture de ce document, en un seul paragraphe de 500 "
+            "à 700 caractères. Reprends ce que les sections établissent, sans ajouter "
+            "aucun fait, aucun chiffre ni aucune date qui n'y figure pas.",
+        )
+        lacunes = sum(1 for section in sections if section.lacune)
+        conclusion = await self._synthetiser(
+            sections,
+            "Rédige la conclusion de ce document, en un seul paragraphe de 500 à 700 "
+            "caractères. Dis ce que le document établit, puis ce qu'il ne permet PAS "
+            "d'établir"
+            + (f" (dont {lacunes} section(s) sans source mobilisable)" if lacunes else "")
+            + ". N'ajoute aucun fait nouveau et ne formule aucune recommandation "
+            "d'action.",
+        )
         return Document(
             titre=gabarit.titre.format(sujet=sujet),
             sous_titre=gabarit.sous_titre.format(sujet=sujet),
@@ -434,4 +490,6 @@ class MoteurRedaction:
             tableaux=(),
             manifeste=manifeste,
             mention=gabarit.mention,
+            resume=resume,
+            conclusion=conclusion,
         )
