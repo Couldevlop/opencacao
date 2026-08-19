@@ -165,3 +165,27 @@ def rappel_court(fiche: Fiche) -> str:
     if fiche.localite:
         morceaux.append(f"à {fiche.localite}")
     return ", ".join(morceaux)
+
+
+def faits_connus(fiche: Fiche) -> str:
+    """Résume en une phrase ce que le producteur a déjà dit, pour ne plus le redemander.
+
+    Destiné à la consigne de clarification : celle-ci est déterministe et réclamait son
+    questionnaire complet sans savoir ce qui avait déjà été énoncé — en production, elle
+    redemandait la ville et la surface alors qu'elles figuraient dans la fiche.
+
+    Args:
+        fiche: Fiche extraite du fil.
+
+    Returns:
+        Une énumération lisible (« il se trouve à Soubré ; sa plantation fait 3 ha »),
+        ou ``""`` si rien n'est connu — la consigne reste alors celle d'avant.
+    """
+    morceaux: list[str] = []
+    if fiche.localite:
+        morceaux.append(f"il se trouve à {fiche.localite}")
+    if fiche.superficie_ha is not None:
+        morceaux.append(f"sa plantation fait {fiche.superficie_ha:g} ha")
+    if fiche.age_ans is not None:
+        morceaux.append(f"elle a environ {fiche.age_ans} ans")
+    return " ; ".join(morceaux)

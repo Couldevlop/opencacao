@@ -278,14 +278,22 @@ def theme_du_texte(texte: str) -> str | None:
     return _detecter(_normaliser(texte))
 
 
-def consigne_theme(theme: str, besoin_localite: bool) -> str:
+def consigne_theme(theme: str, besoin_localite: bool, deja_connu: str = "") -> str:
     """Consigne au modèle pour formuler la question de clarification du thème.
 
     Args:
         theme: Thème renvoyé par :func:`detecter_theme`.
         besoin_localite: Si vrai (et thème != contact), on demande aussi la ville.
+        deja_connu: Faits déjà énoncés par le producteur (cf. ``fiche.faits_connus``).
+            Vide → consigne strictement identique à celle d'avant.
     """
     consigne = _CONSIGNES[theme]
+    if deja_connu:
+        consigne = (
+            f"Le producteur vous a DÉJÀ dit ceci : {deja_connu}. Ne le lui redemandez "
+            f"sous aucun prétexte ; portez votre question sur ce qui manque encore. "
+            f"{consigne}"
+        )
     if besoin_localite and theme != "contact":
         consigne += (
             " Demande aussi, dans la même phrase et naturellement, dans quelle localité "

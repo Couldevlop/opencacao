@@ -127,3 +127,70 @@ def test_le_repli_ignore_meme_une_fiche_fournie() -> None:
     pleine = Fiche(localite="Soubré", age_ans=15, superficie_ha=3.0, sujet="symptome")
     assert conseil_commun.memoire_du_fil("Et donc ?", [], False, pleine) == ""
     assert conseil_commun.civilite_ou_none("Bonjour", [], False, pleine) is None
+
+
+# --- La clarification ne redemande pas ce que la fiche sait déjà ---
+
+
+def test_les_faits_connus_se_resument_en_une_phrase() -> None:
+    """La fiche sait se dire au modèle, pour qu'il cesse de redemander."""
+    from app.services.fiche import Fiche, faits_connus
+
+    phrase = faits_connus(Fiche(localite="Soubré", age_ans=15, superficie_ha=3.0))
+    assert "Soubré" in phrase
+    assert "3 ha" in phrase
+    assert "15 ans" in phrase
+
+
+def test_une_fiche_vide_ne_dit_rien() -> None:
+    """Sans fait connu, aucune phrase — donc aucune consigne parasite."""
+    from app.services.fiche import Fiche, faits_connus
+
+    assert faits_connus(Fiche()) == ""
+
+
+def test_la_consigne_de_clarification_interdit_de_redemander_le_connu() -> None:
+    """Constaté en production : « où se trouve votre exploitation ? » alors qu'il le savait."""
+    from app.services import clarification
+
+    consigne = clarification.consigne_theme(
+        "fertilisation", besoin_localite=False, deja_connu="il se trouve à Soubré"
+    )
+    assert "Soubré" in consigne
+    assert "redemand" in consigne.lower()
+
+
+def test_la_consigne_reste_inchangee_sans_fait_connu() -> None:
+    """Rien de connu : la consigne est exactement celle d'avant (repli neutre)."""
+    from app.services import clarification
+
+    assert clarification.consigne_theme("fertilisation", besoin_localite=False) == (
+        clarification.consigne_theme("fertilisation", besoin_localite=False, deja_connu="")
+    )
+
+
+@pytest.mark.asyncio
+async def test_la_clarification_ne_redemande_pas_la_localite_deja_connue() -> None:
+    """La consigne envoyée au modèle porte les faits acquis et n'exige plus la ville."""
+    from app.application import conseil_commun
+    from app.services.fiche import Fiche
+
+    class _Espion:
+        def __init__(self) -> None:
+            self.consigne = ""
+
+        async def generer(self, question, **kw) -> str:
+            self.consigne = str(kw.get("consigne") or "")
+            return "Quel type de sol ?"
+
+    espion = _Espion()
+    await conseil_commun.question_clarification(
+        espion,
+        "fertilisation",
+        "Dois-je fertiliser cette année ?",
+        [],
+        Fiche(localite="Soubré", age_ans=15, superficie_ha=3.0),
+    )
+    assert "Soubré" in espion.consigne
+    assert "redemandez" in espion.consigne
+    assert "dans quelle localité" not in espion.consigne

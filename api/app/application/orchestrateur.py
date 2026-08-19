@@ -181,7 +181,7 @@ class Orchestrateur:
                 if await self._cache.hit_rate_limit(client_ip):
                     raise RateLimitDepasse
                 texte = await conseil_commun.question_clarification(
-                    self._inference, theme, question, historique
+                    self._inference, theme, question, historique, fiche_producteur
                 )
                 conseil = Conseil(texte, Confiance.MOYENNE, [], redirection_anader=False)
                 return await self._journaliser(question, langue, conseil)
@@ -358,7 +358,7 @@ class Orchestrateur:
                     raise RateLimitDepasse
                 texte = ""
                 async for frag in conseil_commun.question_clarification_stream(
-                    self._inference, theme, question, historique
+                    self._inference, theme, question, historique, fiche_producteur
                 ):
                     texte += frag
                     yield {"type": "token", "text": frag}

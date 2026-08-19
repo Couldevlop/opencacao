@@ -85,25 +85,47 @@ def enrichir_contact(conseil: Conseil, texte_conversation: str) -> Conseil:
     )
 
 
+def _consigne_clarification(
+    theme: str,
+    question: str,
+    historique: list[dict[str, str]] | None,
+    fiche_producteur: fiche.Fiche | None,
+) -> str:
+    """Consigne de clarification, expurgée de ce que le producteur a déjà dit.
+
+    La clarification est déterministe et réclamait son questionnaire complet : en
+    production (19/08) elle redemandait la ville et la surface alors que la fiche les
+    connaissait. On lui passe donc les faits acquis, et on n'exige plus la localité
+    quand elle est déjà au dossier.
+    """
+    connue = fiche_producteur if fiche_producteur is not None else fiche.extraire("", historique)
+    besoin_loc = clarification.besoin_localite(question, historique) and not connue.localite
+    return clarification.consigne_theme(theme, besoin_loc, fiche.faits_connus(connue))
+
+
 async def question_clarification(
-    inference: object, theme: str, question: str, historique: list[dict[str, str]] | None
+    inference: object,
+    theme: str,
+    question: str,
+    historique: list[dict[str, str]] | None,
+    fiche_producteur: fiche.Fiche | None = None,
 ) -> str:
     """Fait formuler par le modèle une question de clarification naturelle et brève."""
-    consigne = clarification.consigne_theme(
-        theme, clarification.besoin_localite(question, historique)
-    )
+    consigne = _consigne_clarification(theme, question, historique, fiche_producteur)
     return await inference.generer(  # type: ignore[attr-defined]
         question, consigne=consigne, historique=historique, max_tokens=CLARIF_MAX_TOKENS
     )
 
 
 async def question_clarification_stream(
-    inference: object, theme: str, question: str, historique: list[dict[str, str]] | None
+    inference: object,
+    theme: str,
+    question: str,
+    historique: list[dict[str, str]] | None,
+    fiche_producteur: fiche.Fiche | None = None,
 ) -> AsyncIterator[str]:
     """Variante flux : diffuse la question de clarification au fil de l'eau."""
-    consigne = clarification.consigne_theme(
-        theme, clarification.besoin_localite(question, historique)
-    )
+    consigne = _consigne_clarification(theme, question, historique, fiche_producteur)
     async for fragment in inference.generer_stream(  # type: ignore[attr-defined]
         question, consigne=consigne, historique=historique, max_tokens=CLARIF_MAX_TOKENS
     ):
