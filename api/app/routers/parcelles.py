@@ -125,6 +125,19 @@ async def obtenir_parcelle(
     return ParcelleReponse.model_validate(parcelle, from_attributes=True)
 
 
+# POST en plus de PUT, et ce n'est pas un caprice de style. Le WAF ModSecurity du
+# contrôleur d'ingress applique le jeu de règles OWASP CRS, dont la règle 911100
+# n'autorise que GET/HEAD/POST/OPTIONS : tout PUT venant d'un navigateur était rejeté
+# en 403 AVANT d'atteindre l'API. Constaté le 19/08/2026 — le parcours GPS, fonction
+# phare de « Ma parcelle », n'avait donc jamais fonctionné en production, tandis que
+# le dépôt de photos (POST) passait, ce qui rendait la panne d'autant plus discrète.
+#
+# Le WAF est partagé avec d'autres sites en production ; y ouvrir PUT est le correctif
+# juste, mais il touche une infrastructure commune. On expose donc ici le même
+# traitement sous un verbe que le WAF laisse passer. PUT reste offert : il est
+# sémantiquement correct, et il fonctionne pour tout client qui n'est pas derrière ce
+# WAF (tests, intégrations serveur à serveur).
+@router.post("/parcelles/{identifiant}/geometrie", response_model=ParcelleReponse)
 @router.put("/parcelles/{identifiant}/geometrie", response_model=ParcelleReponse)
 async def enregistrer_geometrie(
     identifiant: str,

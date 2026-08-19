@@ -417,3 +417,35 @@ def test_un_entete_vide_vaut_un_entete_absent(client: TestClient):
 def test_les_sessions_gardent_leur_espace_herite(client: TestClient):
     """La compatibilite V2 n est pas touchee : seules les parcelles se durcissent."""
     assert client.get("/v1/sessions").status_code == 200
+
+
+def test_le_parcours_gps_s_enregistre_aussi_en_post(client: TestClient) -> None:
+    """Le WAF du contrôleur d'ingress applique le jeu de règles OWASP CRS, qui
+    n'autorise que GET/HEAD/POST/OPTIONS. Tout PUT partant d'un navigateur était donc
+    rejeté en 403 AVANT d'atteindre l'API : le parcours GPS — fonction phare de « Ma
+    parcelle » — n'avait jamais fonctionné en production, alors que le dépôt de photos
+    (POST) passait, ce qui rendait la panne d'autant plus discrète (19/08/2026).
+
+    Sans ce test, un nettoyage de routes retirerait le POST et la panne reviendrait,
+    tout aussi silencieuse."""
+    entetes = {"X-Device-Id": "appareil-recette"}
+    parcelle = client.post(
+        "/v1/parcelles", json={"nom": "Recette", "localite": "Soubré"}, headers=entetes
+    ).json()
+
+    reponse = client.post(
+        f"/v1/parcelles/{parcelle['identifiant']}/geometrie",
+        json={
+            "points": [
+                {"latitude": 5.7853, "longitude": -6.5936},
+                {"latitude": 5.7853, "longitude": -6.5923},
+                {"latitude": 5.7840, "longitude": -6.5923},
+                {"latitude": 5.7853, "longitude": -6.5936},
+            ],
+            "source": "parcours_gps",
+        },
+        headers=entetes,
+    )
+
+    assert reponse.status_code == 200
+    assert reponse.json()["geometrie"] is not None

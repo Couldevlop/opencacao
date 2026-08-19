@@ -406,7 +406,13 @@ export function creerClientApi(lireBaseUrl) {
     const resp = await appelParcelle(
       "/v1/parcelles/" + encodeURIComponent(identifiant) + "/geometrie",
       {
-        method: "PUT",
+        // POST et non PUT : le WAF ModSecurity du contrôleur d'ingress applique le jeu
+        // de règles OWASP CRS, qui n'autorise que GET/HEAD/POST/OPTIONS. Tout PUT
+        // partant du navigateur était rejeté en 403 avant même d'atteindre l'API — le
+        // parcours GPS n'avait donc jamais fonctionné en production (constaté le
+        // 19/08/2026), alors que le dépôt de photos passait. L'API accepte les deux
+        // verbes ; on emploie ici celui qui traverse.
+        method: "POST",
         headers: enTetes({ "Content-Type": "application/json", Accept: "application/json" }),
         body: JSON.stringify({ points, source }),
       }
