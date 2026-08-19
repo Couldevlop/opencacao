@@ -364,6 +364,24 @@ kubectl -n opencacao scale deploy sentinelle --replicas=1
 > minutes de chargement du modèle sur le GPU, elle constatera trois échecs et rentrera
 > au CPU au milieu de votre répétition — en faisant exactement son travail.
 
+> **À FAIRE APRÈS L'ÉVÉNEMENT — l'écran d'exploitation.** La spec (mitigation M6)
+> exige que le repli soit « exécutable par quelqu'un d'autre que Waopron ». Aujourd'hui
+> il ne l'est qu'en ligne de commande, par quelqu'un qui a le kubeconfig et sait s'en
+> servir. Le bon aboutissement est un écran dans la console de curation : état du profil
+> en clair, bouton « rentrer sur CPU », bouton « reprendre le service normal ».
+> Conception arrêtée le 19/08/2026, construction reportée faute de temps avant la
+> présentation — et parce qu'un point de terminaison qui reconfigure la production, sur
+> une console exposée sur Internet, ne s'ajoute pas à 3 h du matin.
+>
+> Périmètre retenu, quand il se fera : réutiliser `app.exploitation.sentinelle.replier`
+> (le bouton doit faire EXACTEMENT ce que fait la sentinelle, pas une seconde
+> implémentation) ; session existante de la console ; SameSite=Lax + en-tête
+> personnalisé contre le CSRF ; limitation de débit stricte ; journal d'audit ; droits
+> RBAC à étendre à `configmaps/api-config` et `deployments/inference` pour le compte
+> `curation`. **Le passage VERS le GPU reste en ligne de commande** : il demande une URL
+> de tunnel, et un champ d'URL libre qui reconfigure la production est précisément la
+> surface qu'on refuse d'ouvrir sur une console publique.
+
 **Effacer le bandeau après un repli** : c'est `jour-j.sh ouvrir` (on repart) ou
 `jour-j.sh fermer` (on clôt l'événement) — les deux remettent `REPLI_CPU=false`.
 `profil.sh cpu` ne l'efface pas volontairement : il bascule le matériel, il ne décide
