@@ -26,6 +26,7 @@ from app.domain.exceptions import RateLimitDepasse
 from app.domain.ports import CachePort, InferencePort, JournalPort
 from app.models.domain import Confiance, Langue
 from app.services import clarification, guardrails, postprocess
+from app.services.fiche import Fiche
 
 logger = get_logger(__name__)
 
@@ -98,7 +99,9 @@ class Orchestrateur:
         self._dialogue_naturel = dialogue_naturel
         self._conversationnel = conversationnel
 
-    def _civilite(self, question: str, historique: list[dict[str, str]]) -> str | None:
+    def _civilite(
+        self, question: str, historique: list[dict[str, str]], fiche_producteur: object | None
+    ) -> str | None:
         """Réponse écrite d'avance si le tour est une pure civilité, sinon ``None``.
 
         Placée AVANT les garde-fous à dessein : « Qui es-tu ? » y serait refusée comme
@@ -106,11 +109,17 @@ class Orchestrateur:
         C'est sans risque parce que ce chemin ne produit aucun texte de modèle — il n'y
         a donc rien à filtrer en sortie (cf. ``services.civilites``).
         """
-        return conseil_commun.civilite_ou_none(question, historique, self._conversationnel)
+        return conseil_commun.civilite_ou_none(
+            question, historique, self._conversationnel, fiche_producteur
+        )
 
-    def _memoire(self, question: str, historique: list[dict[str, str]]) -> str:
+    def _memoire(
+        self, question: str, historique: list[dict[str, str]], fiche_producteur: object | None
+    ) -> str:
         """Faits déjà énoncés par le producteur, à rappeler au modèle (vide si repli)."""
-        return conseil_commun.memoire_du_fil(question, historique, self._conversationnel)
+        return conseil_commun.memoire_du_fil(
+            question, historique, self._conversationnel, fiche_producteur
+        )
 
     async def traiter(
         self,
@@ -118,6 +127,7 @@ class Orchestrateur:
         langue: Langue,
         client_ip: str,
         historique: list[dict[str, str]] | None = None,
+        fiche_producteur: Fiche | None = None,
     ) -> Conseil:
         """Produit un conseil en routant la requête vers l'agent pertinent.
 
@@ -126,6 +136,8 @@ class Orchestrateur:
             langue: Langue de la requête.
             client_ip: IP cliente (rate-limit).
             historique: Tours précédents de la conversation, ou None.
+            fiche_producteur: Fiche bâtie en amont sur le fil COMPLET (sessions), ou
+                None pour l'extraire du seul ``historique`` reçu.
 
         Returns:
             Le conseil produit (refus, repli ou réponse d'agent), journalisé.
@@ -140,7 +152,7 @@ class Orchestrateur:
 
         # 0. Civilités : un « Bonjour » n'est pas une question. Réponse constante,
         #    instantanée, sans inférence ni source (cf. ``_civilite``).
-        politesse = self._civilite(question, historique)
+        politesse = self._civilite(question, historique, fiche_producteur)
         if politesse is not None:
             logger.info("civilite_servie")
             conseil = Conseil(politesse, Confiance.ELEVEE, [], redirection_anader=False)
@@ -198,7 +210,7 @@ class Orchestrateur:
             fil_ancre=fil,
             client_ip=client_ip,
             historique=historique,
-            memoire=self._memoire(question, historique),
+            memoire=self._memoire(question, historique, fiche_producteur),
         )
 
         # 4. Routage d'intention AVANT le cache sémantique : le classement révèle une
@@ -275,6 +287,7 @@ class Orchestrateur:
         langue: Langue,
         client_ip: str,
         historique: list[dict[str, str]] | None = None,
+        fiche_producteur: Fiche | None = None,
     ) -> AsyncIterator[dict]:
         """Variante flux de :meth:`traiter` (mêmes étapes, sortie progressive SSE).
 
@@ -296,7 +309,7 @@ class Orchestrateur:
 
         # 0 bis. Civilités : mêmes garanties qu'en synchrone, sur le chemin réel
         #        de la production (/chat/stream).
-        politesse = self._civilite(question, historique)
+        politesse = self._civilite(question, historique, fiche_producteur)
         if politesse is not None:
             logger.info("civilite_servie")
             for ev in flux.evenements_token(politesse, politesse):
@@ -383,7 +396,7 @@ class Orchestrateur:
             fil_ancre=fil,
             client_ip=client_ip,
             historique=historique,
-            memoire=self._memoire(question, historique),
+            memoire=self._memoire(question, historique, fiche_producteur),
         )
 
         # 4. Routage AVANT le cache sémantique : le classement révèle une intention de

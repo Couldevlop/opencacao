@@ -20,6 +20,7 @@ class _ConseilEnregistreur:
 
     def __init__(self) -> None:
         self.historiques: list[list[dict[str, str]]] = []
+        self.fiches: list[object] = []
 
     async def conseiller(
         self,
@@ -27,8 +28,10 @@ class _ConseilEnregistreur:
         langue: Langue,
         client_ip: str,
         historique: list[dict[str, str]] | None = None,
+        fiche_producteur: object | None = None,
     ) -> Conseil:
         self.historiques.append(list(historique or []))
+        self.fiches.append(fiche_producteur)
         return Conseil("Étalez vos fèves au soleil.", Confiance.ELEVEE, [])
 
 

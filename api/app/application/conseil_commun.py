@@ -110,8 +110,29 @@ async def question_clarification_stream(
         yield fragment
 
 
+def fiche_du_fil(question: str, historique: list[dict[str, str]] | None) -> fiche.Fiche:
+    """Extrait la fiche du producteur du fil fourni.
+
+    À appeler sur l'historique le PLUS COMPLET dont on dispose : ``DialogueSessionService``
+    borne le fil à 8 messages avant de le transmettre, si bien qu'une fiche bâtie en aval
+    aurait déjà perdu les faits qu'on lui demande de retenir (constaté en production le
+    19/08 : « Soubré », cité au 1er tour, était inconnu au 13e).
+
+    Args:
+        question: Dernier tour du producteur.
+        historique: Tours précédents, ou ``None``.
+
+    Returns:
+        La fiche, éventuellement vide.
+    """
+    return fiche.extraire(question, historique)
+
+
 def civilite_ou_none(
-    question: str, historique: list[dict[str, str]] | None, actif: bool
+    question: str,
+    historique: list[dict[str, str]] | None,
+    actif: bool,
+    fiche_producteur: fiche.Fiche | None = None,
 ) -> str | None:
     """Réponse écrite d'avance si le tour est une pure civilité, sinon ``None``.
 
@@ -123,6 +144,8 @@ def civilite_ou_none(
         question: Dernier tour du producteur.
         historique: Tours précédents, ou ``None``.
         actif: Drapeau conversationnel. Faux → toujours ``None`` (repli sans effet).
+        fiche_producteur: Fiche bâtie en amont sur le fil complet, ou ``None`` pour
+            l'extraire ici depuis ``historique`` (chemin sans session).
 
     Returns:
         Le texte constant à servir, ou ``None`` si le tour doit suivre le pipeline.
@@ -132,20 +155,31 @@ def civilite_ou_none(
     nature = civilites.detecter(question)
     if nature is None:
         return None
-    return civilites.repondre(nature, fiche.rappel_court(fiche.extraire("", historique)))
+    connue = fiche_producteur if fiche_producteur is not None else fiche.extraire("", historique)
+    return civilites.repondre(nature, fiche.rappel_court(connue))
 
 
-def memoire_du_fil(question: str, historique: list[dict[str, str]] | None, actif: bool) -> str:
+def memoire_du_fil(
+    question: str,
+    historique: list[dict[str, str]] | None,
+    actif: bool,
+    fiche_producteur: fiche.Fiche | None = None,
+) -> str:
     """Faits déjà énoncés par le producteur, à rappeler au modèle.
 
     Args:
         question: Dernier tour du producteur.
         historique: Tours précédents, ou ``None``.
         actif: Drapeau conversationnel. Faux → ``""``, donc prompt système inchangé.
+        fiche_producteur: Fiche bâtie en amont sur le fil complet, ou ``None`` pour
+            l'extraire ici depuis ``historique`` (chemin sans session).
 
     Returns:
         Le bloc de mémoire, ou ``""`` si rien n'est connu (ou si le drapeau est bas).
     """
     if not actif:
         return ""
-    return fiche.bloc_memoire(fiche.extraire(question, historique))
+    connue = (
+        fiche_producteur if fiche_producteur is not None else fiche.extraire(question, historique)
+    )
+    return fiche.bloc_memoire(connue)

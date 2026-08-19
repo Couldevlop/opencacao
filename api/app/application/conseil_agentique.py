@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator
 from app.application.orchestrateur import Orchestrateur
 from app.domain.entities import Conseil
 from app.models.domain import Langue
+from app.services.fiche import Fiche
 
 
 class ConseilAgentique:
@@ -28,9 +29,12 @@ class ConseilAgentique:
         langue: Langue,
         client_ip: str,
         historique: list[dict[str, str]] | None = None,
+        fiche_producteur: Fiche | None = None,
     ) -> Conseil:
         """Délègue à l'orchestrateur (même signature que ConseilService.conseiller)."""
-        return await self._orchestrateur.traiter(question, langue, client_ip, historique)
+        return await self._orchestrateur.traiter(
+            question, langue, client_ip, historique, fiche_producteur
+        )
 
     async def conseiller_stream(
         self,
@@ -38,6 +42,7 @@ class ConseilAgentique:
         langue: Langue,
         client_ip: str,
         historique: list[dict[str, str]] | None = None,
+        fiche_producteur: Fiche | None = None,
     ) -> AsyncIterator[dict]:
         """Variante « flux » : délègue au streaming réel de l'orchestrateur.
 
@@ -46,6 +51,6 @@ class ConseilAgentique:
         (RateLimitDepasse, InferenceUnavailable) se propagent comme en V2.
         """
         async for evenement in self._orchestrateur.traiter_stream(
-            question, langue, client_ip, historique
+            question, langue, client_ip, historique, fiche_producteur
         ):
             yield evenement

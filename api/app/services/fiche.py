@@ -133,7 +133,12 @@ def bloc_memoire(fiche: Fiche) -> str:
     """
     if fiche.vide:
         return ""
-    lignes = ["Ce que le producteur vous a DÉJÀ dit dans cette conversation :"]
+    lignes = [
+        "MÉMOIRE DE LA CONVERSATION — faits que le producteur vous a lui-même donnés. "
+        "Ils sont acquis, indépendamment des extraits documentaires : reprenez-les en une "
+        "phrase courte au début de votre réponse pour montrer que vous avez écouté, ne les "
+        "redemandez jamais, et ne les présentez pas comme une source.",
+    ]
     if fiche.localite:
         lignes.append(f"- Localité : {fiche.localite}")
     plantation = _plantation(fiche)
@@ -141,10 +146,6 @@ def bloc_memoire(fiche: Fiche) -> str:
         lignes.append(f"- Plantation : {plantation}")
     if fiche.sujet:
         lignes.append(f"- Sujet en cours : {_LIBELLES_SUJET.get(fiche.sujet, fiche.sujet)}")
-    lignes.append(
-        "Reprenez ces éléments en une phrase courte pour montrer que vous avez écouté, "
-        "et ne les redemandez jamais : vous les connaissez déjà."
-    )
     return "\n".join(lignes)
 
 

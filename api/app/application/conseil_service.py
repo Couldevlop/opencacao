@@ -22,6 +22,7 @@ from app.domain.ports import CachePort, EmbeddingsPort, InferencePort, JournalPo
 from app.models.chat import DISCLAIMER
 from app.models.domain import Confiance, Langue
 from app.services import clarification, guardrails, postprocess
+from app.services.fiche import Fiche
 from app.services.rag import RagRecuperateur
 
 logger = get_logger(__name__)
@@ -119,6 +120,7 @@ class ConseilService:
         langue: Langue,
         client_ip: str,
         historique: list[dict[str, str]] | None = None,
+        fiche_producteur: Fiche | None = None,
     ) -> Conseil:
         """Produit un conseil pour la question donnée.
 
@@ -140,7 +142,9 @@ class ConseilService:
 
         # Civilités : un tour de pure sociabilité reçoit une réponse constante,
         # sans inférence (parité avec l'orchestrateur V3).
-        politesse = conseil_commun.civilite_ou_none(question, historique, self._conversationnel)
+        politesse = conseil_commun.civilite_ou_none(
+            question, historique, self._conversationnel, fiche_producteur
+        )
         if politesse is not None:
             logger.info("civilite_servie")
             conseil = Conseil(politesse, Confiance.ELEVEE, [], redirection_anader=False)
@@ -213,7 +217,9 @@ class ConseilService:
                 question,
                 contexte=contexte,
                 historique=historique,
-                memoire=conseil_commun.memoire_du_fil(question, historique, self._conversationnel),
+                memoire=conseil_commun.memoire_du_fil(
+                    question, historique, self._conversationnel, fiche_producteur
+                ),
             )
         )
 
@@ -288,6 +294,7 @@ class ConseilService:
         langue: Langue,
         client_ip: str,
         historique: list[dict[str, str]] | None = None,
+        fiche_producteur: Fiche | None = None,
     ) -> AsyncIterator[dict]:
         """Produit un conseil en flux, pour un rendu progressif côté client.
 
@@ -317,7 +324,9 @@ class ConseilService:
         historique = historique or []
         texte_conv = _texte_conversation(question, historique)
 
-        politesse = conseil_commun.civilite_ou_none(question, historique, self._conversationnel)
+        politesse = conseil_commun.civilite_ou_none(
+            question, historique, self._conversationnel, fiche_producteur
+        )
         if politesse is not None:
             logger.info("civilite_servie")
             for ev in _evenements_token(politesse, politesse):
@@ -409,7 +418,9 @@ class ConseilService:
             question,
             contexte=contexte,
             historique=historique,
-            memoire=conseil_commun.memoire_du_fil(question, historique, self._conversationnel),
+            memoire=conseil_commun.memoire_du_fil(
+                question, historique, self._conversationnel, fiche_producteur
+            ),
         ):
             tampon += delta
             while (match := _FIN_PHRASE.search(tampon)) is not None:

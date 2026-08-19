@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-from app.application import memoire
+from app.application import conseil_commun, memoire
 from app.application.conseil_service import ConseilService
 from app.core.logging import get_logger
 from app.domain.entities import Conseil
@@ -19,6 +19,7 @@ from app.domain.ports import SessionStorePort
 from app.models.domain import Langue
 from app.models.session import TITRE_PAR_DEFAUT, Session
 from app.services import titres
+from app.services.fiche import Fiche
 
 logger = get_logger(__name__)
 
@@ -47,11 +48,22 @@ class DialogueSessionService:
         self._fenetre = fenetre
         self._seuil_resume = seuil_resume
 
-    async def _historique_serveur(self, session_id: str) -> list[dict[str, str]]:
-        """Reconstitue le contexte d'une session : résumé + fenêtre récente (B2)."""
+    async def _contexte_serveur(
+        self, session_id: str, question: str
+    ) -> tuple[list[dict[str, str]], Fiche]:
+        """Contexte d'une session : fenêtre bornée (B2) ET fiche du fil COMPLET.
+
+        Les deux sont tirés du même chargement, mais pas du même périmètre — et c'est
+        tout l'intérêt. La fenêtre borne le prompt à 8 messages pour tenir la latence ;
+        la fiche, elle, est bâtie sur l'intégralité du fil AVANT cette troncature.
+        Bâtie après, elle aurait déjà perdu les faits qu'on lui demande de retenir
+        (constaté en production le 19/08 : « Soubré », cité au 1er tour, inconnu au 13e).
+        """
         messages = await self._sessions.lister_messages(session_id)
         historique = [{"role": m.role, "content": m.content} for m in messages]
-        return memoire.fenetre_dialogue(historique, self._fenetre, self._seuil_resume)
+        fiche_producteur = conseil_commun.fiche_du_fil(question, historique)
+        fenetre = memoire.fenetre_dialogue(historique, self._fenetre, self._seuil_resume)
+        return fenetre, fiche_producteur
 
     async def _auto_titrer(self, session: Session, question: str) -> None:
         """Donne un titre à la session depuis sa première question (B3).
@@ -95,8 +107,10 @@ class DialogueSessionService:
         session = await self._sessions.obtenir_session(session_id)
         if session is None:
             return None
-        historique_serveur = await self._historique_serveur(session_id)
-        conseil = await self._conseil.conseiller(question, langue, client_ip, historique_serveur)
+        historique_serveur, fiche_producteur = await self._contexte_serveur(session_id, question)
+        conseil = await self._conseil.conseiller(
+            question, langue, client_ip, historique_serveur, fiche_producteur=fiche_producteur
+        )
         await self._persister_tour(session_id, question, conseil.reponse)
         await self._auto_titrer(session, question)
         return conseil
@@ -128,10 +142,10 @@ class DialogueSessionService:
             yield {"type": "error", "kind": "session_inconnue"}
             return
 
-        historique_serveur = await self._historique_serveur(session_id)
+        historique_serveur, fiche_producteur = await self._contexte_serveur(session_id, question)
         morceaux: list[str] = []
         async for evenement in self._conseil.conseiller_stream(
-            question, langue, client_ip, historique_serveur
+            question, langue, client_ip, historique_serveur, fiche_producteur=fiche_producteur
         ):
             if evenement.get("type") == "token":
                 morceaux.append(evenement.get("text", ""))
