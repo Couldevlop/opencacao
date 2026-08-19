@@ -1,4 +1,11 @@
-"""Test de l'enrichissement programmé (CronJob) : enchaîne recherche + constitution."""
+"""Test de l'enrichissement programmé (CronJob) : recherche + découverte, SANS indexer.
+
+Le cron enchainait aussi la constitution de l'index. Retiré le 19/08/2026 après
+qu'un document officiel hors sujet (politique anti-blanchiment du FIRCA) s'est
+invité dans l'index et a capté la question « quel est le rôle du FIRCA ? ». Le
+détail du nouveau contrat, et pourquoi il est ainsi, vit dans
+``test_enrichir_revue.py``.
+"""
 
 from __future__ import annotations
 
@@ -13,9 +20,12 @@ async def test_executer_enchaine_recherche_puis_constitution(monkeypatch) -> Non
             appels.append("reconcil")
             return 0
 
-        async def creer(self, type_: str) -> dict:
+        async def creer(self, type_: str, details: dict | None = None) -> dict:
             appels.append(("creer", type_))
             return {"id": type_}
+
+        async def obtenir(self, job_id: str) -> dict:
+            return {"id": job_id, "details": {"telecharges": 0}}
 
     class FauxPipeline:
         async def collecter_sources(self, job_id: str) -> None:
@@ -37,8 +47,10 @@ async def test_executer_enchaine_recherche_puis_constitution(monkeypatch) -> Non
     assert "reconcil" in appels
     assert ("collecter", "recherche_sources") in appels
     assert ("decouvrir", "decouverte_sources") in appels
-    assert ("constituer", "rag_constitution") in appels
-    # L'ordre est respecté : recherche AVANT constitution.
+    # La constitution n'est PLUS automatique : elle attend une revue humaine
+    # (incident du 19/08/2026, cf. test_enrichir_revue.py).
+    assert ("constituer", "rag_constitution") not in appels
+    # L'ordre reste respecté : on cherche avant de découvrir.
     assert appels.index(("collecter", "recherche_sources")) < appels.index(
-        ("constituer", "rag_constitution")
+        ("decouvrir", "decouverte_sources")
     )
