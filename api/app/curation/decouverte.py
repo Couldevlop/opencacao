@@ -34,6 +34,12 @@ DOMAINES_AUTORISES = (
     "fao.org",
     "icco.org",
     "observaterra.ci",
+    # Le Conseil du Café-Cacao héberge ses documents sur un domaine SÉPARÉ. Sans cette
+    # entrée, « Guide achat exportateur » et les « Tables indicatives de réfaction » —
+    # deux pièces directement utiles à la filière — étaient écartés par le garde-fou de
+    # domaine, alors qu'ils sont liés depuis le site officiel lui-même. Constaté le
+    # 19/08/2026 en inspectant les liens des quatre sites un par un.
+    "bcc.ci",
 )
 
 # Pages de départ explorées (accueil + pages de publications connues).
@@ -41,7 +47,12 @@ SEEDS = (
     "http://www.conseilcafecacao.ci/",
     "https://cnra.ci/",
     "https://www.anader.ci/",
-    "https://firca.ci/ressources/publications/guides-et-manuels/",
+    # Corrigée le 19/08/2026 : l'ancienne adresse
+    # (firca.ci/ressources/publications/guides-et-manuels/) rendait un 404 depuis une
+    # refonte du site. La découverte échouait donc en silence sur le FIRCA — un
+    # warning dans les journaux d'un cron nocturne que personne ne lit. La bonne page
+    # publie notamment le Rapport annuel 2024.
+    "https://firca.ci/publications/",
     "https://www.icco.org/",
 )
 

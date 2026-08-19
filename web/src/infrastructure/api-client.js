@@ -344,7 +344,12 @@ export function creerClientApi(lireBaseUrl) {
     }
     if (resp.status === 404) {
       if (tolererAbsence) return null;
-      throw new ConseilError(ErreurKind.INTROUVABLE, messageAbsence);
+      // Le DÉTAIL du serveur d'abord : ce helper est partagé par les parcelles et
+      // l'atelier, et son message par défaut parle de parcelles. Exporter une étude
+      // affichait donc « Parcelle inconnue » alors que l'API disait « Rapport inconnu
+      // ou non terminé » (bug du 19/08). Un message qui parle d'autre chose que de ce
+      // qu'on vient de faire donne l'impression d'un logiciel perdu.
+      throw new ConseilError(ErreurKind.INTROUVABLE, (await detailServeur(resp)) || messageAbsence);
     }
     if (ERREURS_HTTP[resp.status]) {
       // Message vide si le serveur n'en fournit pas de lisible : à l'écran d'y
