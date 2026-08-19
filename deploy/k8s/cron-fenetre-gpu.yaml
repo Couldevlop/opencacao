@@ -1,0 +1,219 @@
+# Fenêtre GPU — le service n'utilise le GPU loué que dans la journée.
+#
+# POURQUOI. Un pod RunPod se facture à l'heure, qu'on s'en serve ou non. Entre minuit et
+# le matin, il coûte sans rien produire : 0,25 à 0,57 $ l'heure selon la carte, contre
+# 0,014 $ l'heure de disque une fois arrêté. Une nuit vaut donc 2 à 4,50 $, un mois
+# 60 à 130 $.
+#
+# CE QUE LE CLUSTER NE PEUT PAS FAIRE. Démarrer une machine chez RunPod exige une clé
+# API que le cluster n'a pas — volontairement : cela lui donnerait le pouvoir de
+# dépenser. Le réveil ne LANCE donc rien, il ADOPTE un pod qu'un humain a démarré, dès
+# qu'il répond. Symétriquement, la fermeture n'ÉTEINT pas le pod : elle ramène le
+# service sur CPU et rappelle qu'il reste un bouton à presser.
+#
+# Toutes les heures sont en Europe/Paris (champ `timeZone`, stable depuis K8s 1.27) :
+# le changement d'heure est ainsi géré par Kubernetes, et non par un décalage à
+# recalculer deux fois l'an.
+#
+# Le ServiceAccount `sentinelle` est réutilisé tel quel : ces travaux font EXACTEMENT
+# les mêmes gestes qu'elle (get/patch sur `api-config`, sur les déploiements `inference`
+# et `api`), sur les mêmes objets. Lui créer un compte de plus n'ajouterait aucune
+# barrière, seulement une deuxième liste de droits à tenir à jour.
+---
+# 00:00 — on referme. Retour au CPU, puis email : « le pod tourne encore, arrêtez-le ».
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fenetre-fermeture
+  labels: { app: fenetre-gpu }
+spec:
+  schedule: "0 0 * * *"
+  timeZone: "Europe/Paris"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 600
+      backoffLimit: 1
+      template:
+        metadata:
+          labels: { app: fenetre-gpu }
+        spec:
+          serviceAccountName: sentinelle
+          restartPolicy: Never
+          containers:
+            - name: fenetre
+              image: opencacao-api # tag/registre fixés par kustomization.yaml
+              command: ["python", "-m", "app.exploitation.fenetre", "fermer"]
+              envFrom:
+                - configMapRef: { name: fenetre-config }
+              env:
+                - name: ZEPTOMAIL_TOKEN # absent -> l'email est simplement sauté
+                  valueFrom:
+                    secretKeyRef:
+                      name: opencacao-email
+                      key: ZEPTOMAIL_TOKEN
+                      optional: true
+              resources:
+                requests: { cpu: "50m", memory: "64Mi" }
+                limits: { cpu: "250m", memory: "256Mi" }
+---
+# 06:00 — le rattrapage d'oubli. Muet si le pod est bien éteint ; c'est ce silence qui
+# fait qu'on lit encore ces emails au bout d'un mois. Placé AVANT toute reprise plausible
+# (10:00) pour ne jamais crier au loup sur un pod démarré volontairement en avance.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fenetre-rappel
+  labels: { app: fenetre-gpu }
+spec:
+  schedule: "0 6 * * *"
+  timeZone: "Europe/Paris"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 300
+      backoffLimit: 1
+      template:
+        metadata:
+          labels: { app: fenetre-gpu }
+        spec:
+          serviceAccountName: sentinelle
+          restartPolicy: Never
+          containers:
+            - name: fenetre
+              image: opencacao-api
+              command: ["python", "-m", "app.exploitation.fenetre", "rappeler"]
+              envFrom:
+                - configMapRef: { name: fenetre-config }
+              env:
+                - name: ZEPTOMAIL_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: opencacao-email
+                      key: ZEPTOMAIL_TOKEN
+                      optional: true
+              resources:
+                requests: { cpu: "50m", memory: "64Mi" }
+                limits: { cpu: "250m", memory: "256Mi" }
+---
+# 10:00 pile — LA seule tentative qui a le droit de dire « le pod n'est pas là ».
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fenetre-ouverture-annonce
+  labels: { app: fenetre-gpu }
+spec:
+  schedule: "0 10 * * *"
+  timeZone: "Europe/Paris"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 300
+      backoffLimit: 1
+      template:
+        metadata:
+          labels: { app: fenetre-gpu }
+        spec:
+          serviceAccountName: sentinelle
+          restartPolicy: Never
+          containers:
+            - name: fenetre
+              image: opencacao-api
+              command: ["python", "-m", "app.exploitation.fenetre", "ouvrir"]
+              envFrom:
+                - configMapRef: { name: fenetre-config }
+              env:
+                - { name: PREVENIR_SI_ABSENT, value: "true" }
+                - name: ZEPTOMAIL_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: opencacao-email
+                      key: ZEPTOMAIL_TOKEN
+                      optional: true
+              resources:
+                requests: { cpu: "50m", memory: "64Mi" }
+                limits: { cpu: "250m", memory: "256Mi" }
+---
+# 10:00 → 21:45, tous les quarts d'heure — la veille SILENCIEUSE. Elle bascule dès que
+# le tunnel répond, et ne dit jamais rien quand il ne répond pas : c'est le travail
+# précédent qui a annoncé, une fois. Elle s'arrête à 22:00 pour ne jamais rouvrir ce que
+# la fermeture de minuit s'apprête à refermer.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fenetre-ouverture
+  labels: { app: fenetre-gpu }
+spec:
+  schedule: "*/15 10-21 * * *"
+  timeZone: "Europe/Paris"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 300
+      backoffLimit: 0 # une tentative ratée n'est pas grave : la suivante est dans 15 min
+      template:
+        metadata:
+          labels: { app: fenetre-gpu }
+        spec:
+          serviceAccountName: sentinelle
+          restartPolicy: Never
+          containers:
+            - name: fenetre
+              image: opencacao-api
+              command: ["python", "-m", "app.exploitation.fenetre", "ouvrir"]
+              envFrom:
+                - configMapRef: { name: fenetre-config }
+              env:
+                - { name: PREVENIR_SI_ABSENT, value: "false" }
+                - name: ZEPTOMAIL_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: opencacao-email
+                      key: ZEPTOMAIL_TOKEN
+                      optional: true
+              resources:
+                requests: { cpu: "50m", memory: "64Mi" }
+                limits: { cpu: "250m", memory: "256Mi" }
+---
+# Réglages communs aux quatre travaux. Modifiables à chaud : changer le coût horaire ou
+# le lien de la console ne demande aucune reconstruction d'image.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fenetre-config
+  labels: { app: fenetre-gpu }
+data:
+  CONFIGMAP: "api-config"
+  DEPLOIEMENT_CPU: "inference"
+  DEPLOIEMENT_API: "api"
+  URL_INTERNE: "http://inference:8000"
+  BASE_API: "http://api:8080"
+  HOTE_PUBLIC: "opencacao.openlabconsulting.com"
+  TIMEOUT_S: "15"
+  # Coût horaire de la carte louée, pour chiffrer un oubli dans l'email. À ajuster si
+  # vous changez de GPU (L4 0,49 ; RTX A5000 0,27 ; RTX 4000 Ada 0,28 ; A4000 0,25).
+  COUT_GPU_USD_H: "0.49"
+  LIEN_CONSOLE: "https://console.runpod.io/pods"
+  # Fonctions que le réveil restaure — celles que la fermeture délestera. Les mettre à
+  # "false" ici, c'est décider qu'elles ne reviennent pas le matin.
+  JOUR_VISION_ENABLED: "true"
+  JOUR_RAPPORTS_ENABLED: "true"
+  JOUR_PARCELLES_ENABLED: "true"
+  LOG_LEVEL: "INFO"
+  ZEPTOMAIL_API_URL: "https://api.zeptomail.com/v1.1/email"
+  # Expéditeur vérifié dans le Mail Agent ZeptoMail (noreply@ -> SM_147 refusé).
+  EMAIL_FROM: "waopron@openlabconsulting.com"
+  EMAIL_FROM_NAME: "OpenCacao"
+  EMAIL_TEAM: "waopron@openlabconsulting.com"

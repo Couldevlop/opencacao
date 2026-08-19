@@ -24,6 +24,7 @@ resources:
   - cron-enrichissement.yaml
   - cron-watchdog.yaml
   - sentinelle.yaml
+  - cron-fenetre-gpu.yaml
 
 images:
   - name: opencacao-api
