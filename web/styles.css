@@ -598,6 +598,24 @@ body {
   body.avec-sidebar .sidebar-toggle { display: none; }
 }
 
+/* TRÈS grand écran (poste de développement, écran de présentation).
+   Deux défauts constatés par Waopron le 19/08/2026 sur un écran large :
+   la colonne paraissait « trop étroite » et « mal centrée ».
+
+   Le décentrage n'était pas une illusion : `padding-left` réservait la place de la
+   barre latérale, mais rien ne la compensait à droite. La colonne se centrait donc
+   dans l'espace RÉSIDUEL, ce qui la décale visiblement par rapport au milieu de
+   l'écran, là où l'œil l'attend. On rend la marge droite égale à la barre latérale.
+
+   La largeur, elle, reste un compromis : au-delà d'environ 110 caractères par ligne
+   l'œil perd la ligne suivante. On passe de 820 à 960 px, ce qui gagne un quart de
+   surface utile sans quitter la plage de lecture confortable. On ne l'applique qu'à
+   partir de 1600 px, sinon on étoufferait les écrans intermédiaires. */
+@media (min-width: 1600px) {
+  :root { --maxw: 960px; }
+  body.avec-sidebar { padding-right: var(--sidebar-w, 280px); }
+}
+
 /* ============================================================================
    Coquille unique — une fenêtre, trois destinations (14/08/2026).
 
