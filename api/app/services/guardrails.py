@@ -48,6 +48,13 @@ REFUS_ZONE_NON_CACAO = (
     "local pourra vous orienter."
 )
 
+REFUS_ZONE_INDETERMINEE = (
+    "Cette localité ne figure pas parmi les zones cacaoyères que je connais, et je ne "
+    "peux donc pas confirmer que le cacaoyer y est adapté. Je préfère vous le dire "
+    "plutôt que d'affirmer à tort : votre agent ANADER local connaît le terrain et "
+    "pourra vous le confirmer, ainsi que les variétés qui conviennent."
+)
+
 REFUS_HORS_CI = (
     "Mes conseils sont calibrés pour la Côte d'Ivoire uniquement : les variétés, le "
     "calendrier cultural, la pression des maladies et les prix diffèrent d'un pays "
@@ -71,6 +78,7 @@ _REFUS_MESSAGES: dict[CategorieRefus, str] = {
     CategorieRefus.DIAGNOSTIC_IMAGE: REFUS_DIAGNOSTIC_IMAGE,
     CategorieRefus.HORS_FILIERE: REFUS_HORS_FILIERE,
     CategorieRefus.ZONE_NON_CACAO: REFUS_ZONE_NON_CACAO,
+    CategorieRefus.ZONE_INDETERMINEE: REFUS_ZONE_INDETERMINEE,
     CategorieRefus.HORS_CI: REFUS_HORS_CI,
     CategorieRefus.TRANSFORMATION: REFUS_TRANSFORMATION,
 }
@@ -614,6 +622,21 @@ def evaluer(question: str, *, courante: str | None = None) -> Refus | None:
     nord = _localite_nord_detectee(texte)
     if nord is not None and _contient(texte_courant, _RE_ZONE_DECLENCHEUR):
         return Refus(CategorieRefus.ZONE_NON_CACAO, message=_message_zone(nord))
+
+    # 5 bis. Localité citée mais dont l'aptitude cacaoyère n'est PAS établie (zones de
+    #        transition des DR Centre et Centre-Est, par exemple). Avant ce garde-fou,
+    #        tout ce qui n'était pas explicitement refusé était présumé cacaoyer, et le
+    #        modèle l'affirmait : « À Ouangolo, comme dans toute la zone forestière du
+    #        Sud, le cacaoyer peut bien pousser » — sur une localité de l'extrême nord
+    #        (écart constaté en production le 19/08/2026). On préfère dire qu'on ne
+    #        sait pas : c'est la même doctrine que partout ailleurs dans ce projet.
+    verdict = localites.aptitude_cacao(texte)
+    if (
+        verdict is not None
+        and verdict[0] is localites.Aptitude.INDETERMINE
+        and _contient(texte_courant, _RE_ZONE_DECLENCHEUR)
+    ):
+        return Refus(CategorieRefus.ZONE_INDETERMINEE)
 
     # 6. Cacao d'un AUTRE pays producteur : le corpus est strictement ivoirien, donc
     #    répondre reviendrait à transposer en silence. On ne refuse que si rien

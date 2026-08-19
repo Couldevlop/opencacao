@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
+from enum import Enum
 from functools import lru_cache
 from pathlib import Path
 
@@ -50,6 +51,42 @@ LOCALITES_NORD: dict[str, str] = {
     "sinematiali": "Sinématiali",
     "kouto": "Kouto",
 }
+
+# Directions Régionales ANADER dont les zones sont cacaoyères. C'est une décision
+# MÉTIER, écrite ici pour être relue : les cinq DR ci-dessous couvrent la « boucle du
+# cacao ». Les DR Nord, Nord-Est et Nord-Ouest en sont exclues (savane), et les DR
+# Centre et Centre-Est ne figurent NI ici NI dans la deny-list parce qu'elles sont
+# réellement mixtes — Katiola et Dabakala y sont refusées de longue date, quand
+# Bongouanou et Daoukro sont bien cacaoyères. Une localité de ces DR est donc
+# INDÉTERMINÉE : on ne l'affirme pas, on le dit.
+DR_CACAOYERES = frozenset(
+    {
+        "Direction Régionale Centre-Ouest",
+        "Direction Régionale Est",
+        "Direction Régionale Ouest",
+        "Direction Régionale Sud",
+        "Direction Régionale Sud-Ouest",
+    }
+)
+
+
+class Aptitude(str, Enum):
+    """Ce que le dépôt sait de l'aptitude cacaoyère d'une localité citée.
+
+    Trois états et non deux. L'écart du 19/08/2026 vient précisément de ce qu'il n'y
+    en avait que deux : une deny-list du Nord, et tout le reste présumé cacaoyer. Le
+    modèle affirmait donc que Ouangolo était « dans la zone forestière du Sud ».
+    """
+
+    CACAO = "cacao"
+    NORD = "nord"
+    INDETERMINE = "indetermine"
+
+
+# Longueur minimale d'un préfixe accepté comme forme courte d'une localité.
+# « Ouangolo » (8) pour Ouangolodougou, « Ferkesse » pour Ferkessédougou. En dessous
+# de 6, le risque de faux positif sur un mot courant devient réel.
+_LONGUEUR_MIN_PREFIXE = 6
 
 
 def _normaliser(texte: str) -> str:
@@ -163,12 +200,91 @@ def detecter(texte: str) -> str | None:
     return resultat
 
 
+def _prefixe_cite(norm: str, cle: str) -> bool:
+    """Vrai si un mot du texte est une forme COURTE de la localité.
+
+    Les producteurs disent « Ouangolo », pas « Ouangolodougou » ; « Ferké » est déjà
+    une entrée à part. Sans cette tolérance, la correction « zone non cacaoyère » ne
+    se déclenchait pas sur la forme réellement employée — et le modèle affirmait que
+    Ouangolo était en zone forestière du Sud (écart du 19/08/2026).
+
+    Args:
+        norm: Texte déjà normalisé (minuscule sans accent).
+        cle: Clé normalisée de la localité.
+
+    Returns:
+        True si un mot du texte, d'au moins six lettres, préfixe cette clé.
+    """
+    if len(cle) <= _LONGUEUR_MIN_PREFIXE:
+        return False
+    return any(
+        len(mot) >= _LONGUEUR_MIN_PREFIXE and cle.startswith(mot)
+        for mot in re.findall(r"\w+", norm)
+    )
+
+
 def detecter_nord(texte: str) -> str | None:
     """Nom d'affichage de la première ville NON cacaoyère du Nord citée, ou ``None``."""
     norm = _normaliser(texte)
     for cle, nom in LOCALITES_NORD.items():
-        if re.search(rf"\b{re.escape(cle)}\b", norm) or _positions_flou(norm, cle):
+        if (
+            re.search(rf"\b{re.escape(cle)}\b", norm)
+            or _positions_flou(norm, cle)
+            or _prefixe_cite(norm, cle)
+        ):
             return nom
+    return None
+
+
+@lru_cache(maxsize=1)
+def localites_cacao() -> frozenset[str]:
+    """Clés normalisées des localités appartenant à une DR cacaoyère.
+
+    Dérivée de ``contacts_zones.yaml``, seule source de vérité du dépôt sur les zones.
+    Une liste saisie à la main dériverait de l'annuaire au premier redécoupage ANADER.
+
+    Returns:
+        L'ensemble des clés normalisées (zones et sièges des DR cacaoyères).
+    """
+    cles: set[str] = set()
+    for dr in _annuaire().get("directions_regionales", []):
+        if dr.get("nom") not in DR_CACAOYERES:
+            continue
+        for libelle in {dr.get("siege", ""), *dr.get("zones", [])}:
+            if libelle:
+                cles.add(_normaliser(libelle))
+    return frozenset(cles)
+
+
+def aptitude_cacao(texte: str) -> tuple[Aptitude, str] | None:
+    """Ce que le dépôt sait de l'aptitude cacaoyère de la localité citée.
+
+    L'ordre d'examen n'est pas indifférent : la deny-list du Nord est **curée à la
+    main** et prime donc sur le découpage administratif, qui la contredirait parfois
+    (Katiola est en DR Centre).
+
+    **Limite assumée** : un village absent du découpage ANADER n'est pas détecté comme
+    lieu. Le reconnaître exigerait de la reconnaissance d'entités nommées, que ce
+    projet n'embarque pas ; ces cas relèvent de la consigne donnée au modèle.
+
+    Args:
+        texte: Texte libre (question, ou fil de conversation).
+
+    Returns:
+        ``(Aptitude, nom d'affichage)``, ou ``None`` si aucune localité connue n'est
+        citée.
+    """
+    nord = detecter_nord(texte)
+    if nord is not None:
+        return (Aptitude.NORD, nord)
+
+    norm = _normaliser(texte)
+    cacaoyeres = localites_cacao()
+    for motif, libelle, canon, _dr in _index():
+        if motif.search(norm) or _positions_flou(norm, libelle):
+            return (
+                (Aptitude.CACAO, canon) if libelle in cacaoyeres else (Aptitude.INDETERMINE, canon)
+            )
     return None
 
 
