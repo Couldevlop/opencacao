@@ -382,6 +382,27 @@ kubectl -n opencacao scale deploy sentinelle --replicas=1
 > de tunnel, et un champ d'URL libre qui reconfigure la production est précisément la
 > surface qu'on refuse d'ouvrir sur une console publique.
 
+> **À FAIRE APRÈS L'ÉVÉNEMENT — OCR des documents scannés (`baidu/Unlimited-OCR`).**
+> Demande de Waopron le 19/08/2026. Constat : la console de curation ingère les PDF
+> avec `pypdf`, qui n'extrait **rien** d'un document scanné. Les pièces FIRCA du dépôt
+> (livre d'or des 20 ans, plaquette SARA 2025, politique LCB-FT) n'ont jamais pu
+> entrer dans le RAG pour cette seule raison.
+>
+> `baidu/Unlimited-OCR` (licence MIT, dérivé des travaux DeepSeek-OCR) est le bon
+> outil et sa licence convient à la thèse souveraine. Trois contraintes à respecter :
+>
+> 1. **C'est un outil de corpus HORS LIGNE**, comme l'enrichissement — il vit dans
+>    `training/` ou `scripts/`, jamais dans l'API. `torch` et `transformers` ne sont
+>    pas dans les dépendances épinglées de la spec §2.1 ; les faire entrer dans
+>    l'image de production serait une régression d'architecture. Seul le TEXTE produit
+>    revient au cluster.
+> 2. **Il est documenté pour GPU** (CUDA 12.9/13.0, bfloat16). Sur CPU il tournerait
+>    en float32, à des heures par document — et sur le CX53 il affamerait l'inférence
+>    qui sert le chat. À exécuter sur un pod GPU, ou en traitement de nuit.
+> 3. **Réindexer le RAG est l'opération à risque** : la régression de rappel de
+>    juillet (0,75 -> 0,27) est partie de là. Mesurer le rappel AVANT et APRÈS, sur le
+>    jeu de questions de `docs/demo/questions.txt`, et garder l'index précédent.
+
 **Effacer le bandeau après un repli** : c'est `jour-j.sh ouvrir` (on repart) ou
 `jour-j.sh fermer` (on clôt l'événement) — les deux remettent `REPLI_CPU=false`.
 `profil.sh cpu` ne l'efface pas volontairement : il bascule le matériel, il ne décide
