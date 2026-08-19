@@ -85,3 +85,17 @@ spec:
       ports:
         - protocol: TCP
           port: 6379
+---
+# La sentinelle ne reçoit RIEN. Elle appelle l'API server et le Service `api` ; personne
+# n'a à l'appeler en retour. Un pod que ne sélectionne aucune politique est en ingress
+# ouvert : ce processus étant le seul capable de patcher la configuration de production,
+# c'est précisément celui qu'il faut fermer en premier.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sentinelle-aucun-ingress
+spec:
+  podSelector:
+    matchLabels: { app: sentinelle }
+  policyTypes: ["Ingress"]
+  # Aucune section `ingress` : tout trafic entrant est refusé.

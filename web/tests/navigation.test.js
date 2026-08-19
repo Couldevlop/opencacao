@@ -12,7 +12,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { monterDom } from "./dom-minimal.js";
-import { appliquerCapacites, creerNavigation, nomDepuisHash } from "../src/ui/navigation.js";
+import {
+  afficherAvisRepli,
+  appliquerCapacites,
+  creerNavigation,
+  nomDepuisHash,
+} from "../src/ui/navigation.js";
 
 test("le changement est signalé pour tenir l'URL à jour", async () => {
   const noeuds = monterDom(["vueChat", "vueParcelle", "lienChat", "lienParcelle"]);
@@ -261,4 +266,100 @@ test("le fragment d'URL désigne la destination", () => {
   assert.equal(nomDepuisHash("#/inconnu", noms, "chat"), "chat");
   // Le fragment vient de la barre d adresse : il n a aucune autorite au-dela du nom.
   assert.equal(nomDepuisHash("#/<script>", noms, "chat"), "chat");
+});
+
+// ---------------------------------------------------------------------------
+// Repli automatique sur CPU — l'écran doit le DIRE, et le dire gentiment.
+// ---------------------------------------------------------------------------
+
+/** Monte les destinations avec, en plus, les deux textes d'annonce et le bandeau. */
+function monterAvecRepli() {
+  const noeuds = monterDom([
+    "vueChat",
+    "vueParcelle",
+    "vueAtelier",
+    "lienChat",
+    "lienParcelle",
+    "lienAtelier",
+    "contenuParcelle",
+    "contenuAtelier",
+    "annonceParcelle",
+    "annonceAtelier",
+    "texteAVenirParcelle",
+    "texteRepliParcelle",
+    "texteAVenirAtelier",
+    "texteRepliAtelier",
+    "bandeauRepli",
+  ]);
+  return {
+    noeuds,
+    destinations: {
+      parcelle: {
+        lien: noeuds.lienParcelle,
+        contenu: noeuds.contenuParcelle,
+        annonce: noeuds.annonceParcelle,
+        texteAVenir: noeuds.texteAVenirParcelle,
+        texteRepli: noeuds.texteRepliParcelle,
+      },
+      atelier: {
+        lien: noeuds.lienAtelier,
+        contenu: noeuds.contenuAtelier,
+        annonce: noeuds.annonceAtelier,
+        texteAVenir: noeuds.texteAVenirAtelier,
+        texteRepli: noeuds.texteRepliAtelier,
+      },
+    },
+  };
+}
+
+test("en repli, une fonction est « en pause » et non « bientôt »", () => {
+  // « Bientot » serait un mensonge : la personne s en servait il y a une minute.
+  const { noeuds, destinations } = monterAvecRepli();
+
+  appliquerCapacites(destinations, { parcelles: false, rapports: false, vision: false }, true);
+
+  assert.equal(noeuds.lienParcelle.getAttribute("data-etat"), "pause");
+  assert.equal(noeuds.texteRepliParcelle.hidden, false);
+  assert.equal(noeuds.texteAVenirParcelle.hidden, true);
+});
+
+test("hors repli, l'annonce reste celle d'une fonction pas encore ouverte", () => {
+  // Contre-epreuve : sans elle, un code qui afficherait TOUJOURS le texte de repli
+  // resterait vert, et la production annoncerait une panne inexistante.
+  const { noeuds, destinations } = monterAvecRepli();
+
+  appliquerCapacites(destinations, { parcelles: false, rapports: false, vision: false }, false);
+
+  assert.equal(noeuds.lienParcelle.getAttribute("data-etat"), "bientot");
+  assert.equal(noeuds.texteRepliParcelle.hidden, true);
+  assert.equal(noeuds.texteAVenirParcelle.hidden, false);
+});
+
+test("le bandeau de repli s'affiche quand l'API le déclare", () => {
+  const { noeuds } = monterAvecRepli();
+  noeuds.bandeauRepli.hidden = true;
+
+  afficherAvisRepli(noeuds.bandeauRepli, true);
+
+  assert.equal(noeuds.bandeauRepli.hidden, false);
+});
+
+test("le bandeau reste masqué en marche normale", () => {
+  const { noeuds } = monterAvecRepli();
+  noeuds.bandeauRepli.hidden = false;
+
+  afficherAvisRepli(noeuds.bandeauRepli, false);
+
+  assert.equal(noeuds.bandeauRepli.hidden, true);
+});
+
+test("API injoignable : le bandeau ne s'invente pas", () => {
+  // Annoncer un repli qui n a pas eu lieu inquieterait pour rien, et un bandeau
+  // affiche par erreur devant 800 personnes est pire qu un silence.
+  const { noeuds } = monterAvecRepli();
+  noeuds.bandeauRepli.hidden = true;
+
+  afficherAvisRepli(noeuds.bandeauRepli, null);
+
+  assert.equal(noeuds.bandeauRepli.hidden, true);
 });

@@ -128,6 +128,11 @@ data:
   # avoir mesuré le budget CPU d'une étude complète.
   RAPPORTS_ENABLED: "false"
   RAPPORTS_DB_PATH: "/data/rapports.db"
+  # Levé par la sentinelle quand elle ramène le service au CPU sans intervention
+  # humaine (deploy/k8s/sentinelle.yaml). Ne change aucun comportement du moteur : il
+  # fait AFFICHER l'avis « service de secours » au lieu de « bientôt », et ferme les
+  # capacités lourdes côté /v1/version. Remis à false par `jour-j.sh ouvrir|fermer`.
+  REPLI_CPU: "false"
   VISION_ENABLED: "false"
   VISION_URL: "http://vision:8000"
   VISION_MODELE: "qwen3-vl"

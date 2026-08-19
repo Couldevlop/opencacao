@@ -23,6 +23,7 @@ resources:
   - networkpolicy.yaml
   - cron-enrichissement.yaml
   - cron-watchdog.yaml
+  - sentinelle.yaml
 
 images:
   - name: opencacao-api

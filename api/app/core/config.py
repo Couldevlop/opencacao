@@ -205,6 +205,14 @@ class Settings(BaseSettings):
     # configuration dégrade le service, elle ne le casse pas.
     profil_materiel: Literal["gpu", "cpu"] = "cpu"
 
+    # Levé par la sentinelle (``app.exploitation.sentinelle``) quand elle a ramené le
+    # service au CPU sans intervention humaine. Il ne change AUCUN comportement du
+    # moteur : il sert à DIRE ce qui se passe. Sans lui, l'interface annoncerait
+    # « bientôt » sur des fonctions qui marchaient une minute plus tôt — ce qui est
+    # faux, et donne l'impression d'un produit inachevé plutôt que d'un service qui
+    # se protège. Remis à ``false`` par ``jour-j.sh ouvrir``.
+    repli_cpu: bool = False
+
     # --- Atelier de livrables (V3, chantier C3) ---
     # OFF par défaut : les routes ne sont montées que si le drapeau est levé, comme
     # pour les parcelles — on vérifie d'abord que le schéma se crée bien sur /data.

@@ -13,6 +13,7 @@ Le redémarrage est un *patch* de l'annotation
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -26,9 +27,35 @@ logger = get_logger(__name__)
 _SA = Path("/var/run/secrets/kubernetes.io/serviceaccount")
 _HOTE_DEFAUT = "https://kubernetes.default.svc"
 
+# Un nom d'objet Kubernetes est un label DNS-1123 : alphanumérique minuscule et tirets,
+# 253 caractères au plus. On le vérifie AVANT de l'insérer dans un chemin d'API.
+# Défense en profondeur : les noms viennent de variables d'environnement, et une valeur
+# empoisonnée (« ../secrets/opencacao-auth ») fabriquerait sinon une requête vers une
+# ressource que le RBAC n'a jamais eu l'intention d'exposer. Le RBAC refuserait
+# probablement — « probablement » n'est pas un contrôle de sécurité.
+_NOM_VALIDE = re.compile(r"^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$")
+
 
 class ClusterIndisponible(Exception):
     """Levée si le redémarrage du déploiement échoue (RBAC, réseau, etc.)."""
+
+
+def valider_nom(nom: str) -> str:
+    """Vérifie qu'un nom de ressource est un label DNS-1123, et le renvoie.
+
+    Args:
+        nom: Nom d'objet Kubernetes à insérer dans un chemin d'API.
+
+    Returns:
+        Le nom, inchangé, s'il est valide.
+
+    Raises:
+        ClusterIndisponible: Si le nom pourrait fabriquer un chemin d'API arbitraire.
+    """
+    if not nom or len(nom) > 253 or not _NOM_VALIDE.match(nom):
+        logger.error("nom_de_ressource_refuse", longueur=len(nom))
+        raise ClusterIndisponible("nom de ressource invalide")
+    return nom
 
 
 class ClusterClient:
@@ -128,6 +155,7 @@ class ClusterClient:
         Raises:
             ClusterIndisponible: Si l'API server refuse ou est injoignable.
         """
+        deployment = valider_nom(deployment)
         url = f"{self._hote}/apis/apps/v1/namespaces/{self._namespace}" f"/deployments/{deployment}"
         patch = {
             "spec": {
@@ -159,3 +187,83 @@ class ClusterClient:
         """Ferme le client HTTP sous-jacent (s'il a été créé)."""
         if self._client is not None:
             await self._client.aclose()
+
+    async def lire_configmap(self, nom: str) -> dict[str, str]:
+        """Lit la section ``data`` d'une ConfigMap.
+
+        Args:
+            nom: Nom de la ConfigMap (ex. ``"api-config"``).
+
+        Returns:
+            Les clés de la ConfigMap ; dictionnaire vide si elle n'en porte aucune.
+
+        Raises:
+            ClusterIndisponible: Si l'API server refuse ou est injoignable.
+        """
+        nom = valider_nom(nom)
+        objet = await self.get_json(f"/api/v1/namespaces/{self._namespace}/configmaps/{nom}")
+        return objet.get("data", {})
+
+    async def _patch(self, url: str, patch: dict, quoi: str) -> None:
+        """Applique un patch de FUSION et lève une exception claire en cas de refus.
+
+        Le type ``merge-patch+json`` est délibéré : il ne touche QUE les clés fournies.
+        Un remplacement effacerait les quarante autres clés de la ConfigMap — dont
+        ``AUTH_EMAIL_FROM``, qu'un incident de juillet a déjà appris à ne pas perdre.
+
+        Args:
+            url: URL absolue de la ressource.
+            patch: Corps du patch.
+            quoi: Description courte, pour le message d'erreur et les journaux.
+
+        Raises:
+            ClusterIndisponible: Si l'API server refuse ou est injoignable.
+        """
+        try:
+            reponse = await self._http().patch(
+                url,
+                content=json.dumps(patch),
+                headers={
+                    "Authorization": f"Bearer {self._token}",
+                    "Content-Type": "application/merge-patch+json",
+                },
+            )
+            reponse.raise_for_status()
+        except httpx.HTTPError as exc:
+            logger.error("patch_echec", quoi=quoi, error=str(exc))
+            raise ClusterIndisponible(f"{quoi} impossible") from exc
+        logger.info("patch_applique", quoi=quoi)
+
+    async def patch_configmap(self, nom: str, data: dict[str, str]) -> None:
+        """Fusionne des clés dans une ConfigMap, sans toucher aux autres.
+
+        Args:
+            nom: Nom de la ConfigMap.
+            data: Clés à écrire ou remplacer.
+
+        Raises:
+            ClusterIndisponible: Si l'API server refuse ou est injoignable.
+        """
+        nom = valider_nom(nom)
+        await self._patch(
+            f"{self._hote}/api/v1/namespaces/{self._namespace}/configmaps/{nom}",
+            {"data": data},
+            f"patch de la ConfigMap {nom}",
+        )
+
+    async def mettre_a_l_echelle(self, deployment: str, repliques: int) -> None:
+        """Fixe le nombre de répliques d'un déploiement.
+
+        Args:
+            deployment: Nom du déploiement.
+            repliques: Nombre de répliques voulu.
+
+        Raises:
+            ClusterIndisponible: Si l'API server refuse ou est injoignable.
+        """
+        deployment = valider_nom(deployment)
+        await self._patch(
+            f"{self._hote}/apis/apps/v1/namespaces/{self._namespace}/deployments/{deployment}",
+            {"spec": {"replicas": repliques}},
+            f"mise à l'échelle de {deployment} à {repliques}",
+        )

@@ -53,9 +53,14 @@ const CAPACITE_PAR_DESTINATION = { parcelle: "parcelles", atelier: "rapports" };
  * @param {object|null} capacites Capacités déclarées par `/v1/version`, ou `null` si
  *   l'API n'a pas répondu — auquel cas on ne touche à RIEN : annoncer « bientôt » sur
  *   une panne passagère serait un mensonge, et masquer serait pire.
+ * @param {boolean} [replie] Vrai quand l'API déclare un repli automatique sur CPU.
+ *   Change le SENS de la fermeture : « en pause » (le service se protège) au lieu de
+ *   « bientôt » (pas encore ouverte). Dire « bientôt » à quelqu'un qui se servait de la
+ *   fonction une minute plus tôt serait faux, et donnerait l'image d'un produit
+ *   inachevé là où il s'agit d'un service qui tient debout.
  * @returns {Array<string>} Les destinations pas encore ouvertes.
  */
-export function appliquerCapacites(destinations, capacites) {
+export function appliquerCapacites(destinations, capacites, replie = false) {
   if (!capacites) return [];
   const fermees = [];
   for (const [nom, capacite] of Object.entries(CAPACITE_PAR_DESTINATION)) {
@@ -65,7 +70,11 @@ export function appliquerCapacites(destinations, capacites) {
     // `data-etat` plutôt qu'une classe : l'état vient du serveur, la feuille de style
     // s'y accroche, et rien dans le code ne dépend d'un nom de classe décoratif.
     if (ouverte) cible.lien.removeAttribute("data-etat");
-    else cible.lien.setAttribute("data-etat", "bientot");
+    else cible.lien.setAttribute("data-etat", replie ? "pause" : "bientot");
+    // Deux textes préparés dans la page, un seul montré : on n'écrit jamais de HTML
+    // depuis le code, et la formulation reste relisible par un humain dans le gabarit.
+    if (cible.texteAVenir) cible.texteAVenir.hidden = replie;
+    if (cible.texteRepli) cible.texteRepli.hidden = !replie;
     cible.annonce.hidden = ouverte;
     cible.contenu.hidden = !ouverte;
     if (!ouverte) fermees.push(nom);
@@ -164,4 +173,23 @@ export function creerNavigation({
     /** Promesse de l'activation en cours — les écouteurs de clic sont asynchrones. */
     enAttente: () => enCours,
   };
+}
+
+/**
+ * Affiche — ou masque — le bandeau qui annonce le repli automatique sur CPU.
+ *
+ * Visible, calme, et non bloquant : la conversation continue de fonctionner, c'est
+ * même tout l'objet du repli. Le bandeau explique ce qui est mis en pause et pourquoi,
+ * sans jargon et sans dramatiser.
+ *
+ * On ne l'affiche QUE sur une déclaration explicite de l'API (`repli_cpu === true`).
+ * Une réponse absente ou illisible laisse le bandeau masqué : afficher un avis de
+ * panne qui n'a pas eu lieu, devant une salle, coûte plus cher qu'un silence.
+ *
+ * @param {object} bandeau Le nœud du bandeau.
+ * @param {boolean|null} replie Ce que déclare `/v1/version`, ou `null` si l'API n'a
+ *   pas répondu.
+ */
+export function afficherAvisRepli(bandeau, replie) {
+  bandeau.hidden = replie !== true;
 }

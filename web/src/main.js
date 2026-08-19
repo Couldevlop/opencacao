@@ -10,7 +10,7 @@ import { creerClientApi } from "./infrastructure/api-client.js";
 import { ecrireCompte, lireCompte } from "./infrastructure/auth-store-local.js";
 import { ecrireSessionActive, lireSessionActive } from "./infrastructure/session-store-local.js";
 import { creerVue } from "./ui/chat-view.js";
-import { appliquerCapacites, creerNavigation, nomDepuisHash } from "./ui/navigation.js";
+import { afficherAvisRepli, appliquerCapacites, creerNavigation, nomDepuisHash } from "./ui/navigation.js";
 import { creerSidebar } from "./ui/sidebar-view.js";
 
 const CLE_API = "opencacao.apiUrl";
@@ -389,26 +389,42 @@ if (vues.chat && vues.parcelle && vues.atelier) {
   // dépend pas de cette réponse et ne doit pas l'attendre.
   (async () => {
     let capacites = null;
+    // `null` tant qu'on ne sait pas : ni « en repli », ni « pas en repli ». La nuance
+    // compte — afficher un avis de panne qui n'a pas eu lieu, devant une salle, coûte
+    // plus cher qu'un silence.
+    let replie = null;
     try {
       const reponse = await fetch(`${baseUrl}/v1/version`);
-      if (reponse.ok) capacites = (await reponse.json()).capacites;
+      if (reponse.ok) {
+        const corps = await reponse.json();
+        capacites = corps.capacites;
+        replie = corps.repli_cpu === true;
+      }
     } catch {
       // API injoignable : on ne masque rien (cf. masquerDestinationsFermees).
     }
+    // Le bandeau AVANT les destinations : si le service est en repli, la première
+    // chose lisible doit être l'explication, pas une porte fermée sans motif.
+    afficherAvisRepli($("bandeauRepli"), replie);
     const fermees = appliquerCapacites(
       {
         parcelle: {
           lien: liensVues.parcelle,
           contenu: $("contenuParcelle"),
           annonce: $("annonceParcelle"),
+          texteAVenir: $("texteAVenirParcelle"),
+          texteRepli: $("texteRepliParcelle"),
         },
         atelier: {
           lien: liensVues.atelier,
           contenu: $("contenuAtelier"),
           annonce: $("annonceAtelier"),
+          texteAVenir: $("texteAVenirAtelier"),
+          texteRepli: $("texteRepliAtelier"),
         },
       },
       capacites,
+      replie === true,
     );
     // Une destination annoncée ne charge pas son module : il appellerait des routes
     // non montées, et l'erreur s'afficherait par-dessus l'annonce.

@@ -1,0 +1,143 @@
+# Sentinelle du profil matériel — repli AUTOMATIQUE vers le CPU (spec V3 §4.5, M6).
+#
+# Pourquoi ce pod existe. La spec arme un repli CPU « chronométré », mais déclenché à la
+# main : quelqu'un doit voir la panne et taper `deploy/scripts/profil.sh cpu`. Pendant
+# la fenêtre GPU d'un événement, ce quelqu'un est sur scène. Une instance louée peut
+# être reprise, un tunnel peut tomber — et l'API continuerait de parler à une adresse
+# morte jusqu'à intervention humaine, devant la salle.
+#
+# La sentinelle sonde l'API toutes les 15 s. Après TROIS échecs consécutifs de
+# l'inférence — et seulement en profil `gpu` — elle rentre au CPU : remonte le
+# déploiement CPU, ramène `INFERENCE_URL` sur le Service interne, DÉLESTE l'atelier et
+# les parcelles (sur CPU l'inférence ne sert qu'une requête à la fois : une étude
+# tuerait la conversation), lève `REPLI_CPU` pour que l'interface l'explique
+# gentiment, puis redémarre l'API et envoie un email.
+#
+# ─── SÉCURITÉ ────────────────────────────────────────────────────────────────────
+# C'est le seul processus du cluster qui peut modifier la configuration de production.
+# Le périmètre est donc fermé par le fichier, pas par la confiance — et vérifié par
+# `api/tests/test_manifeste_sentinelle.py` :
+#
+#   * ServiceAccount dédié : mutualiser celui de la curation donnerait ces pouvoirs à
+#     une console web exposée sur Internet ;
+#   * `get` et `patch` UNIQUEMENT, sur TROIS objets nommés — ni `create`, ni `delete`,
+#     ni joker, ni le moindre accès aux Secrets (le jeton d'authentification et celui
+#     de l'inférence y vivent) ;
+#   * `inference-gpu` volontairement ABSENT des resourceNames : un pod lent n'est pas
+#     un pod mort, et la sentinelle ne doit pas pouvoir détruire ce qu'elle n'a pas su
+#     joindre ;
+#   * conteneur durci : non-root, aucune capacité, aucune élévation de privilège,
+#     racine en lecture seule ;
+#   * aucune surface entrante : ni Service, ni Ingress, et une NetworkPolicy qui ferme
+#     l'ingress (cf. networkpolicy.yaml).
+#
+# Ce qu'elle ne fait JAMAIS : aller vers le GPU (décision humaine, elle engage de
+# l'argent), agir en profil `cpu`, ou parler au modèle — elle n'interroge que
+# `/v1/health` et `/v1/ready` de l'API, ce qui lui évite tout accès à l'inférence que
+# D1 réserve à l'API.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sentinelle
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sentinelle-repli-cpu
+rules:
+  # Lire le profil courant à chaque cycle (la valeur VIT dans la ConfigMap, pas dans
+  # l'environnement du pod : une bascule ne redémarre pas la sentinelle), et y écrire
+  # le retour au CPU.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["api-config"]
+    verbs: ["get", "patch"]
+  # Remonter l'inférence CPU (`spec.replicas`), puis redémarrer l'API pour qu'elle
+  # relise la ConfigMap. Deux objets nommés, deux verbes.
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["inference", "api"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sentinelle-repli-cpu
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sentinelle-repli-cpu
+subjects:
+  - kind: ServiceAccount
+    name: sentinelle
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentinelle
+  labels: { app: sentinelle }
+spec:
+  replicas: 1
+  # Une seule sentinelle à la fois : deux exemplaires pendant un roulement patcheraient
+  # la même ConfigMap et redémarreraient l'API deux fois.
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: sentinelle }
+  template:
+    metadata:
+      labels: { app: sentinelle }
+    spec:
+      serviceAccountName: sentinelle
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: sentinelle
+          image: opencacao-api # tag/registre fixés par kustomization.yaml
+          command: ["python", "-m", "app.exploitation.sentinelle"]
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          env:
+            # Sondes : le Service interne de l'API. On ne passe PAS par le domaine
+            # public — une panne de l'ingress ou de Cloudflare déclencherait alors un
+            # repli que l'inférence ne justifie pas.
+            - { name: API_BASE_INTERNE, value: "http://api:8080" }
+            # TrustedHostMiddleware : la sonde porte le même Host que les probes k8s.
+            - { name: SENTINELLE_HOTE, value: "opencacao.openlabconsulting.com" }
+            - { name: SENTINELLE_INTERVALLE_S, value: "15" }
+            # 3 x 15 s : un repli au bout de ~45 s de panne. Assez pour absorber un
+            # redémarrage progressif de l'inférence, assez court pour qu'une salle ne
+            # décroche pas.
+            - { name: SENTINELLE_SEUIL, value: "3" }
+            - { name: SENTINELLE_TIMEOUT_S, value: "10" }
+            - { name: SENTINELLE_CONFIGMAP, value: "api-config" }
+            - { name: SENTINELLE_DEPLOIEMENT_CPU, value: "inference" }
+            - { name: SENTINELLE_DEPLOIEMENT_API, value: "api" }
+            - { name: SENTINELLE_URL_INTERNE, value: "http://inference:8000" }
+            - { name: LOG_LEVEL, value: "INFO" }
+            - { name: ZEPTOMAIL_API_URL, value: "https://api.zeptomail.com/v1.1/email" }
+            # Expéditeur vérifié dans le Mail Agent ZeptoMail (noreply@ -> SM_147 refusé).
+            - { name: EMAIL_FROM, value: "waopron@openlabconsulting.com" }
+            - { name: EMAIL_FROM_NAME, value: "OpenCacao" }
+            - { name: EMAIL_TEAM, value: "waopron@openlabconsulting.com" }
+            - name: ZEPTOMAIL_TOKEN # optionnel : absent -> email simplement sauté
+              valueFrom:
+                secretKeyRef:
+                  name: opencacao-email
+                  key: ZEPTOMAIL_TOKEN
+                  optional: true
+          resources:
+            requests: { cpu: "20m", memory: "64Mi" }
+            limits: { cpu: "200m", memory: "256Mi" }
+          volumeMounts:
+            # Racine en lecture seule : on donne quand même un /tmp inscriptible, que
+            # la bibliothèque standard peut utiliser, sans ouvrir le reste.
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 16Mi }
+# Pas de Service : rien n'a à lui parler. Pas d'Ingress : elle n'est pas un site.
