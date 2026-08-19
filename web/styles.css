@@ -15,7 +15,14 @@
   --border: #e8e1d8;
   --shadow: 0 1px 2px rgba(43, 38, 32, 0.05), 0 8px 24px rgba(43, 38, 32, 0.06);
   --radius: 16px;
-  --maxw: 820px;
+  /* Colonne de lecture FLUIDE et non plus figée à 820 px : « trop étroite » sur un
+     écran de développement (constat Waopron, 19/08/2026). `min()` la laisse grandir
+     jusqu'à 1080 px quand la place existe, et la ramène à la largeur disponible
+     quand elle manque — sans seuil de média, donc sans écran oublié entre deux
+     paliers, ce qui était précisément le défaut de la première tentative.
+     1080 px reste dans la plage de lecture confortable ; au-delà, l'œil perd la
+     ligne suivante en revenant à la marge gauche. */
+  --maxw: min(1080px, 100%);
   --sidebar-w: 280px;
   --serif: "Iowan Old Style", "Palatino Linotype", Georgia, "Times New Roman", serif;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -598,21 +605,16 @@ body {
   body.avec-sidebar .sidebar-toggle { display: none; }
 }
 
-/* TRÈS grand écran (poste de développement, écran de présentation).
-   Deux défauts constatés par Waopron le 19/08/2026 sur un écran large :
-   la colonne paraissait « trop étroite » et « mal centrée ».
+/* Colonne « mal centrée » sur grand écran (constat Waopron, 19/08/2026).
+   Ce n'était pas une illusion : `padding-left` réservait la place de la barre
+   latérale, mais rien ne la compensait à droite. La colonne se centrait donc dans
+   l'espace RÉSIDUEL, ce qui la décale par rapport au milieu de l'écran, là où l'œil
+   l'attend.
 
-   Le décentrage n'était pas une illusion : `padding-left` réservait la place de la
-   barre latérale, mais rien ne la compensait à droite. La colonne se centrait donc
-   dans l'espace RÉSIDUEL, ce qui la décale visiblement par rapport au milieu de
-   l'écran, là où l'œil l'attend. On rend la marge droite égale à la barre latérale.
-
-   La largeur, elle, reste un compromis : au-delà d'environ 110 caractères par ligne
-   l'œil perd la ligne suivante. On passe de 820 à 960 px, ce qui gagne un quart de
-   surface utile sans quitter la plage de lecture confortable. On ne l'applique qu'à
-   partir de 1600 px, sinon on étoufferait les écrans intermédiaires. */
-@media (min-width: 1600px) {
-  :root { --maxw: 960px; }
+   Le seuil est à 1440 px et pas plus haut : à 1440, retirer deux fois 280 px laisse
+   880 px, encore au-dessus de la colonne. Plus bas, la symétrie étoufferait le texte
+   au lieu de le centrer, ce qui serait un remède pire que le mal. */
+@media (min-width: 1440px) {
   body.avec-sidebar { padding-right: var(--sidebar-w, 280px); }
 }
 
