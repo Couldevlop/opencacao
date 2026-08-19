@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 
 from pydantic import BaseModel, Field
 
@@ -69,6 +70,35 @@ class Tableau:
     lignes: tuple[tuple[str, ...], ...]
 
 
+class TypeGraphique(str, Enum):
+    """Formes disponibles, rendues nativement par chaque format."""
+
+    SECTEURS = "secteurs"
+    BATONS = "batons"
+    LIGNES = "lignes"
+
+
+@dataclass(frozen=True)
+class Graphique:
+    """Une figure prête à rendre, indépendante de tout format de sortie.
+
+    Attributes:
+        titre: Titre affiché au-dessus de la figure.
+        type: Forme à employer.
+        categories: Libellés de l'axe des abscisses (ou des parts).
+        valeurs: Valeurs associées, dans le même ordre que ``categories``.
+        unite: Unité affichée en légende, ou chaîne vide.
+        note: Phrase de lecture placée sous la figure — d'où viennent ces chiffres.
+    """
+
+    titre: str
+    type: TypeGraphique
+    categories: tuple[str, ...]
+    valeurs: tuple[float, ...]
+    unite: str = ""
+    note: str = ""
+
+
 @dataclass(frozen=True)
 class Manifeste:
     """De quoi rejouer le document — la souveraineté rendue vérifiable.
@@ -109,6 +139,8 @@ class Document:
         sous_titre: Sous-titre (sujet, parcelle, direction régionale…).
         sections: Sections rédigées, dans l'ordre du gabarit.
         tableaux: Tableaux de données réelles.
+        graphiques: Figures du socle analytique, dérivées des affirmations — jamais
+            demandées au modèle, jamais estimées (cf. ``services.rendu.graphiques``).
         manifeste: Manifeste de génération.
         mention: Mention non contournable affichée en tête (D5), ou chaîne vide.
         resume: Synthèse d'ouverture, rédigée À PARTIR des sections déjà écrites — donc
@@ -122,6 +154,7 @@ class Document:
     sections: tuple[Section, ...]
     tableaux: tuple[Tableau, ...]
     manifeste: Manifeste
+    graphiques: tuple[Graphique, ...] = field(default_factory=tuple)
     mention: str = ""
     resume: str = ""
     conclusion: str = ""

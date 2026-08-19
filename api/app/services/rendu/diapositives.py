@@ -14,9 +14,11 @@ from __future__ import annotations
 import io
 
 from pptx import Presentation
-from pptx.util import Pt
+from pptx.chart.data import CategoryChartData
+from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
+from pptx.util import Inches, Pt
 
-from app.models.rapport import Document
+from app.models.rapport import Document, Graphique, Tableau, TypeGraphique
 from app.services.rendu.ooxml import texte_xml_sur
 
 # Auteur inscrit dans les métadonnées du fichier livré.
@@ -25,6 +27,8 @@ _AUTEUR = "OpenCacao — OpenLab Consulting"
 # Dispositions du thème par défaut de python-pptx.
 _DISPOSITION_TITRE = 0
 _DISPOSITION_TITRE_CONTENU = 1
+# Disposition « titre seul » : une figure ou un tableau occupe la place du texte.
+_DISPOSITION_TITRE_SEUL = 5
 
 # Une diapositive lue de loin ne tient pas les 800 caractères d'une section : on
 # tronque proprement plutôt que de laisser le texte déborder hors du cadre.
@@ -52,6 +56,60 @@ def _tronquer(texte: str) -> str:
     if len(propre) <= CORPS_MAX:
         return propre
     return propre[: CORPS_MAX - 1].rstrip() + "…"
+
+
+# Une figure occupe la diapositive sous son titre, marges comprises.
+_FIGURE = (Inches(0.9), Inches(1.6), Inches(7.6), Inches(4.6))
+
+_FORMES = {
+    TypeGraphique.SECTEURS: XL_CHART_TYPE.PIE,
+    TypeGraphique.BATONS: XL_CHART_TYPE.COLUMN_CLUSTERED,
+    TypeGraphique.LIGNES: XL_CHART_TYPE.LINE_MARKERS,
+}
+
+
+def _diapositive_graphique(presentation, graphique: Graphique) -> None:
+    """Ajoute une diapositive portant une figure NATIVE (pas une image).
+
+    Args:
+        presentation: Présentation en construction.
+        graphique: Figure à tracer.
+    """
+    diapositive = presentation.slides.add_slide(presentation.slide_layouts[_DISPOSITION_TITRE_SEUL])
+    diapositive.shapes.title.text = _propre(graphique.titre)
+    donnees = CategoryChartData()
+    donnees.categories = [_propre(c) for c in graphique.categories]
+    donnees.add_series(_propre(graphique.unite or graphique.titre), graphique.valeurs)
+    cadre = diapositive.shapes.add_chart(_FORMES[graphique.type], *_FIGURE, donnees)
+    graphe = cadre.chart
+    if graphique.type is TypeGraphique.SECTEURS:
+        graphe.has_legend = True
+        graphe.legend.position = XL_LEGEND_POSITION.RIGHT
+        graphe.legend.include_in_layout = False
+    else:
+        graphe.has_legend = False
+
+
+def _diapositive_tableau(presentation, tableau: Tableau) -> None:
+    """Ajoute une diapositive portant un tableau.
+
+    Le deck n'en rendait aucun : une étude défilait à l'écran sans jamais montrer un
+    chiffre, alors que le Word les portait.
+
+    Args:
+        presentation: Présentation en construction.
+        tableau: Tableau à rendre.
+    """
+    diapositive = presentation.slides.add_slide(presentation.slide_layouts[_DISPOSITION_TITRE_SEUL])
+    diapositive.shapes.title.text = _propre(tableau.titre)
+    lignes, colonnes = len(tableau.lignes) + 1, len(tableau.entetes)
+    forme = diapositive.shapes.add_table(lignes, colonnes, *_FIGURE)
+    grille = forme.table
+    for rang, entete in enumerate(tableau.entetes):
+        grille.cell(0, rang).text = _propre(entete)
+    for numero, ligne in enumerate(tableau.lignes, start=1):
+        for rang, valeur in enumerate(ligne):
+            grille.cell(numero, rang).text = _tronquer(_propre(valeur))
 
 
 def rendu_pptx(document: Document) -> bytes:
@@ -96,6 +154,12 @@ def rendu_pptx(document: Document) -> bytes:
         for paragraphe in cadre.paragraphs:
             for run in paragraphe.runs:
                 run.font.size = Pt(_TAILLE_CORPS)
+
+    for graphique in document.graphiques:
+        _diapositive_graphique(presentation, graphique)
+
+    for tableau in document.tableaux:
+        _diapositive_tableau(presentation, tableau)
 
     manifeste = document.manifeste
     finale = presentation.slides.add_slide(presentation.slide_layouts[_DISPOSITION_TITRE_CONTENU])

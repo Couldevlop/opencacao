@@ -47,6 +47,7 @@ from app.services.prompts_redaction import (
     SYSTEM_PROMPT_REDACTION,
     consigne_section,
 )
+from app.services.rendu import graphiques
 
 logger = get_logger(__name__)
 
@@ -487,7 +488,15 @@ class MoteurRedaction:
             titre=gabarit.titre.format(sujet=sujet),
             sous_titre=gabarit.sous_titre.format(sujet=sujet),
             sections=tuple(sections),
-            tableaux=(),
+            # Socle analytique commun à TOUTE étude : la base probante du document,
+            # comptée sur les affirmations réellement collectées. Rien n'est demandé au
+            # modèle et rien n'est estimé — c'est ce qui permet d'en mettre partout.
+            tableaux=tuple(
+                tableau
+                for tableau in (graphiques.tableau_des_sources(tuple(sections)),)
+                if tableau is not None
+            ),
+            graphiques=graphiques.socle_analytique(tuple(sections)),
             manifeste=manifeste,
             mention=gabarit.mention,
             resume=resume,

@@ -15,11 +15,17 @@ from __future__ import annotations
 import io
 
 from docx import Document as DocxDocument
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
+from docx.opc.packuri import PackURI
+from docx.opc.part import Part
+from docx.oxml import parse_xml
 from docx.shared import Pt, RGBColor
 
 from app.application.provenance import tableau_de_provenance
-from app.models.rapport import Document, Tableau
+from app.models.rapport import Document, Graphique, Tableau
 from app.services.rendu.ooxml import texte_xml_sur
+from app.services.rendu.ooxml_graphique import TYPE_CONTENU as TYPE_CONTENU_GRAPHIQUE
+from app.services.rendu.ooxml_graphique import partie_graphique
 
 # Auteur inscrit dans les métadonnées du fichier livré.
 _AUTEUR = "OpenCacao — OpenLab Consulting"
@@ -112,6 +118,54 @@ def _identifier(proprietes, document: Document) -> None:
     proprietes.modified = document.manifeste.genere_le
 
 
+# Dimensions d'une figure en unités anglaises (EMU) : 914 400 EMU par pouce. 15,24 cm de
+# large tient dans les marges par défaut d'un A4 portrait sans déborder.
+_LARGEUR_FIGURE = 5486400
+_HAUTEUR_FIGURE = 3200400
+
+
+def _inserer_graphique(docx: Document, graphique: Graphique, rang: int) -> None:
+    """Ajoute une figure NATIVE au document Word.
+
+    ``python-docx`` n'a pas d'API de graphique : on crée la partie nous-mêmes, on la
+    relie au document, et on insère le cadre qui la référence. Le type de contenu est
+    porté par la partie — le rédacteur de paquet écrit alors l'override qui va bien dans
+    ``[Content_Types].xml``, sans quoi Word refuse d'ouvrir le fichier.
+
+    Args:
+        docx: Document Word en construction.
+        graphique: Figure à tracer.
+        rang: Rang de la figure, qui fixe le nom de la partie (chart1, chart2…).
+    """
+    partie = Part(
+        PackURI(f"/word/charts/chart{rang}.xml"),
+        TYPE_CONTENU_GRAPHIQUE,
+        partie_graphique(graphique),
+        docx.part.package,
+    )
+    identifiant = docx.part.relate_to(partie, RT.CHART)
+    cadre = parse_xml(
+        '<w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        '<w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:drawing '
+        'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">'
+        f'<wp:inline distT="0" distB="0" distL="0" distR="0">'
+        f'<wp:extent cx="{_LARGEUR_FIGURE}" cy="{_HAUTEUR_FIGURE}"/>'
+        '<wp:docPr id="{rang}" name="Figure {rang}"/>'
+        '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+        '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart">'
+        '<c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+        'r:id="{rid}"/></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>'.format(
+            rang=rang, rid=identifiant
+        )
+    )
+    docx.element.body.append(cadre)
+    if graphique.note:
+        # La note dit d'où viennent les chiffres. Sans elle, une figure est une
+        # affirmation de plus — exactement ce que ce projet refuse.
+        _paragraphe(docx, graphique.note, taille=9, couleur=_GRIS, italique=True)
+
+
 def rendu_word(document: Document) -> bytes:
     """Rend le document au format Word.
 
@@ -171,6 +225,11 @@ def rendu_word(document: Document) -> bytes:
     if document.conclusion:
         _paragraphe(docx, "Conclusion", taille=15, gras=True, couleur=_ORANGE)
         _paragraphe(docx, document.conclusion)
+
+    if document.graphiques:
+        _paragraphe(docx, "Base probante du document", taille=15, gras=True, couleur=_ORANGE)
+        for rang, graphique in enumerate(document.graphiques, start=1):
+            _inserer_graphique(docx, graphique, rang)
 
     for tableau in document.tableaux:
         _tableau_word(docx, tableau)
