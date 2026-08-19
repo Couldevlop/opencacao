@@ -23,10 +23,22 @@ kubectl -n "${NS}" patch configmap api-config --type merge \
 kubectl -n "${NS}" set image deployment/api api="${API}"
 kubectl -n "${NS}" set image deployment/curation curation="${API}"
 kubectl -n "${NS}" set image deployment/web web="${WEB}"
+# La sentinelle tourne sur la MÊME image que l'API (elle importe app/). L'oublier ici
+# la laisserait sur une image périmée : elle continuerait de veiller, mais avec le code
+# d'hier — et un jour, avec un code qui ne connaît plus les clés qu'elle écrit.
+# Testée d'abord : elle n'existe pas encore sur les clusters d'avant le 19/08.
+if kubectl -n "${NS}" get deploy sentinelle >/dev/null 2>&1; then
+  kubectl -n "${NS}" set image deployment/sentinelle sentinelle="${API}"
+else
+  echo "ℹ sentinelle absente du cluster — rien à basculer (cf. deploy/k8s/sentinelle.yaml)"
+fi
 
 kubectl -n "${NS}" rollout status deployment/api --timeout=300s
 kubectl -n "${NS}" rollout status deployment/web --timeout=300s
 kubectl -n "${NS}" rollout status deployment/curation --timeout=300s
+if kubectl -n "${NS}" get deploy sentinelle >/dev/null 2>&1; then
+  kubectl -n "${NS}" rollout status deployment/sentinelle --timeout=300s
+fi
 
 # Purge du cache de réponses (cache:chat:*) : ceinture + bretelles avec la clé
 # versionnée — garantit qu'aucune réponse post-traitée par l'ancienne image n'est

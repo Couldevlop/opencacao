@@ -151,6 +151,23 @@
       </div>
     </header>
 
+    <!-- Avis de repli automatique. Affiché UNIQUEMENT si /v1/version déclare
+         `repli_cpu` : la sentinelle a ramené le service sur les serveurs de secours
+         sans intervention humaine. Le ton est délibéré — ni alarme rouge, ni jargon :
+         ce qui marche encore est dit avant ce qui est en pause, et la conversation,
+         qui est le produit, continue. `role="status"` et non `alert` : c'est une
+         information, elle ne doit pas interrompre un lecteur d'écran en pleine phrase. -->
+    <aside class="bandeau-repli" id="bandeauRepli" role="status" aria-live="polite" hidden>
+      <span class="bandeau-repli-icone" aria-hidden="true">◐</span>
+      <p>
+        <strong>Service de secours</strong> — nous servons actuellement OpenCacao sur
+        nos serveurs de repli. <strong>La conversation fonctionne normalement.</strong>
+        L'atelier de documents et le suivi de parcelle sont mis en pause le temps du
+        rétablissement, pour garder le conseil rapide pour tout le monde. Merci de
+        votre patience.
+      </p>
+    </aside>
+
     <!-- ================= Destination 1 : la conversation ================= -->
     <section class="vue" id="vueChat">
     <main class="chat" id="chat">
@@ -209,9 +226,14 @@
             Vous pourrez y enregistrer vos parcelles, en faire le tour au GPS pour en
             calculer la superficie, et y déposer des photos depuis votre téléphone.
           </p>
-          <p class="aide">
+          <p class="aide" id="texteAVenirParcelle">
             La fonction est prête ; elle n'est pas encore ouverte au public. En
             attendant, posez vos questions dans la conversation.
+          </p>
+          <p class="aide" id="texteRepliParcelle" hidden>
+            Le suivi de parcelle est momentanément en pause : le service tourne sur ses
+            machines de secours. Vos parcelles et vos photos sont conservées — rien
+            n'est perdu, tout revient au rétablissement.
           </p>
         </section>
       </main>
@@ -349,9 +371,17 @@
             en Word, Excel et PowerPoint — chacun accompagné des sources qui l'ont
             nourri, et disant lui-même ce que ces sources ne permettent pas d'établir.
           </p>
-          <p class="aide">
+          <p class="aide" id="texteAVenirAtelier">
             La fonction est prête ; elle n'est pas encore ouverte au public. En
             attendant, posez vos questions dans la conversation.
+          </p>
+          <!-- Montré à la place du précédent pendant un repli : « bientôt » serait
+               faux pour quelqu'un qui s'en servait une minute plus tôt. -->
+          <p class="aide" id="texteRepliAtelier" hidden>
+            L'atelier est momentanément en pause : le service tourne sur ses machines
+            de secours, et une étude y monopoliserait le moteur au détriment de la
+            conversation. Il revient dès le rétablissement — vos documents déjà
+            produits restent disponibles.
           </p>
         </section>
       </main>

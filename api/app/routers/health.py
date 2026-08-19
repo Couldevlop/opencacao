@@ -36,19 +36,26 @@ async def ready(
 @router.get("/version", response_model=VersionResponse)
 async def version(settings: Settings = Depends(get_settings)) -> VersionResponse:
     """Retourne les versions de l'API et du modèle."""
+    # En repli, on ne promet RIEN de lourd, même si un drapeau a été oublié à `true`.
+    # Sur CPU l'inférence ne sert qu'une requête à la fois : une étude ou une analyse de
+    # parcelle monopoliserait le moteur et la conversation mourrait avec — or c'est la
+    # conversation qu'on protège. Ceinture ET bretelles : la sentinelle baisse déjà les
+    # drapeaux, ceci tient même si son patch a échoué.
+    replie = settings.repli_cpu
     return VersionResponse(
         api_version=settings.api_version,
         model_name=settings.model_name,
         model_version=settings.model_version,
         inference_backend=settings.inference_backend,
         profil_materiel=settings.profil_materiel,
+        repli_cpu=replie,
         capacites=Capacites(
-            parcelles=settings.parcelles_enabled,
-            rapports=settings.rapports_enabled,
+            parcelles=settings.parcelles_enabled and not replie,
+            rapports=settings.rapports_enabled and not replie,
             # Le drapeau ne suffit pas : le VLM ne tient que sur GPU (spec §7.7). En
             # profil CPU l'API répond une indisponibilité explicite — l'interface ne
             # doit donc pas proposer la capacité, sous peine de promettre ce qui ne
             # viendra pas.
-            vision=settings.vision_enabled and settings.profil_materiel == "gpu",
+            vision=settings.vision_enabled and settings.profil_materiel == "gpu" and not replie,
         ),
     )

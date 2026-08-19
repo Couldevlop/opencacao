@@ -105,4 +105,7 @@ class VersionResponse(BaseModel):
     # Déclaré à côté du backend, qui dit COMMENT on sert ; celui-ci dit AVEC QUOI.
     # Utile en scène : on vérifie d'un coup d'œil sur quoi tourne la production.
     profil_materiel: str
+    # Vrai quand la sentinelle a ramené le service au CPU d'elle-même. L'interface s'en
+    # sert pour afficher un avis honnête — « service de secours », et non « bientôt ».
+    repli_cpu: bool = False
     capacites: Capacites

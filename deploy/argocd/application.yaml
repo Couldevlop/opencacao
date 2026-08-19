@@ -54,6 +54,46 @@ spec:
     server: https://kubernetes.default.svc
     namespace: opencacao
 
+
+  # ── Ce que Git NE tient PAS ────────────────────────────────────
+  # `selfHeal: true` ré-applique l'état du dépôt dès qu'il constate une dérive. C'est
+  # exactement ce qu'on veut pour une image ou une politique réseau — et exactement ce
+  # qu'il ne faut PAS pour la bascule matérielle, qui est une décision d'exploitation
+  # prise dans le cluster, pas dans un commit.
+  #
+  # Sans ces exceptions, ArgoCD DÉFERAIT le repli : quelques minutes après que la
+  # sentinelle (ou `profil.sh cpu`) a ramené le service au CPU, il remettrait
+  # `INFERENCE_URL` sur le GPU mort, rabaisserait `inference` à 0 réplique et ferait
+  # disparaître l'avis affiché à l'écran. Le service repartirait vers la panne dont il
+  # venait de sortir, tout seul, sans que personne ne comprenne pourquoi.
+  #
+  # On n'ignore que les champs réellement pilotés à chaud, un par un — jamais la
+  # ressource entière : le reste de la ConfigMap doit continuer d'être tenu par Git.
+  ignoreDifferences:
+    - group: ""
+      kind: ConfigMap
+      name: api-config
+      jsonPointers:
+        - /data/PROFIL_MATERIEL
+        - /data/INFERENCE_BACKEND
+        - /data/INFERENCE_URL
+        - /data/VISION_ENABLED
+        - /data/RAPPORTS_ENABLED
+        - /data/PARCELLES_ENABLED
+        - /data/REPLI_CPU
+    # Le nombre de répliques d'inférence EST la bascule (`kubectl scale`). Le manifeste
+    # déclare l'état de repos ; le cluster porte l'état du moment.
+    - group: apps
+      kind: Deployment
+      name: inference
+      jsonPointers:
+        - /spec/replicas
+    - group: apps
+      kind: Deployment
+      name: inference-gpu
+      jsonPointers:
+        - /spec/replicas
+
   syncPolicy:
     automated:
       prune: true # supprime les ressources retirées du kustomize

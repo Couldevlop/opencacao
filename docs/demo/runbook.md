@@ -305,6 +305,72 @@ ne repaiera pas la création de l'objet.
 
 ---
 
+## 2.5 Le repli AUTOMATIQUE — la sentinelle
+
+`profil.sh cpu` suppose **quelqu'un pour le taper**. Pendant la présentation, ce
+quelqu'un est sur scène. La sentinelle (`deploy/k8s/sentinelle.yaml`) comble ce trou :
+c'est un pod qui sonde l'API et rentre au CPU tout seul.
+
+**Ce qu'elle fait.** Toutes les **15 s**, elle interroge `/v1/health` puis `/v1/ready`
+sur le Service interne. Après **3 échecs consécutifs de l'inférence** (~45 s) — et
+seulement si `PROFIL_MATERIEL` vaut `gpu` — elle :
+
+1. remonte `inference` (CPU) à 1 réplique ;
+2. patche la ConfigMap : `PROFIL_MATERIEL=cpu`, `INFERENCE_BACKEND=llama-cpp`,
+   `INFERENCE_URL=http://inference:8000` ;
+3. **déleste** : `RAPPORTS_ENABLED=false`, `PARCELLES_ENABLED=false`,
+   `VISION_ENABLED=false` ;
+4. lève `REPLI_CPU=true` — ce qui fait afficher le bandeau « service de secours » ;
+5. redémarre l'API, puis envoie un email.
+
+**Pourquoi le délestage.** Sur CPU, l'inférence ne sert **qu'une requête à la fois**.
+Une étude lancée pendant un repli monopoliserait le moteur plusieurs minutes et la
+conversation — le produit — mourrait avec. On garde ce qui est regardé en direct.
+*Noter la divergence avec `jour-j.sh fermer`, qui laisse les parcelles ouvertes : une
+fermeture est délibérée et calme, un repli est subi et se produit devant une salle.*
+
+**Ce qu'elle ne fait JAMAIS**, et c'est ce qui la rend sûre :
+
+| Jamais | Pourquoi |
+|---|---|
+| Aller vers le GPU | Ça coûte de l'argent et engage un fournisseur : décision humaine |
+| Agir en profil `cpu` | Sinon une maintenance délibérée devient une lutte contre une boucle |
+| Éteindre `inference-gpu` | Un pod lent n'est pas un pod mort. `inference-gpu` n'est même pas dans son RBAC |
+| Replier sur une panne d'API | Si `/v1/health` ne répond pas, ce n'est pas l'inférence : elle alerte, elle n'agit pas |
+| Parler au modèle | Elle n'interroge que la santé de l'API — D1 réserve l'inférence à l'API |
+
+**Ce que la salle voit.** Un bandeau ambre sous l'en-tête : *« Service de secours — nous
+servons actuellement OpenCacao sur nos serveurs de repli. La conversation fonctionne
+normalement. L'atelier de documents et le suivi de parcelle sont mis en pause… »* Les
+deux destinations restent visibles, marquées **« en pause »** et non « bientôt » — dire
+« bientôt » à quelqu'un qui s'en servait une minute plus tôt serait faux.
+
+**Vérifier qu'elle veille :**
+
+```bash
+kubectl -n opencacao get deploy sentinelle
+kubectl -n opencacao logs deploy/sentinelle --tail=20   # une ligne `sentinelle_cycle` toutes les 15 s
+```
+
+**La désarmer** (répétition d'une bascule à la main, sans qu'elle contrarie) :
+
+```bash
+kubectl -n opencacao scale deploy sentinelle --replicas=0
+# … puis la réarmer :
+kubectl -n opencacao scale deploy sentinelle --replicas=1
+```
+
+> **À faire avant de répéter la bascule (§2.3) : la désarmer.** Sinon, pendant les
+> minutes de chargement du modèle sur le GPU, elle constatera trois échecs et rentrera
+> au CPU au milieu de votre répétition — en faisant exactement son travail.
+
+**Effacer le bandeau après un repli** : c'est `jour-j.sh ouvrir` (on repart) ou
+`jour-j.sh fermer` (on clôt l'événement) — les deux remettent `REPLI_CPU=false`.
+`profil.sh cpu` ne l'efface pas volontairement : il bascule le matériel, il ne décide
+pas de ce que le service promet.
+
+---
+
 ## 3. Les drapeaux de la V3
 
 Trois fonctionnalités sont livrées mais **coupées**, chacune par un drapeau. Les
@@ -315,6 +381,7 @@ activer se fait à chaud, sans redéploiement d'image.
 | `PARCELLES_ENABLED` | `false` | Parcelles et captures terrain (C1) | Crée `parcelles.db` sur `/data` |
 | `VISION_ENABLED` | `false` | Analyse visuelle des captures (C2) | **Inerte sans GPU** : `PROFIL_MATERIEL` doit valoir `gpu`, sinon l'API répond 503 |
 | `RAPPORTS_ENABLED` | `false` | Atelier de livrables (C3) | Une étude enchaîne **une génération par section** : mesurer le budget CPU total avant |
+| `REPLI_CPU` | `false` | *(n'ouvre rien)* Affiche l'avis « service de secours » et ferme les capacités lourdes | **Levé par la sentinelle, pas à la main** (§2.5). Remis à `false` par `jour-j.sh ouvrir\|fermer` |
 
 ```bash
 kubectl -n opencacao patch configmap api-config --type merge \
@@ -382,7 +449,8 @@ L'ordre compte : chaque palier est plus sûr et plus rapide que le précédent.
 | Palier | Quand | Comment |
 |---|---|---|
 | **1. Couper la fonctionnalité fautive** | Une seule brique déraille | Passer son drapeau à `false` + `rollout restart deploy/api` (~1 min) |
-| **2. Repli CPU** | Le GPU lâche ou vLLM ne charge pas | §2.4 (chronométré à l'avance) |
+| **2. Repli CPU AUTOMATIQUE** | Le GPU lâche pendant la présentation | **Rien à faire** : la sentinelle rentre au CPU en ~45 s et le dit à l'écran (§2.5) |
+| **2 bis. Repli CPU manuel** | On veut devancer la sentinelle, ou elle est désarmée | §2.4 (chronométré à l'avance) |
 | **3. Retour arrière d'image** | La version déployée est en cause | `roll-image.sh TAG_PRECEDENT` |
 | **4. Hors-ligne** | Le service est inaccessible | Captures d'écran et enregistrements préparés — voir ci-dessous |
 

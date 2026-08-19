@@ -71,9 +71,13 @@ ouvrir() {
 
   echo
   echo "═══ 3/4  Ouverture des fonctionnalités ═══"
+  # REPLI_CPU redescend ici : si la sentinelle avait ramené le service au CPU d'elle-même
+  # (cf. deploy/k8s/sentinelle.yaml), l'interface affiche encore l'avis « service de
+  # secours ». Rouvrir sans l'effacer laisserait un bandeau qui ment.
   drapeaux "{\"data\":{
     \"PARCELLES_ENABLED\":\"true\",
     \"RAPPORTS_ENABLED\":\"true\",
+    \"REPLI_CPU\":\"false\",
     \"VISION_ENABLED\":\"${VISION}\"
   }}"
 
@@ -98,8 +102,14 @@ fermer() {
   # prévoit la file nocturne par cron pour cet usage ; elle n'existe pas encore.
   #
   # PARCELLES_ENABLED reste levé : la cartographie ne mobilise aucun modèle.
+  # PARCELLES_ENABLED est REMIS à true, pas seulement laissé : un repli automatique
+  # l'aura peut-être baissé pendant l'événement, et fermer proprement veut dire revenir
+  # à l'état de service normal, pas hériter d'un état d'incident. REPLI_CPU redescend
+  # pour la même raison : la fin de l'événement est une décision, pas une panne.
   drapeaux '{"data":{
+    "PARCELLES_ENABLED":"true",
     "RAPPORTS_ENABLED":"false",
+    "REPLI_CPU":"false",
     "VISION_ENABLED":"false"
   }}'
 
