@@ -79,9 +79,13 @@ export function appliquerCapacites(destinations, capacites, replie = false, prof
     // Le repli reste prioritaire : « le service se protège » se lit avant sa cause.
     else if (replie) cible.lien.setAttribute("data-etat", "pause");
     else cible.lien.setAttribute("data-etat", profil === "cpu" ? "gpu" : "bientot");
-    // Deux textes préparés dans la page, un seul montré : on n'écrit jamais de HTML
+    // TROIS textes préparés dans la page, un seul montré : on n'écrit jamais de HTML
     // depuis le code, et la formulation reste relisible par un humain dans le gabarit.
-    if (cible.texteAVenir) cible.texteAVenir.hidden = replie;
+    // Le message doit dire la même vérité que la pastille — sur CPU, « pas encore
+    // ouverte au public » était faux pour une fonction qui servait le matin même.
+    const surCpu = !replie && profil === "cpu";
+    if (cible.texteAVenir) cible.texteAVenir.hidden = replie || surCpu;
+    if (cible.texteGpu) cible.texteGpu.hidden = !surCpu;
     if (cible.texteRepli) cible.texteRepli.hidden = !replie;
     cible.annonce.hidden = ouverte;
     cible.contenu.hidden = !ouverte;

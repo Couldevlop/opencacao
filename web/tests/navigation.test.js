@@ -404,3 +404,55 @@ test("sans profil connu, le libelle ne change pas", () => {
 
   assert.equal(noeuds.lienParcelle.getAttribute("data-etat"), "bientot");
 });
+
+function monterTrois() {
+  const noeuds = monterDom([
+    "lienParcelle", "contenuParcelle", "annonceParcelle",
+    "texteAVenirParcelle", "texteGpuParcelle", "texteRepliParcelle",
+  ]);
+  return {
+    noeuds,
+    destinations: {
+      parcelle: {
+        lien: noeuds.lienParcelle,
+        contenu: noeuds.contenuParcelle,
+        annonce: noeuds.annonceParcelle,
+        texteAVenir: noeuds.texteAVenirParcelle,
+        texteGpu: noeuds.texteGpuParcelle,
+        texteRepli: noeuds.texteRepliParcelle,
+      },
+    },
+  };
+}
+
+test("sur CPU, l annonce explique que la bascule GPU rendra tout fonctionnel", () => {
+  // Demande Waopron, 20/08 : le panneau disait « pas encore ouverte au public » — faux,
+  // la fonction a servi le matin meme. Il doit dire ou en est le service, et que la
+  // bascule sur GPU la remet en marche.
+  const { noeuds, destinations } = monterTrois();
+
+  appliquerCapacites(destinations, { parcelles: false }, false, "cpu");
+
+  assert.equal(noeuds.texteGpuParcelle.hidden, false);
+  assert.equal(noeuds.texteAVenirParcelle.hidden, true);
+  assert.equal(noeuds.texteRepliParcelle.hidden, true);
+});
+
+test("pendant un repli, c est le message de repli qui prime", () => {
+  const { noeuds, destinations } = monterTrois();
+
+  appliquerCapacites(destinations, { parcelles: false }, true, "cpu");
+
+  assert.equal(noeuds.texteRepliParcelle.hidden, false);
+  assert.equal(noeuds.texteGpuParcelle.hidden, true);
+  assert.equal(noeuds.texteAVenirParcelle.hidden, true);
+});
+
+test("sans profil connu, on garde le message d origine", () => {
+  const { noeuds, destinations } = monterTrois();
+
+  appliquerCapacites(destinations, { parcelles: false });
+
+  assert.equal(noeuds.texteAVenirParcelle.hidden, false);
+  assert.equal(noeuds.texteGpuParcelle.hidden, true);
+});

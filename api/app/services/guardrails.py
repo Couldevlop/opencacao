@@ -459,18 +459,29 @@ _TERMES_ANCRAGE_CI = (
 )
 
 
-# Termes signalant une intention de CULTURE de cacao (vs simple mention de la ville,
-# ex. demande de contact ANADER) : la correction ne se déclenche que si l'un apparaît.
+# Termes signalant une INTENTION de culture (vs simple mention de la ville, ex. demande
+# de contact ANADER) : la correction ne se déclenche que si l'un apparaît dans la
+# question COURANTE.
+#
+# « cacao », « cacaoyer » et « cacaoyere » en ont été RETIRÉS le 20/08. Ce sont les noms
+# de la culture, pas des intentions — et « cacao » est le mot le plus fréquent du
+# produit : presque toute question le porte, de sorte que la condition ne filtrait plus
+# rien. Vécu en production : « Quel est le prix du cacao ? », posé après un tour citant
+# Katiola, recevait le refus « zone de savane du Nord ». Nommer le cacao n'est pas
+# vouloir en planter.
 _TERMES_ZONE_DECLENCHEUR = (
-    "cacao",
-    "cacaoyer",
-    "cacaoyere",
     "cultiver",
     "culture",
     "planter",
     "plantation",
     "champ",
+    # Les deux formes : « pousser » ne matche pas « pousse-t-il », et c'est « cacao »
+    # qui rattrapait ce cas avant son retrait. Deux tests l'ont montré — sans eux, la
+    # règle se serait affaiblie en silence sur la question la plus naturelle qui soit :
+    # « Le cacao pousse-t-il à Odienné ? »
     "pousser",
+    "pousse",
+    "poussent",
     "propice",
     "adapte",
     "convient",

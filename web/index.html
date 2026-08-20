@@ -222,7 +222,7 @@
            laisserait croire qu'elle n'existe pas. -->
       <main class="parcelle-page a-venir" id="annonceParcelle" hidden>
         <section class="carte">
-          <h2>Ma parcelle arrive bientôt</h2>
+          <h2>Ma parcelle</h2>
           <p>
             Vous pourrez y enregistrer vos parcelles, en faire le tour au GPS pour en
             calculer la superficie, et y déposer des photos depuis votre téléphone.
@@ -230,6 +230,16 @@
           <p class="aide" id="texteAVenirParcelle">
             La fonction est prête ; elle n'est pas encore ouverte au public. En
             attendant, posez vos questions dans la conversation.
+          </p>
+          <!-- Montré quand le service tourne sur CPU sans incident : la fonction
+               existe et a déjà servi, elle attend seulement la carte graphique. -->
+          <p class="aide" id="texteGpuParcelle" hidden>
+            Le service tourne actuellement sur nos machines de secours, sans carte
+            graphique. Le suivi de parcelle demande cette carte : le parcours GPS et
+            l'analyse des photos y sont trop lourds pour le processeur, qui doit rester
+            disponible pour la conversation. <strong>Dès la bascule sur GPU, tout
+            redevient fonctionnel</strong> — vos parcelles et vos photos sont conservées,
+            rien n'est perdu.
           </p>
           <p class="aide" id="texteRepliParcelle" hidden>
             Le suivi de parcelle est momentanément en pause : le service tourne sur ses
@@ -366,7 +376,7 @@
            l'atelier reste fermé au public jusqu'à ce que ce budget soit tenable. -->
       <main class="atelier-page a-venir" id="annonceAtelier" hidden>
         <section class="carte">
-          <h2>L'atelier arrive bientôt</h2>
+          <h2>L'atelier</h2>
           <p>
             Il produira des études de filière, des études de marché et des benchmarks,
             en Word, Excel et PowerPoint — chacun accompagné des sources qui l'ont
@@ -378,6 +388,14 @@
           </p>
           <!-- Montré à la place du précédent pendant un repli : « bientôt » serait
                faux pour quelqu'un qui s'en servait une minute plus tôt. -->
+          <!-- Idem : régime CPU normal, sans incident. -->
+          <p class="aide" id="texteGpuAtelier" hidden>
+            Le service tourne actuellement sur nos machines de secours, sans carte
+            graphique. Une étude enchaîne une génération par section et monopoliserait
+            le moteur au détriment de la conversation. <strong>Dès la bascule sur GPU,
+            l'atelier redevient fonctionnel</strong> — vos documents déjà produits
+            restent disponibles.
+          </p>
           <p class="aide" id="texteRepliAtelier" hidden>
             L'atelier est momentanément en pause : le service tourne sur ses machines
             de secours, et une étude y monopoliserait le moteur au détriment de la

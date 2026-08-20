@@ -425,3 +425,49 @@ def test_refus_ivoiriens_gardent_la_redirection_anader() -> None:
     assert med is not None and med.redirige_anader is True
     phyto = guardrails.evaluer("Quelle dose de fongicide appliquer par hectare ?")
     assert phyto is not None and phyto.redirige_anader is True
+
+
+def test_une_question_sans_intention_de_culture_n_herite_pas_du_refus_de_zone() -> None:
+    """Reproduit en production le 20/08 : « Quel est le prix du cacao ? », posé après un
+    tour mentionnant Katiola, recevait le refus « zone de savane du Nord ».
+
+    Le garde-fou lit le FIL ANCRÉ pour la localité — c'est voulu, une intention étalée
+    sur deux tours ne doit pas contourner la correction. Mais il exigeait, dans la
+    question COURANTE, un terme d'intention... dont la liste contenait « cacao ». Or
+    « cacao » est le mot le plus fréquent du produit : presque toute question le porte.
+    La condition ne filtrait donc plus rien.
+    """
+    fil = "je veux faire une plantation de cacao a Katiola Quel est le prix du cacao ?"
+    refus = guardrails.evaluer(fil, courante="Quel est le prix du cacao ?")
+    assert refus is None or refus.categorie is not CategorieRefus.ZONE_NON_CACAO
+
+
+@pytest.mark.parametrize(
+    "courante",
+    [
+        "Comment fermenter les fèves de cacao ?",
+        "Quel est le cours mondial du cacao ?",
+        "Qui achète le cacao en Côte d'Ivoire ?",
+    ],
+)
+def test_le_nom_de_la_culture_ne_vaut_pas_intention(courante: str) -> None:
+    """Nommer le cacao n'est pas vouloir en planter — sinon la correction happe tout."""
+    refus = guardrails.evaluer(f"je plante a Korhogo {courante}", courante=courante)
+    assert refus is None or refus.categorie is not CategorieRefus.ZONE_NON_CACAO
+
+
+@pytest.mark.parametrize(
+    "courante",
+    [
+        "Est-ce que je peux cultiver le cacao à Korhogo ?",
+        "Je veux planter du cacao à Katiola",
+        "Le cacao pousse-t-il à Ferkessédougou ?",
+        "Ma plantation est à Boundiali, comment l'entretenir ?",
+        "Le climat de Korhogo convient-il au cacaoyer ?",
+    ],
+)
+def test_une_vraie_intention_de_culture_reste_corrigee(courante: str) -> None:
+    """Le correctif ne doit pas éteindre la règle : c'est elle qui empêche le modèle
+    d'affirmer qu'on peut planter du cacao dans la savane du Nord."""
+    refus = guardrails.evaluer(courante, courante=courante)
+    assert refus is not None and refus.categorie is CategorieRefus.ZONE_NON_CACAO

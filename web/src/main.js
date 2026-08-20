@@ -415,6 +415,7 @@ if (vues.chat && vues.parcelle && vues.atelier) {
           contenu: $("contenuParcelle"),
           annonce: $("annonceParcelle"),
           texteAVenir: $("texteAVenirParcelle"),
+          texteGpu: $("texteGpuParcelle"),
           texteRepli: $("texteRepliParcelle"),
         },
         atelier: {
@@ -422,6 +423,7 @@ if (vues.chat && vues.parcelle && vues.atelier) {
           contenu: $("contenuAtelier"),
           annonce: $("annonceAtelier"),
           texteAVenir: $("texteAVenirAtelier"),
+          texteGpu: $("texteGpuAtelier"),
           texteRepli: $("texteRepliAtelier"),
         },
       },
