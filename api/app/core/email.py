@@ -45,6 +45,7 @@ from email.message import EmailMessage
 
 import httpx
 
+from app.core import email_gabarit
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -83,32 +84,18 @@ def lire_config() -> MailerConfig | None:
     )
 
 
-def _echapper(texte: str) -> str:
-    """Échappe le HTML pour neutraliser toute injection dans le corps du mail."""
-    return (
-        texte.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-        .replace("'", "&#39;")
-    )
-
-
 def corps_message(cfg: MailerConfig, sujet: str, texte: str, destinataire: str) -> dict:
-    """Construit le corps JSON attendu par l'API ZeptoMail (testable sans réseau)."""
-    html = (
-        '<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;'
-        'color:#1a1d24;line-height:1.6;">'
-        f"<h2 style='color:#0a0e1a;'>{_echapper(sujet)}</h2>"
-        f"<pre style='white-space:pre-wrap;font-size:14px;'>{_echapper(texte)}</pre>"
-        '<p style="font-size:12px;color:#5b6170;">— Supervision OpenCacao</p></div>'
-    )
+    """Construit le corps JSON attendu par l'API ZeptoMail (testable sans réseau).
+
+    Le gabarit est PARTAGÉ avec le canal SMTP : deux mises en forme finiraient par
+    diverger, et c'est celle qu'on regarde le moins qui vieillirait mal.
+    """
     return {
         "from": {"address": cfg.from_addr, "name": cfg.from_name},
         "to": [{"email_address": {"address": destinataire}}],
         "subject": sujet,
-        "htmlbody": html,
-        "textbody": texte,
+        "htmlbody": email_gabarit.html(sujet, texte),
+        "textbody": email_gabarit.texte(sujet, texte),
     }
 
 
@@ -210,8 +197,8 @@ def _message_smtp(cfg: SmtpConfig, sujet: str, texte: str, destinataire: str) ->
     # tente donc pas EMAIL_FROM : le nom affiché suffit à identifier l'émetteur.
     message["From"] = f"{cfg.from_name} <{cfg.utilisateur}>"
     message["To"] = destinataire
-    message.set_content(texte)
-    message.add_alternative(f"<pre>{_echapper(texte)}</pre>", subtype="html")
+    message.set_content(email_gabarit.texte(sujet, texte))
+    message.add_alternative(email_gabarit.html(sujet, texte), subtype="html")
     return message
 
 

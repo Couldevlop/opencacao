@@ -139,5 +139,26 @@ def test_les_reglages_communs_sont_partages_par_configmap(
     assert len(configs) == 1
     assert configs[0]["metadata"]["name"] == "fenetre-config"
     for nom, cron in crons.items():
-        refs = [r["configMapRef"]["name"] for r in _conteneur(cron)["envFrom"]]
+        refs = [
+            r["configMapRef"]["name"] for r in _conteneur(cron)["envFrom"] if "configMapRef" in r
+        ]
         assert "fenetre-config" in refs, nom
+
+
+def test_les_travaux_recoivent_les_identifiants_du_relais_smtp(crons: dict[str, dict]) -> None:
+    """Sans ce Secret, aucune alerte ne part — et le rappel du soir est le seul
+    garde-fou contre un pod loué resté allumé."""
+    for nom, cron in crons.items():
+        refs = [r["secretRef"]["name"] for r in _conteneur(cron)["envFrom"] if "secretRef" in r]
+        assert "opencacao-smtp" in refs, nom
+
+
+def test_le_secret_smtp_est_optionnel(crons: dict[str, dict]) -> None:
+    """Un Secret absent doit sauter l'email, jamais empêcher la bascule matérielle."""
+    for nom, cron in crons.items():
+        smtp = [
+            r
+            for r in _conteneur(cron)["envFrom"]
+            if r.get("secretRef", {}).get("name") == "opencacao-smtp"
+        ]
+        assert smtp and smtp[0]["secretRef"]["optional"] is True, nom

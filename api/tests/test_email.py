@@ -33,7 +33,11 @@ def test_corps_message_format_zeptomail(monkeypatch: pytest.MonkeyPatch) -> None
     corps = email.corps_message(cfg, "Sujet", "alerte <b>x</b>", "dest@ex.ci")
     assert corps["to"] == [{"email_address": {"address": "dest@ex.ci"}}]
     assert corps["subject"] == "Sujet"
-    assert corps["textbody"] == "alerte <b>x</b>"  # texte brut conservé
+    # La version texte n'est plus le corps nu : c'est un message COMPLET, avec objet
+    # et pied. Certains clients n'affichent qu'elle, et un HTML dégradé y serait
+    # illisible. Ce qui compte est que le message d'origine s'y retrouve entier.
+    assert "alerte <b>x</b>" in corps["textbody"]
+    assert "Sujet" in corps["textbody"]
     assert "&lt;b&gt;" in corps["htmlbody"]  # HTML échappé
 
 

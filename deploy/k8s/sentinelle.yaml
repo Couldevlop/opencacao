@@ -124,12 +124,21 @@ spec:
             - { name: EMAIL_FROM, value: "waopron@openlabconsulting.com" }
             - { name: EMAIL_FROM_NAME, value: "OpenCacao" }
             - { name: EMAIL_TEAM, value: "waopron@openlabconsulting.com" }
+            # Canal d'envoi. ZeptoMail répond 429 depuis le 19/08 (quota épuisé) : les
+            # alertes passent désormais par le relais SMTP, éprouvé sur un autre projet.
+            - { name: EMAIL_CANAL, value: "smtp" }
+            - { name: SMTP_HOST, value: "smtp.gmail.com" }
+            - { name: SMTP_PORT, value: "587" }
             - name: ZEPTOMAIL_TOKEN # optionnel : absent -> email simplement sauté
               valueFrom:
                 secretKeyRef:
                   name: opencacao-email
                   key: ZEPTOMAIL_TOKEN
                   optional: true
+          envFrom:
+            # Identifiants du relais SMTP. `optional` : un Secret absent saute l'email,
+            # il n'empêche jamais la sentinelle de veiller ni de replier.
+            - secretRef: { name: opencacao-smtp, optional: true }
           resources:
             requests: { cpu: "20m", memory: "64Mi" }
             limits: { cpu: "200m", memory: "256Mi" }

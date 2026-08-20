@@ -204,6 +204,9 @@ spec:
             - secretRef:
                 name: opencacao-inference
                 optional: true
+            - secretRef:
+                name: opencacao-smtp
+                optional: true
           volumeMounts:
             - name: dataset
               mountPath: /data

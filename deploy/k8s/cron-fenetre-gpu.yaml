@@ -49,6 +49,9 @@ spec:
               command: ["python", "-m", "app.exploitation.fenetre", "fermer"]
               envFrom:
                 - configMapRef: { name: fenetre-config }
+                # Identifiants du relais SMTP. `optional` : un Secret absent saute
+                # l'email, il n'empêche jamais la bascule matérielle de se faire.
+                - secretRef: { name: opencacao-smtp, optional: true }
               env:
                 - name: ZEPTOMAIL_TOKEN # absent -> l'email est simplement sauté
                   valueFrom:
@@ -91,6 +94,9 @@ spec:
               command: ["python", "-m", "app.exploitation.fenetre", "rappeler"]
               envFrom:
                 - configMapRef: { name: fenetre-config }
+                # Identifiants du relais SMTP. `optional` : un Secret absent saute
+                # l'email, il n'empêche jamais la bascule matérielle de se faire.
+                - secretRef: { name: opencacao-smtp, optional: true }
               env:
                 - name: ZEPTOMAIL_TOKEN
                   valueFrom:
@@ -131,6 +137,9 @@ spec:
               command: ["python", "-m", "app.exploitation.fenetre", "ouvrir"]
               envFrom:
                 - configMapRef: { name: fenetre-config }
+                # Identifiants du relais SMTP. `optional` : un Secret absent saute
+                # l'email, il n'empêche jamais la bascule matérielle de se faire.
+                - secretRef: { name: opencacao-smtp, optional: true }
               env:
                 - { name: PREVENIR_SI_ABSENT, value: "true" }
                 - name: ZEPTOMAIL_TOKEN
@@ -175,6 +184,9 @@ spec:
               command: ["python", "-m", "app.exploitation.fenetre", "ouvrir"]
               envFrom:
                 - configMapRef: { name: fenetre-config }
+                # Identifiants du relais SMTP. `optional` : un Secret absent saute
+                # l'email, il n'empêche jamais la bascule matérielle de se faire.
+                - secretRef: { name: opencacao-smtp, optional: true }
               env:
                 - { name: PREVENIR_SI_ABSENT, value: "false" }
                 - name: ZEPTOMAIL_TOKEN
