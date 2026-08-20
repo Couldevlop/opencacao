@@ -23,6 +23,7 @@ class _SmtpFactice:
 
     def __init__(self, hote: str, port: int, timeout: float = 0) -> None:
         self.hote, self.port = hote, port
+        self.contexte_tls = None
         self.gestes: list[str] = []
         self.identifiants: tuple[str, str] | None = None
         self.message = ""
@@ -37,8 +38,9 @@ class _SmtpFactice:
     def ehlo(self) -> None:
         self.gestes.append("ehlo")
 
-    def starttls(self) -> None:
+    def starttls(self, context=None) -> None:
         self.gestes.append("starttls")
+        self.contexte_tls = context
 
     def login(self, utilisateur: str, secret: str) -> None:
         self.gestes.append("login")
@@ -131,3 +133,20 @@ async def test_le_canal_zeptomail_reste_le_defaut(monkeypatch) -> None:
     _SmtpFactice.dernier = None
     assert await email.envoyer_alerte("Sujet", "Corps") is False
     assert _SmtpFactice.dernier is None, "aucune connexion SMTP ne doit être tentée"
+
+
+@pytest.mark.asyncio
+async def test_le_chiffrement_verifie_le_certificat_du_relais(smtp) -> None:
+    """Sans contexte explicite, `starttls()` n'authentifie RIEN en Python.
+
+    `ssl._create_stdlib_context()` — ce que la stdlib utilise quand `context` vaut
+    None — ne vérifie ni la chaîne, ni le nom d'hôte. Un intercepteur sur le chemin
+    récupérerait le mot de passe d'application en clair après l'échange TLS.
+    """
+    import ssl
+
+    await email.envoyer_alerte("Sujet", "Corps")
+    contexte = smtp.dernier.contexte_tls
+    assert contexte is not None, "starttls doit recevoir un contexte SSL explicite"
+    assert contexte.verify_mode == ssl.CERT_REQUIRED
+    assert contexte.check_hostname is True

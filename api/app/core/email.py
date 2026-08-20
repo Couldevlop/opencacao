@@ -39,6 +39,7 @@ from __future__ import annotations
 import asyncio
 import os
 import smtplib
+import ssl
 from dataclasses import dataclass
 from email.message import EmailMessage
 
@@ -220,7 +221,13 @@ def _envoyer_smtp(cfg: SmtpConfig, sujet: str, texte: str, destinataire: str) ->
         relais.ehlo()
         # STARTTLS et non SSL implicite : le 465 est bloqué par l'hébergeur, le 587
         # passe. Vérifié depuis un pod de production avant d'écrire ce module.
-        relais.starttls()
+        #
+        # Le CONTEXTE est explicite, et ce n'est pas une précaution de style. Appelé
+        # sans lui, `starttls()` retombe sur `ssl._create_stdlib_context()`, qui ne
+        # vérifie NI la chaîne de certification NI le nom d'hôte : le tunnel serait
+        # chiffré mais non authentifié, et un intercepteur sur le chemin récupérerait
+        # le mot de passe d'application en clair juste après la poignée de main.
+        relais.starttls(context=ssl.create_default_context())
         relais.ehlo()
         relais.login(cfg.utilisateur, cfg.secret)
         relais.send_message(_message_smtp(cfg, sujet, texte, destinataire))
