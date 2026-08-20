@@ -61,6 +61,10 @@
               <span class="menu-ico" aria-hidden="true">📊</span>
               <span class="menu-txt">Statistiques</span>
             </button>
+            <button type="button" class="onglet" id="tab-exploitation" data-vue="vue-exploitation">
+              <span class="menu-ico" aria-hidden="true">🖥️</span>
+              <span class="menu-txt">Exploitation</span>
+            </button>
             <button type="button" class="onglet" id="tab-parametres" data-vue="vue-parametres">
               <span class="menu-ico" aria-hidden="true">✉️</span>
               <span class="menu-txt">Paramètres</span>
@@ -69,6 +73,48 @@
         </aside>
 
         <div class="contenu">
+
+      <div id="vue-exploitation" class="vue" hidden>
+        <section class="parametres">
+          <h2>🖥️ Fenêtre GPU</h2>
+          <p class="param-aide">
+            Le service tourne sur le <strong>GPU loué</strong> dans la journée et
+            revient sur le <strong>CPU du cluster</strong> la nuit, pour ne pas payer
+            une carte que personne n'utilise. Le cluster ne peut pas allumer le pod
+            RunPod : il l'adopte dès qu'il répond.
+          </p>
+
+          <div class="expl-etat" id="expl-etat">
+            <p class="param-actuel">
+              Profil : <strong id="expl-profil">—</strong>
+              <span id="expl-repli" class="param-nom"></span>
+            </p>
+            <p class="param-actuel">
+              Inférence : <strong id="expl-url">—</strong>
+            </p>
+            <p class="param-actuel">
+              Tunnel mémorisé : <strong id="expl-tunnel">—</strong>
+            </p>
+          </div>
+
+          <div class="expl-actions">
+            <button type="button" class="btn" id="btn-vers-gpu">Basculer sur GPU</button>
+            <button type="button" class="btn btn-secondaire" id="btn-vers-cpu">
+              Revenir sur CPU
+            </button>
+            <span class="etat" id="expl-bascule-etat" aria-live="polite"></span>
+          </div>
+
+          <h3 class="expl-titre">Créneaux planifiés</h3>
+          <p class="param-aide">
+            Suspendre un créneau, c'est décider qu'il ne se déclenchera pas — utile la
+            nuit où vous avez besoin du GPU. L'horaire est une expression cron à cinq
+            champs, en heure de Paris.
+          </p>
+          <div id="expl-creneaux" class="expl-creneaux"></div>
+          <span class="etat" id="expl-creneaux-etat" aria-live="polite"></span>
+        </section>
+      </div>
 
       <div id="vue-parametres" class="vue" hidden>
         <section class="parametres">

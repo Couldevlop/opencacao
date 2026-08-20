@@ -559,6 +559,103 @@ async function chargerStats() {
 }
 
 /* ---------- Onglets (Curation / Pipeline / Statistiques) ---------- */
+/* ---------- Exploitation : fenêtre GPU ---------- */
+
+const CRENEAU_AIDE = {
+  "fenetre-fermeture": "Ramène le service sur CPU.",
+  "fenetre-rappel": "Signale un pod resté allumé. Muet s'il est éteint.",
+  "fenetre-ouverture-annonce": "Seule tentative autorisée à signaler un pod absent.",
+  "fenetre-ouverture": "Adopte le pod dès qu'il répond. Silencieuse.",
+};
+
+function dessinerCreneaux(creneaux) {
+  const hote = $("expl-creneaux");
+  hote.innerHTML = "";
+  creneaux.forEach((c) => {
+    const bloc = document.createElement("div");
+    bloc.className = "expl-creneau" + (c.suspendu ? " suspendu" : "");
+    const titre = document.createElement("p");
+    titre.className = "expl-creneau-titre";
+    titre.textContent = c.libelle + (c.suspendu ? " — suspendu" : "");
+    const aide = document.createElement("p");
+    aide.className = "param-aide";
+    aide.textContent = CRENEAU_AIDE[c.nom] || "";
+    const champ = document.createElement("input");
+    champ.type = "text";
+    champ.value = c.horaire;
+    champ.maxLength = 64;
+    champ.setAttribute("aria-label", "Horaire de " + c.libelle);
+    const enregistrer = document.createElement("button");
+    enregistrer.type = "button";
+    enregistrer.className = "btn";
+    enregistrer.textContent = "Enregistrer l'horaire";
+    enregistrer.addEventListener("click", () =>
+      reglerCreneau(c.nom, { horaire: champ.value.trim() })
+    );
+    const bascule = document.createElement("button");
+    bascule.type = "button";
+    bascule.className = "btn btn-secondaire";
+    bascule.textContent = c.suspendu ? "Reprendre" : "Suspendre";
+    bascule.addEventListener("click", () => reglerCreneau(c.nom, { suspendu: !c.suspendu }));
+    bloc.append(titre, aide, champ, enregistrer, bascule);
+    hote.appendChild(bloc);
+  });
+}
+
+async function chargerExploitation() {
+  try {
+    const e = await api("/api/exploitation/fenetre");
+    $("expl-profil").textContent = e.profil === "gpu" ? "GPU (pod loué)" : "CPU (cluster)";
+    $("expl-repli").textContent = e.repli_cpu ? "· repli automatique actif" : "";
+    $("expl-url").textContent = e.inference_url || "—";
+    $("expl-tunnel").textContent = e.tunnel_memorise || "aucun";
+    dessinerCreneaux(e.creneaux || []);
+  } catch (err) {
+    if (err instanceof NonAutorise) return montrerLogin();
+    $("expl-creneaux-etat").textContent = err.message;
+  }
+}
+
+async function basculer(cible) {
+  const etat = $("expl-bascule-etat");
+  etat.textContent = "Bascule en cours…";
+  try {
+    const r = await api("/api/exploitation/fenetre/bascule", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cible }),
+    });
+    // « effectuée: false » n'est pas une panne : le service était déjà là, ou le pod
+    // ne répond pas. L'état rechargé juste après dit laquelle des deux.
+    etat.textContent = r.effectuee ? "Bascule effectuée." : "Sans effet — voir l'état ci-dessus.";
+  } catch (err) {
+    if (err instanceof NonAutorise) return montrerLogin();
+    etat.textContent = err.message;
+  }
+  await chargerExploitation();
+}
+
+async function reglerCreneau(nom, reglage) {
+  const etat = $("expl-creneaux-etat");
+  etat.textContent = "Enregistrement…";
+  try {
+    await api("/api/exploitation/fenetre/creneaux/" + encodeURIComponent(nom), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(reglage),
+    });
+    etat.textContent = "Enregistré.";
+  } catch (err) {
+    if (err instanceof NonAutorise) return montrerLogin();
+    etat.textContent = err.message;
+  }
+  await chargerExploitation();
+}
+
+
+$("btn-vers-gpu")?.addEventListener("click", () => basculer("gpu"));
+$("btn-vers-cpu")?.addEventListener("click", () => basculer("cpu"));
+
 document.querySelectorAll(".onglet").forEach((onglet) => {
   onglet.addEventListener("click", () => {
     document.querySelectorAll(".onglet").forEach((o) => o.classList.toggle("actif", o === onglet));
@@ -567,6 +664,7 @@ document.querySelectorAll(".onglet").forEach((onglet) => {
     });
     if (onglet.dataset.vue === "vue-stats") chargerStats();
     if (onglet.dataset.vue === "vue-parametres") chargerExpediteur();
+    if (onglet.dataset.vue === "vue-exploitation") chargerExploitation();
   });
 });
 

@@ -20,12 +20,13 @@ import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi import Path as PathParam
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
@@ -37,10 +38,11 @@ from app.core.parametres import (
 )
 from app.core.parcelles_store import ParcelleStore
 from app.core.security import BodySizeLimitMiddleware
-from app.curation import revue_constats
+from app.curation import exploitation, revue_constats
 from app.curation.analytics import analytique
 from app.curation.documents import DocumentInvalide, DocumentStore
 from app.curation.jobs import JobsRegistry
+from app.curation.k8s import ClusterClient, ClusterIndisponible
 from app.curation.models import (
     DocumentUpload,
     DocumentUrl,
@@ -524,6 +526,141 @@ async def definir_expediteur(payload: ParametreExpediteurRequest, _: Session) ->
     await _parametres.definir(CLE_NOM_EXPEDITEUR, payload.nom)
     logger.info("expediteur_modifie", email_masque=brouiller_email(payload.email))
     return {"email_masque": brouiller_email(payload.email), "nom": payload.nom, "defini": True}
+
+
+# ------------------------------------------------------------------------------ #
+#                     Pilotage de la fenêtre GPU (exploitation)                    #
+# ------------------------------------------------------------------------------ #
+# Ces routes redémarrent la production et changent le matériel qui la sert : ce sont
+# les plus dangereuses du produit. Elles vivent ICI et non dans l'API publique, parce
+# que la console porte le ServiceAccount et l'authentification — l'API publique tourne
+# sans compte de service, et lui donner ces pouvoirs les exposerait sur Internet.
+#
+# Chacune est derrière `Session` (fail-closed) et derrière le limiteur de débit : une
+# bascule répétée en boucle redémarrerait l'API sans fin.
+
+
+class BasculeRequest(BaseModel):
+    """Demande de bascule matérielle. La cible est un littéral, jamais du texte libre."""
+
+    cible: Literal["cpu", "gpu"]
+
+
+class CreneauRequest(BaseModel):
+    """Réglage d'un créneau. Les deux champs sont optionnels et indépendants."""
+
+    suspendu: bool | None = None
+    horaire: str | None = Field(default=None, max_length=64)
+
+
+def _cluster_exploitation() -> ClusterClient:
+    """Construit le client cluster de la console (remplacé en test)."""
+    return ClusterClient.from_serviceaccount()
+
+
+def _reglages_exploitation() -> exploitation.Reglages:
+    """Réglages de la fenêtre, lus dans l'environnement du pod de console.
+
+    L'attente de disponibilité est RACCOURCIE par rapport au travail nocturne. Celui-ci
+    peut patienter deux minutes et demie : personne ne le regarde. Une requête HTTP,
+    si — le navigateur resterait suspendu, et l'opérateur croirait la console plantée.
+    Ici on tente brièvement, puis on rend la main : l'écran interroge l'état ensuite,
+    et c'est lui qui dira si la bascule a abouti.
+    """
+    from dataclasses import replace
+
+    from app.exploitation.fenetre import reglages_depuis_env
+
+    return replace(reglages_depuis_env(), tentatives_pret=4, attente_pret_s=3)
+
+
+@app.get("/api/exploitation/fenetre")
+async def fenetre_etat(_: Session) -> dict:
+    """État complet de la fenêtre GPU : profil, adresses, créneaux planifiés.
+
+    Raises:
+        HTTPException: 503 si le cluster est injoignable.
+    """
+    try:
+        etat = await exploitation.etat(_cluster_exploitation(), _reglages_exploitation())
+    except ClusterIndisponible as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Cluster injoignable."
+        ) from exc
+    return {
+        "profil": etat.profil,
+        "inference_url": etat.inference_url,
+        "tunnel_memorise": etat.tunnel_memorise,
+        "repli_cpu": etat.repli_cpu,
+        "creneaux": [
+            {
+                "nom": c.nom,
+                "libelle": c.libelle,
+                "horaire": c.horaire,
+                "suspendu": c.suspendu,
+                "derniere_execution": c.derniere_execution,
+            }
+            for c in etat.creneaux
+        ],
+    }
+
+
+@app.post("/api/exploitation/fenetre/bascule")
+async def fenetre_bascule(payload: BasculeRequest, _: Session, request: Request) -> dict:
+    """Bascule le service vers le CPU ou vers le GPU, à la demande.
+
+    Emprunte les verbes des travaux nocturnes : une bascule manuelle et une bascule
+    planifiée doivent être le même geste.
+
+    Raises:
+        HTTPException: 429 si le débit est dépassé, 503 si le cluster est injoignable.
+    """
+    _garde_debit_revue(request)
+    import httpx
+
+    reglages = _reglages_exploitation()
+    http = httpx.AsyncClient(timeout=reglages.timeout_s, follow_redirects=False)
+    try:
+        faite = await exploitation.basculer(_cluster_exploitation(), http, payload.cible, reglages)
+    except ClusterIndisponible as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Cluster injoignable."
+        ) from exc
+    finally:
+        await http.aclose()
+    return {"cible": payload.cible, "effectuee": faite}
+
+
+@app.patch("/api/exploitation/fenetre/creneaux/{nom}")
+async def fenetre_creneau(nom: str, payload: CreneauRequest, _: Session, request: Request) -> dict:
+    """Suspend, reprend ou reprogramme un créneau de la fenêtre.
+
+    Raises:
+        HTTPException: 429 si le débit est dépassé, 404 si le créneau n'est pas l'un
+            des quatre, 422 si l'horaire est malformé, 503 si le cluster est
+            injoignable.
+    """
+    # Même garde que la bascule : une session compromise ne doit pas pouvoir marteler
+    # l'API server en boucle, fût-ce avec des patchs anodins.
+    _garde_debit_revue(request)
+    try:
+        await exploitation.regler_creneau(
+            _cluster_exploitation(), nom, suspendu=payload.suspendu, horaire=payload.horaire
+        )
+    except exploitation.CreneauInconnu as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Créneau inconnu."
+        ) from exc
+    except exploitation.HoraireInvalide as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Horaire invalide : cinq champs cron, dans les bornes.",
+        ) from exc
+    except ClusterIndisponible as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Cluster injoignable."
+        ) from exc
+    return {"nom": nom, "suspendu": payload.suspendu, "horaire": payload.horaire}
 
 
 @app.exception_handler(Exception)

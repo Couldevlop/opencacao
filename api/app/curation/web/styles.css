@@ -517,3 +517,64 @@ body { background: linear-gradient(180deg, #f7f4ef 0%, #f2ede4 100%); }
   0% { margin-left: -45%; }
   100% { margin-left: 100%; }
 }
+
+/* ---------- Exploitation : fenêtre GPU ---------- */
+.expl-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  margin: 1rem 0 1.6rem;
+}
+
+.expl-titre {
+  margin-top: 1.8rem;
+}
+
+.expl-creneaux {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.expl-creneau {
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-left: 4px solid #ea5b13;
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+}
+
+/* Un créneau suspendu ne se déclenchera pas cette nuit : il doit se voir d'un coup
+   d'œil, sans avoir à lire le libellé. */
+.expl-creneau.suspendu {
+  border-left-color: #9aa0a6;
+  background: #f7f7f7;
+}
+
+.expl-creneau-titre {
+  font-weight: 600;
+  margin: 0 0 0.3rem;
+}
+
+.expl-creneau input {
+  width: 100%;
+  margin: 0.5rem 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.expl-creneau .btn {
+  margin-right: 0.4rem;
+}
+
+/* Bouton d'action secondaire : même géométrie que .btn, poids visuel moindre. Le retour
+   sur CPU et la suspension d'un créneau sont des gestes de prudence, pas des actions
+   qu'on met en avant. */
+.btn-secondaire {
+  background: transparent;
+  color: #ea5b13;
+  border: 1px solid #ea5b13;
+}
+
+.btn-secondaire:hover {
+  background: rgba(234, 91, 19, 0.08);
+}

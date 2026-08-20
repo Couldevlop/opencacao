@@ -53,3 +53,49 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: curation
+---
+# Pilotage de la fenêtre GPU depuis la console (écran « Exploitation »).
+#
+# C'est le droit le plus lourd de tout le cluster : suspendre, reprogrammer et basculer
+# le matériel qui sert la production. Il est donc borné aux QUATRE travaux nommés de la
+# fenêtre — jamais à la catégorie « cronjobs ». Sans `resourceNames`, la console
+# pourrait suspendre l'enrichissement du corpus ou son propre chien de garde, et
+# personne ne s'en apercevrait avant des jours.
+#
+# `list` est volontairement ABSENT : la console connaît ses quatre noms, elle n'a aucun
+# besoin d'énumérer ce qui tourne dans le namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: curation-fenetre-gpu
+rules:
+  - apiGroups: ["batch"]
+    resources: ["cronjobs"]
+    resourceNames:
+      - fenetre-fermeture
+      - fenetre-rappel
+      - fenetre-ouverture-annonce
+      - fenetre-ouverture
+    verbs: ["get", "patch"]
+  # La bascule écrit le profil matériel et remonte le déploiement CPU : mêmes objets et
+  # mêmes verbes que la sentinelle, qui fait exactement ces gestes toutes les nuits.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["api-config"]
+    verbs: ["get", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["inference"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: curation-fenetre-gpu
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: curation-fenetre-gpu
+subjects:
+  - kind: ServiceAccount
+    name: curation

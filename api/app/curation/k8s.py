@@ -251,6 +251,40 @@ class ClusterClient:
             f"patch de la ConfigMap {nom}",
         )
 
+    async def lire_cronjob(self, nom: str) -> dict:
+        """Lit un travail planifié.
+
+        Args:
+            nom: Nom du CronJob (validé comme label DNS-1123).
+
+        Returns:
+            Le corps JSON de la ressource.
+
+        Raises:
+            ValueError: Si le nom n'est pas un label valide.
+            ClusterIndisponible: Si l'API server refuse ou est injoignable.
+        """
+        nom = valider_nom(nom)
+        return await self.get_json(f"/apis/batch/v1/namespaces/{self._namespace}/cronjobs/{nom}")
+
+    async def patch_cronjob(self, nom: str, patch: dict) -> None:
+        """Fusionne un patch dans un travail planifié (suspension, horaire).
+
+        Args:
+            nom: Nom du CronJob (validé comme label DNS-1123).
+            patch: Fragment à fusionner, p. ex. ``{"spec": {"suspend": True}}``.
+
+        Raises:
+            ValueError: Si le nom n'est pas un label valide.
+            ClusterIndisponible: Si l'API server refuse ou est injoignable.
+        """
+        nom = valider_nom(nom)
+        await self._patch(
+            f"{self._hote}/apis/batch/v1/namespaces/{self._namespace}/cronjobs/{nom}",
+            patch,
+            f"patch du CronJob {nom}",
+        )
+
     async def mettre_a_l_echelle(self, deployment: str, repliques: int) -> None:
         """Fixe le nombre de répliques d'un déploiement.
 
