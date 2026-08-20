@@ -22,6 +22,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from app.application.provenance import tableau_de_provenance
 from app.models.rapport import Document, Tableau
+from app.services.rendu import enrichi
 from app.services.rendu.ooxml import texte_xml_sur
 
 # Auteur inscrit dans les métadonnées du fichier livré.
@@ -50,7 +51,9 @@ def _valeur(brut: str) -> tuple[str, bool]:
     Returns:
         Le couple ``(valeur purgée, faut-il la marquer comme texte)``.
     """
-    propre = texte_xml_sur(str(brut))
+    # Le balisage du modèle est retiré : un tableur ne porte pas d'enrichissement, et
+    # « **1 200** » y arriverait tel quel dans la cellule (audit du 19/08).
+    propre = enrichi.sans_balisage(texte_xml_sur(str(brut)))
     return propre, propre.startswith(_AMORCES_FORMULE)
 
 

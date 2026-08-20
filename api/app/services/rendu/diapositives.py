@@ -15,10 +15,13 @@ import io
 
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData
+from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
-from pptx.util import Inches, Pt
+from pptx.enum.shapes import MSO_SHAPE
+from pptx.util import Emu, Inches, Pt
 
 from app.models.rapport import Document, Graphique, Tableau, TypeGraphique
+from app.services.rendu import charte, enrichi
 from app.services.rendu.ooxml import texte_xml_sur
 
 # Auteur inscrit dans les métadonnées du fichier livré.
@@ -29,6 +32,8 @@ _DISPOSITION_TITRE = 0
 _DISPOSITION_TITRE_CONTENU = 1
 # Disposition « titre seul » : une figure ou un tableau occupe la place du texte.
 _DISPOSITION_TITRE_SEUL = 5
+# Disposition VIERGE : on dessine tout, plutôt que d'hériter du gabarit d'Office 2007.
+_DISPOSITION_VIERGE = 6
 
 # Une diapositive lue de loin ne tient pas les 800 caractères d'une section : on
 # tronque proprement plutôt que de laisser le texte déborder hors du cadre.
@@ -40,7 +45,7 @@ _TAILLE_CORPS = 16
 
 def _propre(texte: str) -> str:
     """Retire ce que XML 1.0 refuse (contrôles, surrogates isolés, non-caractères)."""
-    return texte_xml_sur(texte)
+    return enrichi.sans_balisage(texte_xml_sur(texte))
 
 
 def _tronquer(texte: str) -> str:
@@ -68,6 +73,94 @@ _FORMES = {
 }
 
 
+def _rgb(hexa: str) -> RGBColor:
+    """Convertit une couleur de la charte en couleur python-pptx."""
+    return RGBColor.from_string(hexa)
+
+
+# Hauteur du bandeau de titre des diapositives de contenu. Assez fin pour ne pas manger
+# la surface utile, assez présent pour que l'œil trouve le titre sans le chercher.
+_BANDEAU_PO = 0.22
+
+
+def _aplat(diapositive, gauche, haut, largeur, hauteur, couleur: str) -> None:
+    """Pose un rectangle de couleur pleine, sans contour."""
+    forme = diapositive.shapes.add_shape(MSO_SHAPE.RECTANGLE, gauche, haut, largeur, hauteur)
+    forme.fill.solid()
+    forme.fill.fore_color.rgb = _rgb(couleur)
+    forme.line.fill.background()
+    forme.shadow.inherit = False
+
+
+def _zone_texte(
+    diapositive,
+    gauche,
+    haut,
+    largeur,
+    hauteur,
+    texte: str,
+    *,
+    taille: int,
+    couleur: str,
+    gras: bool = False,
+):
+    """Ajoute une zone de texte à la charte du projet."""
+    zone = diapositive.shapes.add_textbox(gauche, haut, largeur, hauteur)
+    cadre = zone.text_frame
+    cadre.word_wrap = True
+    cadre.text = _propre(texte)
+    for paragraphe in cadre.paragraphs:
+        for run in paragraphe.runs:
+            run.font.size = Pt(taille)
+            run.font.bold = gras
+            run.font.name = charte.POLICE_CORPS
+            run.font.color.rgb = _rgb(couleur)
+    return cadre
+
+
+def _diapositive_habillee(presentation, titre: str):
+    """Crée une diapositive vierge portant le bandeau et son titre.
+
+    On part d'une disposition VIERGE plutôt que des gabarits de python-pptx : ceux-ci
+    imposent la typographie et les couleurs d'Office 2007, qui sont précisément ce que
+    l'audit reprochait au deck.
+    """
+    diapositive = presentation.slides.add_slide(presentation.slide_layouts[_DISPOSITION_VIERGE])
+    largeur = presentation.slide_width
+    _aplat(diapositive, 0, 0, largeur, Inches(_BANDEAU_PO), charte.ORANGE)
+    _zone_texte(
+        diapositive,
+        Inches(0.6),
+        Inches(0.45),
+        largeur - Inches(1.2),
+        Inches(0.9),
+        titre,
+        taille=26,
+        couleur=charte.SOMBRE,
+        gras=True,
+    )
+    return diapositive
+
+
+def _habiller_le_theme(presentation) -> None:
+    """Remplace la palette et la typographie d'Office 2007 par celles de la charte.
+
+    python-pptx n'expose pas le thème : on réécrit la partie XML. C'est ce qui fait que
+    les graphiques natifs, qui puisent leurs couleurs dans le thème, s'accordent au
+    reste du document au lieu de ressortir en bleu Office 2007.
+    """
+    for partie in presentation.part.package.iter_parts():
+        if not partie.partname.endswith("theme1.xml"):
+            continue
+        xml = partie.blob.decode("utf-8")
+        for rang, defaut in enumerate(("4F81BD", "C0504D", "9BBB59", "8064A2", "4BACC6", "F79646")):
+            xml = xml.replace(defaut, charte.couleur_serie(rang))
+        xml = xml.replace('typeface="Cambria"', f'typeface="{charte.POLICE_TITRES}"')
+        xml = xml.replace('typeface="Calibri"', f'typeface="{charte.POLICE_CORPS}"')
+        partie._blob = xml.encode("utf-8")
+        return
+
+
 def _diapositive_graphique(presentation, graphique: Graphique) -> None:
     """Ajoute une diapositive portant une figure NATIVE (pas une image).
 
@@ -75,8 +168,7 @@ def _diapositive_graphique(presentation, graphique: Graphique) -> None:
         presentation: Présentation en construction.
         graphique: Figure à tracer.
     """
-    diapositive = presentation.slides.add_slide(presentation.slide_layouts[_DISPOSITION_TITRE_SEUL])
-    diapositive.shapes.title.text = _propre(graphique.titre)
+    diapositive = _diapositive_habillee(presentation, graphique.titre)
     donnees = CategoryChartData()
     donnees.categories = [_propre(c) for c in graphique.categories]
     donnees.add_series(_propre(graphique.unite or graphique.titre), graphique.valeurs)
@@ -100,8 +192,7 @@ def _diapositive_tableau(presentation, tableau: Tableau) -> None:
         presentation: Présentation en construction.
         tableau: Tableau à rendre.
     """
-    diapositive = presentation.slides.add_slide(presentation.slide_layouts[_DISPOSITION_TITRE_SEUL])
-    diapositive.shapes.title.text = _propre(tableau.titre)
+    diapositive = _diapositive_habillee(presentation, tableau.titre)
     lignes, colonnes = len(tableau.lignes) + 1, len(tableau.entetes)
     forme = diapositive.shapes.add_table(lignes, colonnes, *_FIGURE)
     grille = forme.table
@@ -122,6 +213,9 @@ def rendu_pptx(document: Document) -> bytes:
         Les octets du fichier ``.pptx``.
     """
     presentation = Presentation()
+    presentation.slide_width = Inches(charte.DIAPO_LARGEUR_PO)
+    presentation.slide_height = Inches(charte.DIAPO_HAUTEUR_PO)
+    _habiller_le_theme(presentation)
     proprietes = presentation.core_properties
     proprietes.author = _AUTEUR
     # python-pptx laisse « Steve Canny » — le nom de son auteur — dans ce champ.
@@ -130,30 +224,69 @@ def rendu_pptx(document: Document) -> bytes:
     proprietes.created = document.manifeste.genere_le
     proprietes.modified = document.manifeste.genere_le
 
-    ouverture = presentation.slides.add_slide(presentation.slide_layouts[_DISPOSITION_TITRE])
-    ouverture.shapes.title.text = _propre(document.titre)
-    sous_titre = document.sous_titre
+    largeur, hauteur = presentation.slide_width, presentation.slide_height
+    ouverture = presentation.slides.add_slide(presentation.slide_layouts[_DISPOSITION_VIERGE])
+    # Bandeau plein sur le tiers haut : c'est ce qui fait qu'une couverture ressemble à
+    # une couverture et non à une page blanche portant une phrase.
+    _aplat(ouverture, 0, 0, largeur, Emu(int(hauteur * 0.42)), charte.ORANGE)
+    _zone_texte(
+        ouverture,
+        Inches(0.9),
+        Inches(1.1),
+        largeur - Inches(1.8),
+        Inches(1.8),
+        document.titre,
+        taille=40,
+        couleur=charte.BLANC,
+        gras=True,
+    )
+    if document.sous_titre:
+        _zone_texte(
+            ouverture,
+            Inches(0.9),
+            Emu(int(hauteur * 0.45)),
+            largeur - Inches(1.8),
+            Inches(0.6),
+            document.sous_titre,
+            taille=18,
+            couleur=charte.SOMBRE,
+        )
     if document.mention:
-        # D5 : la mention est sur la PREMIÈRE diapositive, pas reléguée en fin de deck.
-        sous_titre = f"{sous_titre}\n{document.mention}" if sous_titre else document.mention
-    # pragma: no branch — la disposition « titre » du gabarit python-pptx livré porte
-    # toujours deux emplacements. Ce garde-fou ne sert que si le gabarit était remplacé
-    # un jour ; l'exercer exigerait de simuler les entrailles de python-pptx, donc de
-    # tester le simulacre plutôt que le code. Branche assumée, pas oubliée.
-    if len(ouverture.placeholders) > 1:  # pragma: no branch
-        ouverture.placeholders[1].text = _propre(sous_titre)
+        # D5 : sur la PREMIÈRE diapositive, jamais reléguée en fin de deck.
+        _zone_texte(
+            ouverture,
+            Inches(0.9),
+            Emu(int(hauteur * 0.60)),
+            largeur - Inches(1.8),
+            Inches(1.2),
+            document.mention,
+            taille=12,
+            couleur=charte.ORANGE,
+            gras=True,
+        )
+    _zone_texte(
+        ouverture,
+        Inches(0.9),
+        Emu(int(hauteur * 0.86)),
+        largeur - Inches(1.8),
+        Inches(0.4),
+        "OpenCacao — OpenLab Consulting",
+        taille=11,
+        couleur=charte.GRIS,
+    )
 
     for section in document.sections:
-        diapositive = presentation.slides.add_slide(
-            presentation.slide_layouts[_DISPOSITION_TITRE_CONTENU]
+        diapositive = _diapositive_habillee(presentation, section.titre)
+        _zone_texte(
+            diapositive,
+            Inches(0.9),
+            Inches(1.7),
+            presentation.slide_width - Inches(1.8),
+            presentation.slide_height - Inches(2.4),
+            _tronquer(section.corps),
+            taille=_TAILLE_CORPS,
+            couleur=charte.SOMBRE,
         )
-        diapositive.shapes.title.text = _propre(section.titre)
-        cadre = diapositive.placeholders[1].text_frame
-        cadre.text = _tronquer(section.corps)
-        cadre.word_wrap = True
-        for paragraphe in cadre.paragraphs:
-            for run in paragraphe.runs:
-                run.font.size = Pt(_TAILLE_CORPS)
 
     for graphique in document.graphiques:
         _diapositive_graphique(presentation, graphique)

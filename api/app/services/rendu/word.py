@@ -15,14 +15,17 @@ from __future__ import annotations
 import io
 
 from docx import Document as DocxDocument
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.opc.packuri import PackURI
 from docx.opc.part import Part
-from docx.oxml import parse_xml
+from docx.oxml import OxmlElement, parse_xml
+from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 
 from app.application.provenance import tableau_de_provenance
 from app.models.rapport import Document, Graphique, Tableau
+from app.services.rendu import charte, enrichi
 from app.services.rendu.ooxml import texte_xml_sur
 from app.services.rendu.ooxml_graphique import TYPE_CONTENU as TYPE_CONTENU_GRAPHIQUE
 from app.services.rendu.ooxml_graphique import partie_graphique
@@ -34,6 +37,65 @@ _AUTEUR = "OpenCacao — OpenLab Consulting"
 _ORANGE = RGBColor(0xEA, 0x5B, 0x13)
 _SOMBRE = RGBColor(0x1F, 0x1F, 0x1F)
 _GRIS = RGBColor(0x60, 0x60, 0x60)
+_BLANC = RGBColor(0xFF, 0xFF, 0xFF)
+
+# Aplats. Un document sans couleur se lit comme un mémo ; trop coloré, il perd son
+# sérieux. Trois teintes suffisent : l'orange du projet pour ce qui structure, son
+# dégradé très clair pour le zébrage, un gris pâle pour ce qui n'est qu'informatif.
+_FOND_ORANGE = charte.ORANGE
+_FOND_ORANGE_PALE = charte.FOND_ORANGE_PALE
+_FOND_GRIS_PALE = charte.FOND_GRIS_PALE
+
+_MOIS = (
+    "janvier",
+    "février",
+    "mars",
+    "avril",
+    "mai",
+    "juin",
+    "juillet",
+    "août",
+    "septembre",
+    "octobre",
+    "novembre",
+    "décembre",
+)
+
+
+def _date_lisible(moment) -> str:
+    """Rend une date en toutes lettres, sans dépendre d'une locale système.
+
+    Une page de garde portant « 2026-08-20T09:04:29.675716+00:00 » annonce une machine,
+    pas une étude (audit du 19/08). L'horodatage précis reste au manifeste, où il sert
+    la rejouabilité.
+    """
+    return f"{moment.day} {_MOIS[moment.month - 1]} {moment.year}"
+
+
+def _ombrer(element, couleur: str) -> None:
+    """Pose un aplat de couleur sur une cellule ou un paragraphe.
+
+    python-docx n'expose pas l'ombrage : on ajoute le nœud ``w:shd`` aux propriétés,
+    ce que Word lit indifféremment sur une cellule (``tcPr``) ou un paragraphe (``pPr``).
+    """
+    ombre = OxmlElement("w:shd")
+    ombre.set(qn("w:val"), "clear")
+    ombre.set(qn("w:color"), "auto")
+    ombre.set(qn("w:fill"), couleur)
+    element.append(ombre)
+
+
+def _encadre(docx, texte: str, *, fond: str, couleur: RGBColor, gras: bool = False) -> None:
+    """Ajoute un paragraphe sur aplat — ce qui doit sauter aux yeux.
+
+    Sert la mention réglementaire (D5) et l'aveu de lacune : deux endroits où le
+    document dit quelque chose d'important sur lui-même, et où se fondre dans le corps
+    reviendrait à l'enterrer.
+    """
+    paragraphe = _paragraphe(docx, texte, taille=10, gras=gras, couleur=couleur)
+    _ombrer(paragraphe.paragraph_format.element.get_or_add_pPr(), fond)
+    paragraphe.paragraph_format.space_before = Pt(6)
+    paragraphe.paragraph_format.space_after = Pt(10)
 
 
 def _propre(texte: str) -> str:
@@ -64,11 +126,14 @@ def _paragraphe(
         Le paragraphe ajouté.
     """
     paragraphe = docx.add_paragraph()
-    run = paragraphe.add_run(_propre(texte))
-    run.font.size = Pt(taille)
-    run.font.bold = gras
-    run.font.italic = italique
-    run.font.color.rgb = couleur
+    # Le balisage du modèle est RENDU, pas imprimé : l'audit du 19/08 comptait 52
+    # occurrences de « ** » écrites en toutes lettres dans les documents livrés.
+    for fragment, gras_local, italique_local in enrichi.segments(_propre(texte)):
+        run = paragraphe.add_run(fragment)
+        run.font.size = Pt(taille)
+        run.font.bold = gras or gras_local
+        run.font.italic = italique or italique_local
+        run.font.color.rgb = couleur
     paragraphe.paragraph_format.space_after = Pt(6)
     return paragraphe
 
@@ -83,17 +148,24 @@ def _tableau_word(docx, tableau: Tableau) -> None:
     _paragraphe(docx, tableau.titre, taille=12, gras=True, couleur=_ORANGE)
     table = docx.add_table(rows=1, cols=len(tableau.entetes))
     table.style = "Table Grid"
+    # En-tête sur aplat orange, texte blanc : sans lui, un tableau Word se lit comme
+    # une grille de tableur et l'œil n'y trouve aucune entrée.
     for colonne, entete in enumerate(tableau.entetes):
         cellule = table.cell(0, colonne)
-        cellule.text = _propre(entete)
+        cellule.text = enrichi.sans_balisage(_propre(entete))
+        _ombrer(cellule._tc.get_or_add_tcPr(), _FOND_ORANGE)
         for paragraphe in cellule.paragraphs:
             for run in paragraphe.runs:
                 run.font.bold = True
                 run.font.size = Pt(10)
-    for ligne in tableau.lignes:
+                run.font.color.rgb = _BLANC
+    for rang, ligne in enumerate(tableau.lignes):
         cellules = table.add_row().cells
         for colonne, valeur in enumerate(ligne):
-            cellules[colonne].text = _propre(valeur)
+            cellules[colonne].text = enrichi.sans_balisage(_propre(valeur))
+            # Zébrage : sur un tableau long, c'est ce qui empêche de sauter une ligne.
+            if rang % 2 == 0:
+                _ombrer(cellules[colonne]._tc.get_or_add_tcPr(), _FOND_ORANGE_PALE)
             for paragraphe in cellules[colonne].paragraphs:
                 for run in paragraphe.runs:
                     run.font.size = Pt(10)
@@ -166,6 +238,35 @@ def _inserer_graphique(docx: Document, graphique: Graphique, rang: int) -> None:
         _paragraphe(docx, graphique.note, taille=9, couleur=_GRIS, italique=True)
 
 
+def _pied_de_page(docx, titre: str) -> None:
+    """Pose un pied de page : titre court à gauche, numéro de page à droite.
+
+    Sans lui, impossible de dire « page 4 » en réunion, et une feuille photocopiée
+    seule ne dit plus d'où elle vient (audit du 19/08). Le numéro est un CHAMP Word,
+    donc recalculé à l'impression — pas un nombre écrit en dur.
+    """
+    pied = docx.sections[0].footer
+    paragraphe = pied.paragraphs[0] if pied.paragraphs else pied.add_paragraph()
+    paragraphe.text = ""
+    gauche = paragraphe.add_run(f"{_propre(titre)}    ")
+    gauche.font.size = Pt(8)
+    gauche.font.color.rgb = _GRIS
+    paragraphe.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    # Champ PAGE : trois nœuds (début, instruction, fin), la forme qu'attend Word.
+    run = paragraphe.add_run()
+    run.font.size = Pt(8)
+    run.font.color.rgb = _GRIS
+    debut = OxmlElement("w:fldChar")
+    debut.set(qn("w:fldCharType"), "begin")
+    instruction = OxmlElement("w:instrText")
+    instruction.set(qn("xml:space"), "preserve")
+    instruction.text = " PAGE "
+    fin = OxmlElement("w:fldChar")
+    fin.set(qn("w:fldCharType"), "end")
+    for noeud in (debut, instruction, fin):
+        run._r.append(noeud)
+
+
 def rendu_word(document: Document) -> bytes:
     """Rend le document au format Word.
 
@@ -177,6 +278,7 @@ def rendu_word(document: Document) -> bytes:
     """
     docx = DocxDocument()
     _identifier(docx.core_properties, document)
+    _pied_de_page(docx, document.titre)
 
     # --- Page de garde ---------------------------------------------------------
     # Seule sur sa page : sans le saut, le sommaire remonte à côté du titre et le
@@ -185,10 +287,11 @@ def rendu_word(document: Document) -> bytes:
     if document.sous_titre:
         _paragraphe(docx, document.sous_titre, taille=13, couleur=_GRIS, italique=True)
     if document.mention:
-        # D5 : en tête, avant tout contenu, et visuellement distincte.
-        _paragraphe(docx, document.mention, taille=11, gras=True, couleur=_ORANGE)
+        # D5 : en tête, avant tout contenu, et visuellement distincte — sur aplat, pas
+        # seulement en gras orange, qui se fondait dans le reste de la page de garde.
+        _encadre(docx, document.mention, fond=_FOND_ORANGE_PALE, couleur=_ORANGE, gras=True)
     _paragraphe(
-        docx, f"Généré le {document.manifeste.genere_le.isoformat()}", taille=10, couleur=_GRIS
+        docx, f"Généré le {_date_lisible(document.manifeste.genere_le)}", taille=10, couleur=_GRIS
     )
     docx.add_page_break()
 
@@ -213,14 +316,13 @@ def rendu_word(document: Document) -> bytes:
     for section in document.sections:
         _paragraphe(docx, section.titre, taille=15, gras=True, couleur=_ORANGE)
         if section.lacune:
-            _paragraphe(
-                docx,
-                "Section en lacune — aucune source mobilisable.",
-                taille=10,
-                couleur=_GRIS,
-                italique=True,
-            )
-        _paragraphe(docx, section.corps)
+            # UN seul aveu. Le document en disait deux, l'un après l'autre : bafouiller
+            # à l'endroit précis où l'on reconnaît une faiblesse est le pire moment.
+            # « Lacune — » nomme la chose UNE fois, puis le corps l'explique. Le
+            # document en disait deux fois la même chose, l'un après l'autre.
+            _encadre(docx, f"Lacune — {section.corps}", fond=_FOND_GRIS_PALE, couleur=_GRIS)
+        else:
+            _paragraphe(docx, section.corps)
 
     if document.conclusion:
         _paragraphe(docx, "Conclusion", taille=15, gras=True, couleur=_ORANGE)
@@ -240,7 +342,8 @@ def rendu_word(document: Document) -> bytes:
         f"Modèle : {manifeste.modele} (version {manifeste.version_modele})",
         f"Version applicative : {manifeste.version_app}",
         f"Profil matériel : {manifeste.profil_materiel}",
-        f"Généré le : {manifeste.genere_le.isoformat()}",
+        # À la seconde : la microseconde n'ajoute rien à la rejouabilité.
+        f"Généré le : {manifeste.genere_le.replace(microsecond=0).isoformat()}",
         f"Empreinte du demandeur : {manifeste.empreinte_demandeur}",
     ):
         _paragraphe(docx, ligne, taille=10, couleur=_GRIS)

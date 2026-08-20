@@ -20,6 +20,7 @@ from __future__ import annotations
 from xml.sax.saxutils import escape
 
 from app.models.rapport import Graphique, TypeGraphique
+from app.services.rendu import charte
 from app.services.rendu.ooxml import texte_xml_sur
 
 TYPE_CONTENU = "application/vnd.openxmlformats-officedocument.drawingml.chart+xml"
@@ -27,20 +28,6 @@ TYPE_CONTENU = "application/vnd.openxmlformats-officedocument.drawingml.chart+xm
 _NS_C = "http://schemas.openxmlformats.org/drawingml/2006/chart"
 _NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main"
 _NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
-
-# Palette reprise de la charte du projet (orange OpenCacao, puis teintes distinctes).
-# Choisies pour rester distinguables en niveaux de gris et pour les daltonismes les plus
-# fréquents : un camembert dont deux parts se confondent à l'impression ne dit rien.
-_COULEURS: tuple[str, ...] = (
-    "D9822B",
-    "1F6F8B",
-    "6B8E23",
-    "8E44AD",
-    "C0392B",
-    "16A085",
-    "7F8C8D",
-    "F1C40F",
-)
 
 
 def _texte(valeur: str) -> str:
@@ -87,7 +74,7 @@ def _points_colores(nombre: int) -> str:
     """Une couleur par part — sinon Word rend un camembert monochrome illisible."""
     return "".join(
         f'<c:dPt><c:idx val="{rang}"/><c:bubble3D val="0"/><c:spPr>'
-        f'<a:solidFill><a:srgbClr val="{_COULEURS[rang % len(_COULEURS)]}"/></a:solidFill>'
+        f'<a:solidFill><a:srgbClr val="{charte.couleur_serie(rang)}"/></a:solidFill>'
         "</c:spPr></c:dPt>"
         for rang in range(nombre)
     )
@@ -99,7 +86,10 @@ def _serie(graphique: Graphique) -> str:
     points = (
         _points_colores(len(graphique.categories))
         if graphique.type is TypeGraphique.SECTEURS
-        else f'<c:spPr><a:solidFill><a:srgbClr val="{_COULEURS[0]}"/></a:solidFill></c:spPr>'
+        else (
+            f'<c:spPr><a:solidFill><a:srgbClr val="{charte.couleur_serie(0)}"/>'
+            "</a:solidFill></c:spPr>"
+        )
     )
     return (
         '<c:ser><c:idx val="0"/><c:order val="0"/>'
