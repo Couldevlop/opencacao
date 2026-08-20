@@ -53,3 +53,41 @@ def test_extraire_sources_sans_contexte_reste_textuel() -> None:
 def test_extraire_sources_contexte_vide_aucune_ancree() -> None:
     """Réponse non ancrée (contexte vide) : aucune source ancrée -> confiance faible."""
     assert extraire_sources("selon le CNRA et l'ANADER", "") == []
+
+
+# --- Troncature : une section ne doit jamais finir en plein mot ---
+
+
+def test_un_texte_coupe_en_plein_mot_est_ramene_a_la_derniere_phrase() -> None:
+    """Vécu le 20/08 : « …renforcer la position de la Côte d'I » sur un document livré.
+
+    Le plafond de tokens coupe la génération là où elle en est. On ne peut pas la
+    reprendre, mais on peut refuser de livrer une phrase amputée.
+    """
+    from app.services.postprocess import terminer_proprement
+
+    coupe = "Le prix est fixé chaque année. Les acteurs de la filière sont **organis"
+    assert terminer_proprement(coupe) == "Le prix est fixé chaque année."
+
+
+def test_un_texte_deja_termine_n_est_pas_touche() -> None:
+    """Le cas de loin le plus fréquent ne doit rien coûter ni rien perdre."""
+    from app.services.postprocess import terminer_proprement
+
+    entier = "Le prix officiel s'élève à 1 200 FCFA le kilogramme."
+    assert terminer_proprement(entier) == entier
+
+
+def test_un_texte_sans_aucune_fin_de_phrase_est_laisse_intact() -> None:
+    """Mieux vaut une phrase inachevée qu'une section vidée de sa substance."""
+    from app.services.postprocess import terminer_proprement
+
+    presque_tout = "Une seule très longue phrase sans aucune ponctuation terminale qui court"
+    assert presque_tout in terminer_proprement(presque_tout)
+
+
+def test_les_autres_ponctuations_de_fin_sont_reconnues() -> None:
+    """Une section peut se clore sur une interrogation ou des points de suspension."""
+    from app.services.postprocess import terminer_proprement
+
+    assert terminer_proprement("Fini ? Et la suite qui ne fini") == "Fini ?"

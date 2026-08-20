@@ -39,7 +39,7 @@ from app.application.provenance import construire_manifeste, source_absente
 from app.core.logging import get_logger
 from app.domain.ports import InferencePort
 from app.models.rapport import Affirmation, Document, Section
-from app.services import guardrails
+from app.services import guardrails, postprocess
 from app.services.gabarits import Gabarit, SectionGabarit
 from app.services.prompts_redaction import (
     ENTETE_CONTEXTE_ANALYTIQUE,
@@ -53,7 +53,14 @@ logger = get_logger(__name__)
 
 # Une section tient en un paragraphe de 600 à 800 caractères : on borne la génération
 # en conséquence. Le levier reste la consigne, ce plafond n'est qu'un garde-corps.
-MAX_TOKENS_SECTION = 320
+#
+# 320 était trop juste : le modèle visait la consigne, la dépassait un peu, et se
+# faisait couper EN PLEIN MOT — « …renforcer la position de la Côte d'I » figurait tel
+# quel dans un document livré le 19/08. On desserre pour que la coupe devienne rare,
+# et `terminer_proprement` garantit qu'elle reste invisible quand elle survient. Les
+# deux ensemble : une marge ne suffit pas, il y aura toujours une génération plus
+# longue que le plafond.
+MAX_TOKENS_SECTION = 420
 
 # Température basse : un document d'analyse doit être reproductible, pas créatif.
 TEMPERATURE_SECTION = 0.3
@@ -355,6 +362,7 @@ class MoteurRedaction:
         # declenche sur tout taux de dose, kg/ha compris : juste pour un conseil au
         # producteur, ou un faux positif ne coute qu'une redirection ; ruineux pour
         # une etude, ou un rendement est la donnee la plus courante qui soit.
+        corps = postprocess.terminer_proprement(corps)
         if guardrails.contient_prescription(corps):
             logger.warning("section_sortie_refusee", section=section.titre)
             return Section(titre=section.titre, corps=_LACUNE_REFUSEE, affirmations=(), lacune=True)
@@ -396,7 +404,7 @@ class MoteurRedaction:
         if guardrails.contient_prescription(texte):
             logger.warning("synthese_refusee")
             return ""
-        return texte.strip()
+        return postprocess.terminer_proprement(texte.strip())
 
     async def rediger(
         self,

@@ -94,3 +94,34 @@ def nettoyer_tirets(texte: str) -> str:
         Le texte, tirets de ponctuation convertis.
     """
     return _TIRET_COLLE.sub("-", _TIRET_PONCTUATION.sub(", ", texte))
+
+
+# Ponctuations qui closent une phrase française. Le point-virgule en est absent : il
+# articule, il ne conclut pas, et couper dessus laisserait une pensée en suspens.
+_FINS_DE_PHRASE = ".!?…»"
+
+
+def terminer_proprement(texte: str) -> str:
+    """Ramène un texte tronqué à sa dernière phrase complète.
+
+    Le plafond de tokens coupe la génération là où elle en est : en production le
+    20/08, un résumé livré se terminait par « …renforcer la position de la Côte d'I ».
+    On ne peut pas reprendre la génération, mais on peut refuser de livrer une phrase
+    amputée — c'est la première chose qu'un lecteur remarque, et elle donne au document
+    entier l'air de n'avoir jamais été relu.
+
+    Args:
+        texte: Texte tel que rendu par le modèle.
+
+    Returns:
+        Le texte arrêté à la dernière ponctuation de fin de phrase ; le texte inchangé
+        s'il se termine déjà proprement, ou s'il ne contient aucune fin de phrase — un
+        seul long paragraphe sans ponctuation terminale vaut mieux amputé que vidé.
+    """
+    depouille = texte.rstrip()
+    if not depouille or depouille[-1] in _FINS_DE_PHRASE:
+        return texte
+    coupe = max(depouille.rfind(fin) for fin in _FINS_DE_PHRASE)
+    if coupe < 0:
+        return texte
+    return depouille[: coupe + 1]
