@@ -605,17 +605,33 @@ body {
   body.avec-sidebar .sidebar-toggle { display: none; }
 }
 
-/* Colonne « mal centrée » sur grand écran (constat Waopron, 19/08/2026).
-   Ce n'était pas une illusion : `padding-left` réservait la place de la barre
-   latérale, mais rien ne la compensait à droite. La colonne se centrait donc dans
-   l'espace RÉSIDUEL, ce qui la décale par rapport au milieu de l'écran, là où l'œil
-   l'attend.
+/* Colonne « mal centrée » sur grand écran (constat Waopron, 19/08/2026), puis
+   « l'interface n'occupe pas tout l'écran » (20/08/2026). Les deux constats sont
+   justes, et le second vient du remède apporté au premier.
 
-   Le seuil est à 1440 px et pas plus haut : à 1440, retirer deux fois 280 px laisse
-   880 px, encore au-dessus de la colonne. Plus bas, la symétrie étoufferait le texte
-   au lieu de le centrer, ce qui serait un remède pire que le mal. */
+   Le problème d'origine : `padding-left` réserve la place de la barre latérale, et
+   rien ne la compensait à droite — la colonne se centrait donc dans l'espace RÉSIDUEL,
+   décalée par rapport au milieu de l'écran, là où l'œil l'attend.
+
+   Le premier remède posait la compensation sur `body`. Mais `body` porte AUSSI les
+   surfaces — l'en-tête, le fond de la conversation, la barre de saisie. Toutes
+   s'arrêtaient donc 280 px avant le bord, laissant une bande vide qui donne
+   l'impression que l'application ne va pas au bout de l'écran (mesuré : 1920 px de
+   fenêtre, surfaces arrêtées à 1640).
+
+   La compensation est donc portée par les CONTENEURS DE CONTENU, jamais par `body` :
+   les surfaces vont au bord, et seul le texte reste centré sur l'écran. On obtient les
+   deux à la fois au lieu de troquer l'un contre l'autre.
+
+   Seuil à 1440 px : en deçà, retirer deux fois 280 px étoufferait le texte au lieu de
+   le centrer — remède pire que le mal. */
 @media (min-width: 1440px) {
-  body.avec-sidebar { padding-right: var(--sidebar-w, 280px); }
+  body.avec-sidebar .app-header,
+  body.avec-sidebar .chat,
+  body.avec-sidebar .composer-wrap,
+  body.avec-sidebar .bandeau-repli {
+    padding-right: calc(var(--sidebar-w, 280px) + 16px);
+  }
 }
 
 /* ============================================================================
@@ -1271,6 +1287,23 @@ body:not(.avec-conversations) .btn-nouvelle {
 
 /* Même pastille que « bientôt », autre mot : la fonction existe et fonctionnait,
    elle est simplement mise en pause pour protéger le conseil. */
+/* Troisième état : la fonction existe et a déjà servi, mais elle demande la carte
+   graphique. Ni « bientôt » (qui la ferait passer pour inachevée), ni « en pause »
+   (qui laisserait croire à un incident) — la vraie raison, en deux mots. */
+.nav-lien[data-etat="gpu"] { color: var(--ink-soft); }
+.nav-lien[data-etat="gpu"]::after {
+  content: "sur GPU";
+  margin-left: auto;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-soft);
+}
+
 .nav-lien[data-etat="pause"] { color: var(--ink-soft); }
 .nav-lien[data-etat="pause"]::after {
   content: "en pause";

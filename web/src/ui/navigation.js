@@ -53,6 +53,8 @@ const CAPACITE_PAR_DESTINATION = { parcelle: "parcelles", atelier: "rapports" };
  * @param {object|null} capacites Capacités déclarées par `/v1/version`, ou `null` si
  *   l'API n'a pas répondu — auquel cas on ne touche à RIEN : annoncer « bientôt » sur
  *   une panne passagère serait un mensonge, et masquer serait pire.
+ * @param {string} [profil] Profil matériel déclaré par `/v1/version` (« cpu » / « gpu »),
+ *   ou vide si l'API n'a pas répondu — on ne devine alors aucune cause.
  * @param {boolean} [replie] Vrai quand l'API déclare un repli automatique sur CPU.
  *   Change le SENS de la fermeture : « en pause » (le service se protège) au lieu de
  *   « bientôt » (pas encore ouverte). Dire « bientôt » à quelqu'un qui se servait de la
@@ -60,7 +62,7 @@ const CAPACITE_PAR_DESTINATION = { parcelle: "parcelles", atelier: "rapports" };
  *   inachevé là où il s'agit d'un service qui tient debout.
  * @returns {Array<string>} Les destinations pas encore ouvertes.
  */
-export function appliquerCapacites(destinations, capacites, replie = false) {
+export function appliquerCapacites(destinations, capacites, replie = false, profil = "") {
   if (!capacites) return [];
   const fermees = [];
   for (const [nom, capacite] of Object.entries(CAPACITE_PAR_DESTINATION)) {
@@ -70,7 +72,13 @@ export function appliquerCapacites(destinations, capacites, replie = false) {
     // `data-etat` plutôt qu'une classe : l'état vient du serveur, la feuille de style
     // s'y accroche, et rien dans le code ne dépend d'un nom de classe décoratif.
     if (ouverte) cible.lien.removeAttribute("data-etat");
-    else cible.lien.setAttribute("data-etat", replie ? "pause" : "bientot");
+    // Trois états, et le mot doit dire la VRAIE raison. « Bientôt » décrit un produit
+    // inachevé : l'écrire sur « Ma parcelle » ou « L'atelier », qui tournaient le matin
+    // même, deprécie un travail livré (constat Waopron, 20/08). Sur un profil CPU, la
+    // cause n'est pas l'inachèvement mais l'absence de la carte — on le dit.
+    // Le repli reste prioritaire : « le service se protège » se lit avant sa cause.
+    else if (replie) cible.lien.setAttribute("data-etat", "pause");
+    else cible.lien.setAttribute("data-etat", profil === "cpu" ? "gpu" : "bientot");
     // Deux textes préparés dans la page, un seul montré : on n'écrit jamais de HTML
     // depuis le code, et la formulation reste relisible par un humain dans le gabarit.
     if (cible.texteAVenir) cible.texteAVenir.hidden = replie;

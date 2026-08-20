@@ -363,3 +363,44 @@ test("API injoignable : le bandeau ne s'invente pas", () => {
 
   assert.equal(noeuds.bandeauRepli.hidden, true);
 });
+
+test("une fonction indisponible faute de GPU ne dit pas « bientôt »", () => {
+  // Constat Waopron, 20/08/2026 : « Ma parcelle » et « L'atelier » affichaient
+  // « bientôt » alors que ces fonctions EXISTENT — elles tournaient le matin même sur
+  // GPU. « Bientôt » décrit un produit inachevé ; ici il s'agit d'un matériel absent.
+  // Le mot doit dire la vraie raison, sinon il déprécie un travail livré.
+  const { noeuds, destinations } = monterDestinations();
+
+  appliquerCapacites(destinations, { parcelles: false, rapports: false }, false, "cpu");
+
+  assert.equal(noeuds.lienParcelle.getAttribute("data-etat"), "gpu");
+  assert.equal(noeuds.lienAtelier.getAttribute("data-etat"), "gpu");
+});
+
+test("« bientôt » reste réservé à ce qui n'a jamais été ouvert", () => {
+  // Sur GPU, une capacité fermée l'est par décision de configuration et non par
+  // manque de matériel : là, « bientôt » redevient exact.
+  const { noeuds, destinations } = monterDestinations();
+
+  appliquerCapacites(destinations, { parcelles: false, rapports: false }, false, "gpu");
+
+  assert.equal(noeuds.lienParcelle.getAttribute("data-etat"), "bientot");
+});
+
+test("le repli l'emporte sur le manque de materiel", () => {
+  // Un repli automatique est plus urgent à lire que sa cause : le service se protège.
+  const { noeuds, destinations } = monterDestinations();
+
+  appliquerCapacites(destinations, { parcelles: false, rapports: false }, true, "cpu");
+
+  assert.equal(noeuds.lienParcelle.getAttribute("data-etat"), "pause");
+});
+
+test("sans profil connu, le libelle ne change pas", () => {
+  // L'API n'a pas repondu : on ne devine pas une cause materielle.
+  const { noeuds, destinations } = monterDestinations();
+
+  appliquerCapacites(destinations, { parcelles: false, rapports: false });
+
+  assert.equal(noeuds.lienParcelle.getAttribute("data-etat"), "bientot");
+});

@@ -393,12 +393,14 @@ if (vues.chat && vues.parcelle && vues.atelier) {
     // compte — afficher un avis de panne qui n'a pas eu lieu, devant une salle, coûte
     // plus cher qu'un silence.
     let replie = null;
+    let profil = "";
     try {
       const reponse = await fetch(`${baseUrl}/v1/version`);
       if (reponse.ok) {
         const corps = await reponse.json();
         capacites = corps.capacites;
         replie = corps.repli_cpu === true;
+        profil = typeof corps.profil_materiel === "string" ? corps.profil_materiel : "";
       }
     } catch {
       // API injoignable : on ne masque rien (cf. masquerDestinationsFermees).
@@ -425,6 +427,7 @@ if (vues.chat && vues.parcelle && vues.atelier) {
       },
       capacites,
       replie === true,
+      profil,
     );
     // Une destination annoncée ne charge pas son module : il appellerait des routes
     // non montées, et l'erreur s'afficherait par-dessus l'annonce.
