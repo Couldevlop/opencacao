@@ -72,6 +72,11 @@ class _Alertes:
         return True
 
 
+async def _sans_attendre(_duree: float) -> None:
+    """Remplace l'attente entre deux sondes : les tests ne dorment pas."""
+    return None
+
+
 def _reglages() -> fenetre.Reglages:
     return fenetre.Reglages(
         configmap="api-config",
@@ -138,7 +143,8 @@ async def test_la_fermeture_alerte_si_le_service_ne_repond_plus_apres_le_repli()
     """Un repli qui laisse le service muet doit se dire, pas se taire jusqu'au matin."""
     alertes = _Alertes()
     cluster = _Cluster({"PROFIL_MATERIEL": "gpu", "INFERENCE_URL": TUNNEL})
-    await fenetre.fermer(cluster, _Http({}), _reglages(), alertes)  # rien ne répond
+    # `dormir` neutralisé : une suite de tests ne doit jamais attendre pour de vrai.
+    await fenetre.fermer(cluster, _Http({}), _reglages(), alertes, _sans_attendre)
     assert any("CPU" in sujet or "cpu" in sujet for sujet, _ in alertes.envoyees)
     assert len(alertes.envoyees) == 1
 
@@ -341,3 +347,60 @@ async def test_une_adresse_privee_de_tunnel_reste_acceptee() -> None:
         cluster, _Http({TUNNEL: 200, "http://api:8080": 200}), _reglages(), _Alertes()
     )
     assert cluster.donnees["PROFIL_MATERIEL"] == "gpu"
+
+
+# --- Faux négatif du 19/08 : sonder pendant que l'API redémarre ---
+
+
+class _HttpProgressif:
+    """Injoignable pendant N tentatives, puis répond — comme une API qui redémarre."""
+
+    def __init__(self, echecs: int) -> None:
+        self.restants = echecs
+        self.sondes = 0
+
+    async def get(self, url: str, headers: dict | None = None) -> object:
+        self.sondes += 1
+        if self.restants > 0:
+            self.restants -= 1
+            raise RuntimeError("connexion refusée")
+        return _Reponse(200)
+
+
+@pytest.mark.asyncio
+async def test_la_fermeture_attend_que_l_api_ait_fini_de_redemarrer() -> None:
+    """Vécu en production le 19/08 : la sonde tombait pendant le redémarrage.
+
+    La fermeture redémarre l'API puis vérifie ``/v1/ready``. Sondée une seule fois,
+    quinze secondes après, elle concluait que le service était muet et envoyait
+    l'alerte — alors que le repli s'était parfaitement déroulé.
+    """
+    alertes = _Alertes()
+    sommeils: list[float] = []
+
+    async def dormir(duree: float) -> None:
+        sommeils.append(duree)
+
+    http = _HttpProgressif(echecs=3)
+    cluster = _Cluster({"PROFIL_MATERIEL": "gpu", "INFERENCE_URL": TUNNEL})
+    await fenetre.fermer(cluster, http, _reglages(), alertes, dormir)
+
+    assert sommeils, "la fermeture doit patienter entre deux sondes"
+    assert len(alertes.envoyees) == 1
+    assert "ne répond pas" not in alertes.envoyees[0][0]
+
+
+@pytest.mark.asyncio
+async def test_la_fermeture_finit_par_alerter_si_le_service_ne_revient_jamais() -> None:
+    """L'attente ne doit pas devenir un silence : au bout du compte, on alerte."""
+    alertes = _Alertes()
+
+    async def dormir(duree: float) -> None:
+        return None
+
+    http = _HttpProgressif(echecs=10_000)
+    cluster = _Cluster({"PROFIL_MATERIEL": "gpu", "INFERENCE_URL": TUNNEL})
+    await fenetre.fermer(cluster, http, _reglages(), alertes, dormir)
+
+    assert http.sondes > 1, "une seule sonde ne suffit pas à conclure"
+    assert "ne répond pas" in alertes.envoyees[0][0]

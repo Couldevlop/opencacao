@@ -202,6 +202,12 @@ data:
   BASE_API: "http://api:8080"
   HOTE_PUBLIC: "opencacao.openlabconsulting.com"
   TIMEOUT_S: "15"
+  # La fermeture REDÉMARRE l'API avant de vérifier qu'elle répond. Sondée une seule
+  # fois, elle interroge un pod en train de repartir et conclut à la panne : c'est le
+  # faux négatif du 19/08, qui a envoyé « le service ne répond pas » sur un repli
+  # parfaitement déroulé. 10 x 15 s = 2 min 15 au plus, sous activeDeadlineSeconds.
+  TENTATIVES_PRET: "10"
+  ATTENTE_PRET_S: "15"
   # Coût horaire de la carte louée, pour chiffrer un oubli dans l'email. À ajuster si
   # vous changez de GPU (L4 0,49 ; RTX A5000 0,27 ; RTX 4000 Ada 0,28 ; A4000 0,25).
   COUT_GPU_USD_H: "0.49"
