@@ -1,5 +1,11 @@
 # Audit des livrables — ce qui décrédibiliserait une étude devant une commission
 
+> **Mise à jour du 20/08/2026 (v0.6.93).** Les trois **bloquants** et les majeurs M2,
+> M3 et M4 sont **corrigés et vérifiés en production** : 0 astérisque, 0 paragraphe
+> tronqué, aplats de couleur, pied de page numéroté, PowerPoint en 16:9 aux couleurs
+> Office 2024 avec l'orange OpenCacao en tête. Restent M1, M5, M6 et les racines
+> R1 à R4 — voir l'ordre d'exécution en fin de document.
+
 **Date** : 19 août 2026 · **Version auditée** : 0.6.89 (production)
 **Méthode** : ouverture et analyse des six fichiers réellement produits par la chaîne
 de production (`etudes_test_19082026/`), pas relecture du code. Chaque constat ci-dessous
