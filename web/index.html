@@ -153,19 +153,20 @@
 
     <!-- Avis de repli automatique. Affiché UNIQUEMENT si /v1/version déclare
          `repli_cpu` : la sentinelle a ramené le service sur les serveurs de secours
-         sans intervention humaine. Le ton est délibéré — ni alarme rouge, ni jargon :
-         ce qui marche encore est dit avant ce qui est en pause, et la conversation,
-         qui est le produit, continue. `role="status"` et non `alert` : c'est une
-         information, elle ne doit pas interrompre un lecteur d'écran en pleine phrase. -->
+         sans intervention humaine.
+
+         UNE SEULE LIGNE, et c'est un choix. Le message détaillait auparavant ce qui
+         était mis en pause — alors que la navigation le dit déjà, fonction par
+         fonction, avec ses pastilles « en pause ». Répéter la même information deux
+         fois occupait quatre lignes au-dessus de la conversation, qui est le produit.
+         On garde donc l'essentiel — le service marche — et on laisse la navigation
+         dire le détail à l'endroit où il est utile.
+
+         `role="status"` et non `alert` : c'est une information, elle ne doit pas
+         interrompre un lecteur d'écran en pleine phrase. -->
     <aside class="bandeau-repli" id="bandeauRepli" role="status" aria-live="polite" hidden>
       <span class="bandeau-repli-icone" aria-hidden="true">◐</span>
-      <p>
-        <strong>Service de secours</strong> — nous servons actuellement OpenCacao sur
-        nos serveurs de repli. <strong>La conversation fonctionne normalement.</strong>
-        L'atelier de documents et le suivi de parcelle sont mis en pause le temps du
-        rétablissement, pour garder le conseil rapide pour tout le monde. Merci de
-        votre patience.
-      </p>
+      <p><strong>Mode secours</strong> — la conversation fonctionne normalement.</p>
     </aside>
 
     <!-- ================= Destination 1 : la conversation ================= -->
