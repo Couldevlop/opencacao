@@ -79,9 +79,7 @@ def fil_ancre_sujet(
         Le fil ancré, éventuellement préfixé du sujet engagé.
     """
     ancre = fil_ancre(question, historique)
-    sujet = getattr(connue, "sujet", "") or ""
-    partie = getattr(connue, "partie", "") or ""
-    if not sujet:
+    if not getattr(connue, "sujet", ""):
         return ancre
 
     # Le tour courant est-il une RÉPONSE, ou une question neuve ? Le critère est la
@@ -96,8 +94,43 @@ def fil_ancre_sujet(
     if "?" in question or len(question.split()) > _MOTS_MAX_REPONSE:
         return ancre
 
-    rappel = f"{sujet} {partie}".strip()
+    rappel = _dernier_tour_a_theme(historique)
     return f"{rappel} : {ancre}" if rappel else ancre
+
+
+def _dernier_tour_a_theme(historique: list[dict[str, str]]) -> str:
+    """Dernier tour du PRODUCTEUR qui portait un thème, ou ``""``.
+
+    Le premier correctif enrichissait la requête de la clé interne du thème —
+    « symptome les feuilles ». Vérifié en production : insuffisant. « symptome » ne
+    figure dans aucun document du corpus, le mot « parcelle » continuait de dominer la
+    récupération, et le quatrième tour recevait encore des conseils d'implantation.
+
+    Le bon ancrage n'est pas un libellé qu'on invente : ce sont les mots que le
+    producteur a employés pour poser son problème. Ils sont, par construction, du
+    vocabulaire de la filière, et ils décrivent SON cas plutôt qu'une catégorie.
+
+    On retient le plus RÉCENT : un producteur affine en cours de route — « mon
+    cacaoyer est malade » puis « les feuilles jaunissent » — et c'est la précision qui
+    porte l'information utile.
+
+    Args:
+        historique: Tours précédents de la conversation.
+
+    Returns:
+        Le contenu du tour, ou ``""`` si aucun tour du producteur ne portait de thème.
+    """
+    # Import local : `clarification` ne dépend pas de cette couche, et l'importer en
+    # tête créerait un cycle avec la fiche, qui l'importe déjà.
+    from app.services import clarification
+
+    for tour in reversed(historique):
+        if tour.get("role") != "user":
+            continue
+        contenu = tour.get("content", "")
+        if clarification.theme_du_texte(contenu):
+            return contenu
+    return ""
 
 
 def texte_conversation(question: str, historique: list[dict[str, str]]) -> str:

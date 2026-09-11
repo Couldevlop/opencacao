@@ -82,3 +82,59 @@ def test_une_fiche_absente_ne_fait_pas_tomber_l_ancrage() -> None:
     question = "sur toute la parcelle"
 
     assert fil_ancre_sujet(question, _fil_symptome(), None) == fil_ancre(question, _fil_symptome())
+
+
+# --- L'ancrage reprend les MOTS du producteur, pas la clé interne du thème ----------
+#
+# Premier correctif, vérifié en production le 11/09 et INSUFFISANT : la requête était
+# enrichie de « symptome les feuilles », où « symptome » est une clé interne qui ne
+# figure dans aucun document du corpus. Le mot « parcelle » continuait de dominer la
+# récupération, et le quatrième tour recevait encore des conseils d'implantation.
+#
+# Le bon ancrage n'est pas un libellé qu'on invente : ce sont les mots que le
+# producteur a lui-même employés pour poser son problème. Ils sont, par construction,
+# du vocabulaire de la filière — et ils décrivent SON cas, pas une catégorie.
+
+
+def test_l_ancrage_reprend_les_mots_du_producteur() -> None:
+    historique = _fil_symptome()
+    question = "sur toute la parcelle"
+    connue = fiche.extraire(question, historique)
+
+    ancre = fil_ancre_sujet(question, historique, connue)
+
+    assert "jaunissent" in ancre, "le tour qui portait le sujet doit être repris"
+    assert "symptome" not in ancre, "une clé interne n'a rien à faire dans une requête"
+
+
+def test_c_est_le_tour_a_theme_le_plus_RECENT_qui_ancre() -> None:
+    """Le producteur a précisé son problème en cours de route : c'est la précision qui
+    compte, pas la formulation initiale."""
+    historique = [
+        {"role": "user", "content": "Mon cacaoyer est malade"},
+        {"role": "assistant", "content": "Sur quelle partie ?"},
+        {"role": "user", "content": "les feuilles jaunissent"},
+        {"role": "assistant", "content": "Depuis quand ?"},
+        {"role": "user", "content": "depuis deux semaines"},
+        {"role": "assistant", "content": "Voici le conseil."},
+    ]
+
+    ancre = fil_ancre_sujet(
+        "sur toute la parcelle", historique, fiche.extraire("sur toute la parcelle", historique)
+    )
+
+    assert "jaunissent" in ancre
+    assert "malade" not in ancre
+
+
+def test_sans_tour_a_theme_rien_n_est_ajoute() -> None:
+    """On n'ancre que sur ce qui a été réellement dit."""
+    historique = [
+        {"role": "user", "content": "bonjour"},
+        {"role": "assistant", "content": "Bonjour."},
+    ]
+    question = "et alors"
+
+    assert fil_ancre_sujet(question, historique, fiche.extraire(question, historique)) == fil_ancre(
+        question, historique
+    )
