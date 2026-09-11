@@ -149,13 +149,24 @@ class ServiceConstatChat:
                 continue
             retenues.append((donnees, hashlib.sha256(donnees).hexdigest()))
 
-        # 2. Les garde-fous ensuite, la vision en dernier. `image_analysee` ne lève que
-        #    la règle d'image, et seulement si une image sera RÉELLEMENT analysée ; le
-        #    dosage, le médical et le hors-filière restent des refus dans tous les cas.
+        # 2. Les garde-fous ensuite, la vision en dernier. La règle d'image est levée
+        #    dès qu'une image est JOINTE, et non seulement si elle est recevable.
+        #
+        #    Vécu en production le 11/09 : un producteur envoie une vraie photo de
+        #    cabosse, trop petite, avec « Que voyez-vous sur cette photo ? ». Il reçoit
+        #    « Je ne peux pas identifier une maladie à partir d'une photo » au lieu de
+        #    « l'image est trop petite, utilisez l'appareil photo ». Le conseil de
+        #    reprise — le seul message utile — était avalé par le refus lexical.
+        #
+        #    La règle d'image existe pour ne pas promettre une lecture qu'on ne fait
+        #    pas. Ici une image est bien là, et la promesse est tenue : soit par un
+        #    constat, soit par un conseil de reprise honnête. Le dosage, le médical et
+        #    le hors-filière, eux, restent des refus dans tous les cas — la protection
+        #    ne dépend pas de la qualité de l'image.
         refus = guardrails.evaluer(
             question,
             conversation=conversation or question,
-            image_analysee=bool(retenues),
+            image_analysee=True,
         )
         if refus is not None:
             logger.info("photo_chat_garde_fou", categorie=refus.categorie.value)
