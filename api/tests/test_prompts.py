@@ -134,3 +134,54 @@ def test_le_constat_visuel_vouvoie_lui_aussi() -> None:
 
     assert "VOUVOIE" in consigne.upper()
     assert "« vous »" in consigne or '"vous"' in consigne
+
+
+# --- Le vouvoiement se rappelle dans le TOUR UTILISATEUR, pas seulement en système ---
+#
+# Vérifié en production le 11/09/2026, profil GPU : le chat tutoyait franchement —
+# « ton arbre », « tu remarques », « je te conseille » — alors que le prompt système
+# porte la règle depuis le 19/08.
+#
+# Deux causes qui vont dans le même sens. Le corpus est écrit en registre « conseil au
+# producteur », donc les extraits RAG injectés TUTOIENT ; et les consignes de
+# clarification s'adressaient au modèle en « tu ». Le modèle suit ce qui est le plus
+# proche de la génération, et c'est le tour utilisateur — la leçon est déjà écrite
+# noir sur blanc dans `redaction.py`, où le même piège avait été corrigé.
+
+
+def test_le_tour_utilisateur_rappelle_le_vouvoiement_avec_du_contexte() -> None:
+    from app.services.prompts import build_messages
+
+    messages = build_messages("Quand tailler ?", contexte="Taille ton cacaoyer après la récolte.")
+
+    dernier = messages[-1]["content"]
+    assert dernier.count("vous") >= 1
+    assert "VOUVOIE" in dernier.upper()
+
+
+def test_le_tour_utilisateur_rappelle_le_vouvoiement_sans_contexte() -> None:
+    """Le repli sans contexte est le chemin où le modèle improvise le plus."""
+    from app.services.prompts import build_messages
+
+    messages = build_messages("Quand tailler ?", contexte=None)
+
+    assert "VOUVOIE" in messages[-1]["content"].upper()
+
+
+def test_la_consigne_de_clarification_rappelle_le_vouvoiement() -> None:
+    from app.services.prompts import build_messages
+
+    messages = build_messages("Mon cacaoyer est malade", consigne="Pose UNE question.")
+
+    assert "VOUVOIE" in messages[-1]["content"].upper()
+
+
+def test_les_consignes_de_clarification_ne_tutoient_plus_le_modele() -> None:
+    """Une consigne écrite en « tu » se répercutait sur la réponse : le modèle
+    reprenait le registre qu'on venait de lui donner."""
+    from app.services.clarification import _CONSIGNES
+
+    for theme, consigne in _CONSIGNES.items():
+        minuscules = consigne.lower()
+        for marque in (" tu ", " te ", " ton ", " ta "):
+            assert marque not in f" {minuscules} ", f"{theme} tutoie le modèle : {marque!r}"

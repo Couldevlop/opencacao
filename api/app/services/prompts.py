@@ -111,6 +111,12 @@ def _dialogue_alternant(
     return tours
 
 
+# Rappel de registre placé en FIN de tour utilisateur, donc au plus près de la
+# génération. Court volontairement : une consigne longue à cet endroit concurrencerait
+# la question elle-même.
+RAPPEL_VOUVOIEMENT = "(Rappel de forme : VOUVOIE le producteur — « vous », jamais « tu ».)"
+
+
 def build_messages(
     question: str,
     contexte: str | None = None,
@@ -157,6 +163,13 @@ def build_messages(
         )
     else:
         contenu_user = f"{FALLBACK_SANS_CONTEXTE}\n\n{libelle_question} : {question}"
+    # Le vouvoiement est rappelé ICI, dans le tour utilisateur, et pas seulement dans
+    # le message système. Le corpus est écrit en registre « conseil au producteur » :
+    # les extraits injectés TUTOIENT, et le modèle suit ce qui est le plus proche de la
+    # génération. Vécu en production le 11/09/2026 — « ton arbre », « je te conseille »
+    # — alors que la règle figurait dans le système depuis le 19/08. Même piège, et
+    # même remède, que l'en-tête analytique des livrables (cf. `redaction.py`).
+    contenu_user = f"{contenu_user}\n\n{RAPPEL_VOUVOIEMENT}"
     dialogue = _dialogue_alternant(historique or [], contenu_user)
     systeme = f"{system_prompt}\n\n{memoire}" if memoire else system_prompt
     return [{"role": "system", "content": systeme}, *dialogue]

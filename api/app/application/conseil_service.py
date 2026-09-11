@@ -14,6 +14,7 @@ from dataclasses import replace
 from app.application import conseil_commun, flux
 from app.application.cache_semantique import CacheSemantique
 from app.application.contexte import fil_ancre as _fil_ancre
+from app.application.contexte import fil_ancre_sujet as _fil_ancre_sujet
 from app.application.contexte import texte_conversation as _texte_conversation
 from app.core.logging import get_logger
 from app.domain.entities import Conseil
@@ -230,7 +231,7 @@ class ConseilService:
         # Inférence (peut lever InferenceUnavailable), augmentée par RAG si activé.
         # La requête RAG est ré-ancrée sur le thème en cours (multi-tours) pour ne pas
         # récupérer des passages hors sujet sur une question de suivi.
-        contexte = await self._contexte(_fil_ancre(question, historique))
+        contexte = await self._contexte(_fil_ancre_sujet(question, historique, fiche_producteur))
         texte = postprocess.nettoyer_tirets(
             await self._inference.generer(
                 question,
@@ -450,7 +451,7 @@ class ConseilService:
         # Le libellé couvre la recherche RAG et le préremplissage CPU (la plus
         # longue attente silencieuse avant le premier token).
         yield flux.progres(flux.PROGRES_REDACTION)
-        contexte = await self._contexte(_fil_ancre(question, historique))
+        contexte = await self._contexte(_fil_ancre_sujet(question, historique, fiche_producteur))
         async for delta in self._inference.generer_stream(
             question,
             contexte=contexte,

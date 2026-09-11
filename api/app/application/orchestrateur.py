@@ -17,7 +17,7 @@ from dataclasses import replace
 
 from app.application import conseil_commun, flux
 from app.application.cache_semantique import CacheSemantique
-from app.application.contexte import fil_ancre, texte_conversation
+from app.application.contexte import fil_ancre_sujet, texte_conversation
 from app.application.routage import RouteurIntention
 from app.core.logging import get_logger
 from app.domain.agents import AgentPort, AgentReponse, AgentRequete
@@ -149,7 +149,10 @@ class Orchestrateur:
             AgentIndisponible: Si l'agent retenu échoue (propagée).
         """
         historique = historique or []
-        fil = fil_ancre(question, historique)
+        # Ancrage enrichi du sujet engagé quand le tour courant est une RÉPONSE :
+        # sans lui, « sur toute la parcelle » ramenait des passages sur le choix du
+        # terrain alors que le producteur décrivait un jaunissement (prod 11/09).
+        fil = fil_ancre_sujet(question, historique, fiche_producteur)
         texte_conv = texte_conversation(question, historique)
 
         # 0. Civilités : un « Bonjour » n'est pas une question. Réponse constante,
@@ -318,7 +321,10 @@ class Orchestrateur:
         yield flux.progres(flux.PROGRES_ANALYSE)
 
         historique = historique or []
-        fil = fil_ancre(question, historique)
+        # Ancrage enrichi du sujet engagé quand le tour courant est une RÉPONSE :
+        # sans lui, « sur toute la parcelle » ramenait des passages sur le choix du
+        # terrain alors que le producteur décrivait un jaunissement (prod 11/09).
+        fil = fil_ancre_sujet(question, historique, fiche_producteur)
         texte_conv = texte_conversation(question, historique)
 
         # 0 bis. Civilités : mêmes garanties qu'en synchrone, sur le chemin réel

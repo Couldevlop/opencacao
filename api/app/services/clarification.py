@@ -255,27 +255,27 @@ def _fil_utilisateur(question: str, historique: list[dict[str, str]]) -> str:
 _CONSIGNES: dict[str, str] = {
     "contact": (
         "Le producteur cherche un contact de l'ANADER mais n'a pas indiqué sa localité. "
-        "Demande-lui simplement et chaleureusement dans quelle ville ou région il se "
+        "Demandez-lui simplement et chaleureusement dans quelle ville ou région il se "
         "trouve, sans rien affirmer d'autre et sans donner de numéro."
     ),
     "symptome": (
-        "Il te manque, pour bien l'aider, la partie atteinte (feuilles, cabosses, "
-        "tronc/rameaux, racines) et depuis combien de temps cela dure. Pose UNE question "
+        "Il manque, pour bien l'aider, la partie atteinte (feuilles, cabosses, "
+        "tronc/rameaux, racines) et depuis combien de temps cela dure. Posez UNE question "
         "brève, naturelle et bienveillante pour l'obtenir, sans donner de conseil encore."
     ),
     "traitement": (
-        "Avant d'orienter, il te faut savoir quel problème précis traiter (maladie, "
+        "Avant d'orienter, il faut savoir quel problème précis traiter (maladie, "
         "insecte, mauvaises herbes), sur quelle partie et quelle ampleur. Pose UNE "
         "question brève et naturelle pour le préciser, sans conseiller encore."
     ),
     "rendement": (
-        "Pour comprendre la baisse de rendement, il te faut l'âge de la plantation, les "
+        "Pour comprendre la baisse de rendement, il faut l'âge de la plantation, les "
         "entretiens récents (taille, désherbage, égourmandage) et la présence éventuelle "
-        "de maladies. Pose UNE question brève et naturelle en ce sens, sans conclure encore."
+        "de maladies. Posez UNE question brève et naturelle en ce sens, sans conclure encore."
     ),
     "fertilisation": (
-        "Pour conseiller sur la fertilité, il te faut l'âge de la plantation, si elle a "
-        "déjà été fertilisée et le type de sol. Pose UNE question brève et naturelle "
+        "Pour conseiller sur la fertilité, il faut l'âge de la plantation, si elle a "
+        "déjà été fertilisée et le type de sol. Posez UNE question brève et naturelle "
         "pour le savoir, sans donner de recommandation encore."
     ),
     # Arbitrage Waopron du 11/09/2026. Une intention de plantation est le seul cas où
@@ -285,10 +285,10 @@ _CONSIGNES: dict[str, str] = {
     # franchement la limite si ce n'en est pas.
     "plantation": (
         "Le producteur veut créer une plantation mais n'a pas dit de quelle culture ni "
-        "où. Demande-lui, en UNE phrase chaleureuse, de confirmer qu'il s'agit bien de "
-        "CACAO et dans quelle ville ou zone il compte planter. Précise, en quelques mots, "
-        "que tu ne peux l'accompagner que sur le cacao si c'est une autre culture. Ne "
-        "donne aucun conseil de plantation à ce stade."
+        "où. Demandez-lui, en UNE phrase chaleureuse, de confirmer qu'il s'agit bien de "
+        "CACAO et dans quelle ville ou zone il compte planter. Précisez, en quelques mots, "
+        "que vous ne pouvez l'accompagner que sur le cacao si c'est une autre culture. Ne "
+        "donnez aucun conseil de plantation à ce stade."
     ),
 }
 
@@ -390,14 +390,15 @@ def consigne_theme(theme: str, besoin_localite: bool, deja_connu: str = "") -> s
         )
     if besoin_localite and theme != "contact":
         consigne += (
-            " Demande aussi, dans la même phrase et naturellement, dans quelle localité "
+            " Demandez aussi, dans la même phrase et naturellement, dans quelle localité "
             "il se trouve."
         )
     # Latence : le modèle rédige sinon 50-70 tokens et la question est tronquée par le
     # plafond CPU. On exige une formulation TRÈS courte, complète en une phrase.
     consigne += (
-        " Réponds par UNE SEULE question, en une phrase courte (20 mots maximum), "
-        "sans préambule ni politesse d'introduction."
+        " Répondez par UNE SEULE question, en une phrase courte (20 mots maximum), "
+        "sans préambule ni politesse d'introduction, en VOUVOYANT le producteur "
+        "(« vous », jamais « tu »)."
     )
     return consigne
 
