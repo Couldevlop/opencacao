@@ -2,25 +2,32 @@
 # Reprise du GPU en moins de cinq minutes — côté cluster.
 #
 # CE QUI REND CETTE PROMESSE TENABLE. Le pod loué ne détient rien d'irremplaçable :
-# tout ce qui compte vit sur le VOLUME RÉSEAU RunPod (`iyqkq9jicv`, monté sur
-# /workspace), qui survit à la destruction du pod. Il porte le GGUF de production, le
-# modèle de vision, llama.cpp déjà compilé, le script de démarrage automatique — et
-# l'état Tailscale, donc la MÊME adresse de tunnel d'un pod à l'autre.
+# tout ce qui compte vit sur le VOLUME RÉSEAU RunPod (`naq4wvxooz`, monté sur
+# /workspace), qui survit à la destruction du pod. Il porte le GGUF de production,
+# llama.cpp déjà compilé, le script de démarrage automatique — et l'état Tailscale,
+# donc la MÊME adresse de tunnel d'un pod à l'autre.
 #
 # On peut donc DÉTRUIRE le pod entre deux usages, pas seulement l'arrêter : le coût du
 # pod tombe à zéro et rien n'est perdu. Seul le volume reste facturé.
+#
+# ⚠ Le volume `iyqkq9jicv` (jusqu'au 20/08) a disparu avec son pod : un pod détruit ne
+# coûte rien, un volume détruit coûte une reconstruction complète (~40 min, dont la
+# compilation de llama.cpp et 4,9 Go à repousser depuis le nœud). Garder le volume est
+# le geste qui tient la promesse ci-dessus.
 #
 # ─────────────────────────────────────────────────────────────────────────────
 # CE QUI SE FAIT AILLEURS, ET QUI N'EST PAS DANS CE SCRIPT
 #
 #   1. Créer le pod dans la console RunPod, avec DEUX réglages non négociables :
-#        · Network Volume : `iyqkq9jicv` — sinon le pod démarre vide, et il faudra
-#          repousser 12 Go. Le volume est lié au centre de données EU-RO-1 : le pod
-#          DOIT y être créé, sans quoi il ne peut pas s'y attacher.
+#        · Network Volume : `naq4wvxooz` — sinon le pod démarre vide, RunPod en crée un
+#          neuf EN SILENCE (vécu le 11/09), et il faut tout reconstruire. Le volume est
+#          lié au centre de données EU-RO-1 : le pod DOIT y être créé, sans quoi il ne
+#          peut pas s'y attacher.
 #        · Container Start Command :
 #            bash -c 'if [ -f /workspace/pre_start.sh ]; then cp -f /workspace/pre_start.sh /pre_start.sh; fi; exec /start.sh'
 #          C'est elle qui fait renaître le point d'accroche effacé à chaque arrêt, et
-#          donc qui relance Tailscale et llama-server tout seuls.
+#          donc qui relance Tailscale et llama-server tout seuls. Le fichier de
+#          référence est versionné : `deploy/scripts/pod/pre_start.sh`.
 #
 #   2. Attendre ~1 min que le pod démarre. `/workspace/demarrage.log` raconte ce qui
 #      s'est passé ; `/workspace/llama-server.log` le chargement du modèle.
@@ -31,15 +38,17 @@
 # Sans argument, il reprend l'adresse mémorisée (INFERENCE_URL_GPU) — ce qui est le cas
 # nominal, l'identité Tailscale étant sur le volume.
 # Le nœud a bien bash 5.2 ; c'est /bin/sh qui y est dash. Ce script exige bash — son
-# shebang le dit, et il faut l'invoquer par `bash`, jamais par `sh`.
+# shebang le dit, et il faut l'invoquer par `bash`, jamais par `sh` : la substitution de
+# processus de l'étape 2 en dépend.
 #
-# ⚠ Transféré depuis Windows, purger les retours chariot : `bash` lirait l'option
-# « pipefail » et refuserait la première ligne. `tr -d '' < script | bash`.
+# ⚠ Transféré depuis Windows, purger les retours chariot, sans quoi bash lit l'option
+# « pipefail » et refuse la première ligne :   tr -d '\r' < script | ssh … 'cat > …'
 set -euo pipefail
 
 NS="${NS:-opencacao}"
 CONFIGMAP="${CONFIGMAP:-api-config}"
 DEPL_API="${DEPL_API:-api}"
+SECRET_JETON="${SECRET_JETON:-opencacao-inference}"
 URL_PUBLIQUE="${URL_PUBLIQUE:-https://opencacao.openlabconsulting.com}"
 ATTENTE_MAX_S="${ATTENTE_MAX_S:-180}"
 
@@ -63,7 +72,7 @@ case "${CIBLE}" in
     ;;
 esac
 
-echo "→ 1/4  Le pod répond-il ?  ${CIBLE}"
+echo "→ 1/5  Le pod répond-il ?  ${CIBLE}"
 CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "${CIBLE}/v1/models" || echo 000)"
 echo "        /v1/models -> HTTP ${CODE}"
 case "${CODE}" in
@@ -76,7 +85,41 @@ case "${CODE}" in
     ;;
 esac
 
-echo "→ 2/4  Bascule de la configuration"
+echo "→ 2/5  Le pod accepte-t-il le jeton DU CLUSTER ?"
+# LA LEÇON DE LA NUIT DU 11/09. L'étape 1 se contentait d'un 401 — « le serveur est
+# protégé », ce qui est vrai et rassurant, mais ne dit RIEN de la validité du jeton que
+# l'API présentera. Le jeton du pod différait de quatre octets ; la bascule a été
+# déclarée « OK en 14 s » et la production a rendu 503 jusqu'à ce que la sentinelle
+# replie d'elle-même. On essaie donc une vraie génération ICI, AVANT de toucher au
+# ConfigMap : un échec à cette étape ne coûte rien, le CPU continue de servir.
+JETON="$(k get secret "${SECRET_JETON}" -o jsonpath='{.data.INFERENCE_API_KEY}' 2>/dev/null | base64 -d || true)"
+if [ -z "${JETON}" ]; then
+  echo "✗ Secret « ${SECRET_JETON} » introuvable ou vide : impossible de prouver l'accès." >&2
+  exit 6
+fi
+# Le jeton passe par un fichier de configuration éphémère, JAMAIS par argv : `ps` est
+# lisible par tous sur le nœud. C'est le reste de sécurité relevé au 19/08 côté pod,
+# qu'on ne reproduit pas côté cluster.
+ESSAI="$(curl -s --max-time 60 \
+  --config <(printf 'header = "Authorization: Bearer %s"\n' "${JETON}") \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"opencacao-8b","max_tokens":8,"messages":[{"role":"user","content":"Bonjour"}]}' \
+  "${CIBLE}/v1/chat/completions" 2>/dev/null || true)"
+case "${ESSAI}" in
+  *'"choices"'*)
+    echo "        génération d'essai acceptée"
+    ;;
+  *)
+    echo "✗ Le pod REFUSE le jeton du cluster — l'API prendrait un 401 et rendrait 503." >&2
+    echo "  Le cluster n'est PAS touché : le service continue sur CPU." >&2
+    echo "  Empreinte du jeton attendu : $(printf '%s' "${JETON}" | sha256sum | cut -c1-12)" >&2
+    echo "  Comparer sur le pod :  sha256sum /workspace/.opencacao_api_key | cut -c1-12" >&2
+    echo "  Et  wc -c  doit rendre 64 : un « echo » au lieu d'un « printf » ajoute un octet." >&2
+    exit 7
+    ;;
+esac
+
+echo "→ 3/5  Bascule de la configuration"
 # Les DEUX clés. `INFERENCE_URL` fait basculer maintenant ; `INFERENCE_URL_GPU` est ce
 # que la veille du matin relira demain — l'oublier ferait échouer la reprise automatique
 # du lendemain, sans que rien ne le signale aujourd'hui.
@@ -88,49 +131,47 @@ k patch configmap "${CONFIGMAP}" --type merge -p "{\"data\":{
 }}" >/dev/null
 echo "        profil gpu, tunnel mémorisé"
 
-echo "→ 3/4  Redémarrage de l'API"
+echo "→ 4/5  Redémarrage de l'API"
 k rollout restart "deploy/${DEPL_API}" >/dev/null
 k rollout status "deploy/${DEPL_API}" --timeout="${ATTENTE_MAX_S}s"
 
-echo "→ 4/4  Vérification du service"
-# On ne déclare pas une reprise réussie sur la foi d'un rollout : ce qui compte est que
-# le service réponde. On interroge donc l'API, mais PAS forcément par son adresse
-# publique : exécuté sur le nœud — ce qui est le cas nominal, le port 6443 étant filtré
-# depuis un poste de travail — Cloudflare répond 403 à l'origine qui s'appelle
-# elle-même. On sonde alors DEPUIS le cluster, ce qui teste d'ailleurs le vrai chemin.
-sonder() {
-  local corps
-  corps="$(curl -fsS --max-time 15 "${URL_PUBLIQUE}/v1/ready" 2>/dev/null || true)"
-  case "${corps}" in *'"inference":true'*) echo "${corps}"; return 0 ;; esac
-  # Repli interne : depuis un pod, avec l'en-tête Host qu'exige TrustedHostMiddleware.
-  k exec "deploy/${DEPL_API}" -- python -c "
+echo "→ 5/5  Vérification du service, sur une GÉNÉRATION RÉELLE"
+# On ne déclare pas une reprise réussie sur la foi d'un rollout, ni d'un `/v1/ready` :
+# ce dernier n'interroge que la sonde de santé de llama.cpp, qui n'exige aucun jeton.
+# Il a répondu `inference:true` pendant que la production rendait 503. Le seul contrôle
+# qui prouve qu'un utilisateur est servi est une réponse complète obtenue par le vrai
+# chemin — depuis un pod du cluster, avec l'en-tête Host qu'exige TrustedHostMiddleware
+# (le nœud reçoit 403 de Cloudflare sur sa propre URL publique).
+HOTE="$(echo "${URL_PUBLIQUE}" | sed 's|https\?://||')"
+REPONSE=""
+for _ in $(seq 1 12); do
+  REPONSE="$(k exec "deploy/${DEPL_API}" -- python -c "
 import httpx, sys
 try:
-    r = httpx.get('http://127.0.0.1:8080/v1/ready', headers={'Host': '$(echo "${URL_PUBLIQUE}" | sed 's|https\?://||')'}, timeout=10)
-    sys.stdout.write(r.text)
-except Exception:
-    pass
-" 2>/dev/null || true
-}
-
-PRET=""
-for _ in $(seq 1 20); do
-  PRET="$(sonder)"
-  case "${PRET}" in *'"inference":true'*) break ;; esac
+    r = httpx.post('http://127.0.0.1:8080/v1/chat',
+                   headers={'Host': '${HOTE}'},
+                   json={'question': 'Quand tailler un cacaoyer ?'},
+                   timeout=120)
+    sys.stdout.write('%d %s' % (r.status_code, r.text[:120]))
+except Exception as exc:
+    sys.stdout.write('000 %s' % type(exc).__name__)
+" 2>/dev/null || true)"
+  case "${REPONSE}" in 200*) break ;; esac
   sleep 5
 done
-echo "        /v1/ready : ${PRET:-INJOIGNABLE}"
+echo "        /v1/chat : ${REPONSE:-INJOIGNABLE}"
 
 DUREE="$((SECONDS - DEPART))"
-case "${PRET}" in
-  *'"inference":true'*)
+case "${REPONSE}" in
+  200*)
     echo
-    echo "OK → GPU repris en ${DUREE} s (côté cluster)."
+    echo "OK → GPU repris en ${DUREE} s, prouvé par une génération complète."
     ;;
   *)
     echo
-    echo "⚠ Configuration basculée mais le service ne confirme pas encore (${DUREE} s)." >&2
-    echo "  Retour immédiat au CPU si besoin : deploy/scripts/profil.sh cpu" >&2
+    echo "⚠ Configuration basculée mais AUCUNE génération n'a abouti (${DUREE} s)." >&2
+    echo "  Retour immédiat au CPU : deploy/scripts/profil.sh cpu" >&2
+    echo "  Journal du pod : tail -30 /workspace/llama-server.log" >&2
     exit 5
     ;;
 esac

@@ -43,9 +43,17 @@ def test_il_memorise_l_adresse_pour_la_veille_du_lendemain(source: str) -> None:
 
 
 def test_il_verifie_le_service_public_et_pas_seulement_le_rollout(source: str) -> None:
-    """Un rollout réussi ne prouve pas que les utilisateurs sont servis."""
-    assert "/v1/ready" in source
-    assert '"inference":true' in source
+    """Un rollout réussi ne prouve pas que les utilisateurs sont servis.
+
+    La vérification s'appuyait sur `/v1/ready` : elle ne suffit plus, car cette route
+    interroge la sonde de santé de llama.cpp, qui n'exige aucun jeton. Elle a répondu
+    `inference:true` la nuit du 11/09 pendant que la production rendait 503.
+    """
+    assert (
+        '"inference":true' not in source
+    ), "la sonde de sante n'exige aucun jeton : elle ne prouve pas qu'un utilisateur est servi"
+    assert "rollout status" in source
+    assert "200*" in source
 
 
 def test_il_rappelle_le_chemin_de_retour(source: str) -> None:
@@ -59,3 +67,43 @@ def test_il_documente_les_deux_reglages_du_pod(source: str) -> None:
     assert "iyqkq9jicv" in source
     assert "pre_start.sh" in source
     assert "EU-RO-1" in source
+
+
+def test_il_prouve_l_authentification_AVANT_de_basculer(source: str) -> None:
+    """La leçon de la nuit du 11/09 : `/v1/models` rend 401 quand le serveur est
+    protégé — ce qui est bon — mais ne dit RIEN sur la validité du jeton du cluster.
+    Le script a donc déclaré « OK, GPU repris » sur une production qui rendait 503.
+    Il doit essayer une vraie génération, avec le jeton du Secret, avant de toucher
+    au ConfigMap : un échec ne coûte alors rien, le CPU continue de servir.
+    """
+    essai = source.index("/v1/chat/completions")
+    bascule = source.index("PROFIL_MATERIEL")
+    assert essai < bascule
+
+
+def test_il_lit_le_jeton_dans_le_secret_du_cluster(source: str) -> None:
+    """Comparer le pod à un jeton saisi à la main revient à tester la saisie."""
+    assert "opencacao-inference" in source
+    assert "INFERENCE_API_KEY" in source
+
+
+def test_le_jeton_ne_passe_jamais_par_la_ligne_de_commande(source: str) -> None:
+    """`ps` est lisible par tout le monde sur le nœud. Reste de sécurité déjà relevé
+    au 19/08 côté pod : ne pas le reproduire côté cluster."""
+    assert "--config" in source
+    assert '-H "Authorization: Bearer ${JETON}"' not in source
+    assert "-H 'Authorization: Bearer" not in source
+
+
+def test_il_valide_la_reprise_sur_une_generation_reelle(source: str) -> None:
+    """Un `/v1/ready` à `inference:true` n'interroge que la sonde de santé de
+    llama.cpp, qui n'exige aucun jeton. Il ne prouve pas qu'un utilisateur est servi."""
+    assert "'question'" in source
+    assert source.count("/v1/chat") >= 2
+
+
+def test_il_affiche_les_empreintes_en_cas_d_ecart_de_jeton(source: str) -> None:
+    """Diagnostiquer sans jamais afficher le secret : c'est le contrôle 2.4 de la
+    recette du 19/08, et c'est ce qui a permis de trouver l'écart cette nuit."""
+    assert "sha256sum" in source
+    assert "cut -c1-12" in source
