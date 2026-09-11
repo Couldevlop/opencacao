@@ -119,17 +119,53 @@ case "${ESSAI}" in
     ;;
 esac
 
+echo "→ 2 bis/5  Chaque conversation a-t-elle assez de contexte ?"
+# llama.cpp DIVISE `-c` entre les emplacements parallèles. `-c 8192 -np 4` n'offre que
+# 2048 tokens par conversation : trois tours avec un extrait RAG dépassent, le serveur
+# rend 400 « exceeds the available context size » et l'interface annonce un service
+# indisponible. Vécu le 11/09, et INVISIBLE pour une génération d'essai courte — d'où
+# cette lecture directe de ce que le serveur offre vraiment, plutôt qu'un prompt témoin
+# qu'il faudrait calibrer.
+CTX_MIN="${CTX_MIN:-8192}"
+PROPS="$(curl -s --max-time 15 \
+  --config <(printf 'header = "Authorization: Bearer %s"\n' "${JETON}") \
+  "${CIBLE}/props" 2>/dev/null || true)"
+# `/props` expose plusieurs `n_ctx` (le total du serveur et celui d'un emplacement).
+# On retient le PLUS PETIT : c'est celui dont dispose réellement une conversation, et
+# se tromper dans l'autre sens revaliderait précisément le défaut qu'on traque.
+CTX="$(printf '%s' "${PROPS}" | tr ',' '\n' | sed -n 's/.*"n_ctx"[[:space:]]*:[[:space:]]*\([0-9]\{1,\}\).*/\1/p' | sort -n | head -1)"
+if [ -z "${CTX}" ]; then
+  echo "        ⚠ contexte par conversation inconnu (/props illisible) — on continue"
+elif [ "${CTX}" -lt "${CTX_MIN}" ]; then
+  echo "✗ ${CTX} tokens par conversation, il en faut ${CTX_MIN}." >&2
+  echo "  Le cluster n'est PAS touché. Sur le pod, relancer avec un TOTAL suffisant :" >&2
+  echo "      pkill -f llama-server" >&2
+  echo "      CONTEXTE=32768 bash /workspace/pod_serve.sh   # 32768 / 4 slots = 8192" >&2
+  exit 8
+else
+  echo "        ${CTX} tokens par conversation"
+fi
+
 echo "→ 3/5  Bascule de la configuration"
 # Les DEUX clés. `INFERENCE_URL` fait basculer maintenant ; `INFERENCE_URL_GPU` est ce
 # que la veille du matin relira demain — l'oublier ferait échouer la reprise automatique
 # du lendemain, sans que rien ne le signale aujourd'hui.
+# Les fonctions délestées la nuit sont RESTAURÉES ici. Le réveil automatique le fait
+# (`exploitation/fenetre.py`), la reprise manuelle ne le faisait pas : le 11/09, le
+# service est revenu sur GPU avec « Ma parcelle » et « l'Atelier » encore annoncés
+# « bientôt ». Deux chemins pour le même état doivent produire le même état.
+# VISION_ENABLED reste À PART, et volontairement : le modèle de vision n'est pas sur
+# tous les pods (il a disparu avec le volume du 20/08). Le rallumer d'office donnerait
+# une fonction qui échoue à chaque photo. Il s'allume quand le service de vision répond.
 k patch configmap "${CONFIGMAP}" --type merge -p "{\"data\":{
   \"PROFIL_MATERIEL\":\"gpu\",
   \"INFERENCE_URL\":\"${CIBLE}\",
   \"INFERENCE_URL_GPU\":\"${CIBLE}\",
-  \"REPLI_CPU\":\"false\"
+  \"REPLI_CPU\":\"false\",
+  \"RAPPORTS_ENABLED\":\"true\",
+  \"PARCELLES_ENABLED\":\"true\"
 }}" >/dev/null
-echo "        profil gpu, tunnel mémorisé"
+echo "        profil gpu, tunnel mémorisé, atelier et parcelles restaurés"
 
 echo "→ 4/5  Redémarrage de l'API"
 k rollout restart "deploy/${DEPL_API}" >/dev/null

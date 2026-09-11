@@ -35,7 +35,13 @@ MODELE="${MODELE:-${VOLUME}/opencacao-8b-Q4_K_M.gguf}"
 JETON_FICHIER="${JETON_FICHIER:-${VOLUME}/.opencacao_api_key}"
 LLAMA="${LLAMA:-${VOLUME}/llama.cpp/build/bin/llama-server}"
 PORT="${PORT:-8000}"
-CONTEXTE="${CONTEXTE:-8192}"
+# ⚠ llama.cpp DIVISE le contexte entre les emplacements parallèles : `-c` est le total,
+# et chaque conversation reçoit -c / -np. `-c 8192 -np 4` ne donnait donc que 2048 tokens
+# par conversation — trois tours de dialogue avec un extrait RAG suffisaient à dépasser,
+# et le serveur rendait 400 « exceeds the available context size » (vécu en production le
+# 11/09, l'API renvoyait « service momentanément indisponible »). On dimensionne le TOTAL
+# pour que chaque conversation dispose vraiment de 8192 tokens.
+CONTEXTE="${CONTEXTE:-32768}"
 SLOTS="${SLOTS:-4}"
 NOM_TUNNEL="${NOM_TUNNEL:-opencacao-runpod}"
 JOURNAL="${JOURNAL:-${VOLUME}/demarrage.log}"

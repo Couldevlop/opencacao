@@ -107,3 +107,27 @@ def test_il_affiche_les_empreintes_en_cas_d_ecart_de_jeton(source: str) -> None:
     recette du 19/08, et c'est ce qui a permis de trouver l'écart cette nuit."""
     assert "sha256sum" in source
     assert "cut -c1-12" in source
+
+
+def test_il_verifie_le_contexte_par_conversation(source: str) -> None:
+    """`-c` est un TOTAL réparti entre les slots. Une génération d'essai courte ne
+    révèle pas un contexte trop étroit : on lit ce que le serveur offre vraiment."""
+    assert "/props" in source
+    assert "n_ctx" in source
+    lecture = source.index("/props")
+    bascule = source.index("PROFIL_MATERIEL")
+    assert lecture < bascule
+
+
+def test_il_restaure_les_fonctions_delestees(source: str) -> None:
+    """Le réveil automatique rallume l'atelier et les parcelles ; la reprise manuelle
+    ne le faisait pas — le 11/09 le service est revenu sur GPU en annonçant encore
+    « bientôt ». Deux chemins vers le même état doivent produire le même état."""
+    assert "RAPPORTS_ENABLED" in source
+    assert "PARCELLES_ENABLED" in source
+
+
+def test_il_ne_rallume_pas_la_vision_d_office(source: str) -> None:
+    """Le modèle de vision n'est pas sur tous les pods : l'allumer sans lui donnerait
+    une fonction qui échoue à chaque photo."""
+    assert '"VISION_ENABLED":"true"' not in source.replace(" ", "")

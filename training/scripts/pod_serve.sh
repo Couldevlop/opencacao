@@ -41,7 +41,13 @@ set -euo pipefail
 # en une minute au lieu d'un quart d'heure.
 MODELE="${MODELE:-/runpod-volume/opencacao-8b-Q4_K_M.gguf}"
 PORT="${PORT:-8000}"
-CONTEXTE="${CONTEXTE:-8192}"
+# ⚠ llama.cpp DIVISE le contexte entre les emplacements parallèles : `-c` est le total,
+# et chaque conversation reçoit -c / -np. `-c 8192 -np 4` ne donnait donc que 2048 tokens
+# par conversation — trois tours de dialogue avec un extrait RAG suffisaient à dépasser,
+# et le serveur rendait 400 « exceeds the available context size » (vécu en production le
+# 11/09, l'API renvoyait « service momentanément indisponible »). On dimensionne le TOTAL
+# pour que chaque conversation dispose vraiment de 8192 tokens.
+CONTEXTE="${CONTEXTE:-32768}"
 # Emplacements parallèles : l'atelier de livrables enchaîne une génération par
 # section. Sans slots, une étude bloquerait la conversation — le défaut du CPU, et
 # précisément ce que le GPU doit supprimer.
