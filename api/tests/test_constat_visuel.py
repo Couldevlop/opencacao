@@ -214,3 +214,33 @@ async def test_le_texte_rendu_dit_quoi_refaire() -> None:
 
     assert constat is not None
     assert "ANADER" in constat.texte or "reprenez" in constat.texte.lower()
+
+
+class VisionQuiDitLeMarqueur:
+    """Modèle de vision suivant la consigne : marqueur exact quand rien n'est lisible."""
+
+    async def decrire(self, images, consigne):  # noqa: ANN001, ANN201
+        return "PHOTO_INEXPLOITABLE"
+
+
+@pytest.mark.asyncio
+async def test_le_marqueur_court_circuite_la_redaction() -> None:
+    """La détection par mots-clés ne suffit pas : vérifié en production le 11/09, le
+    modèle formule son constat d'impossibilité différemment d'une fois sur l'autre et
+    passait à travers. On lui fait donc émettre un marqueur EXACT, qui ne dépend
+    d'aucune tournure."""
+    inference = InferenceQuiCompteLesAppels()
+    service = ServiceConstatVisuel(VisionQuiDitLeMarqueur(), inference)
+
+    constat = await service.analyser(((b"octets", "empreinte"),), _contexte())
+
+    assert inference.appels == 0
+    assert constat is not None
+    assert "PHOTO_INEXPLOITABLE" not in constat.texte, "le marqueur ne doit jamais être servi"
+
+
+def test_la_consigne_de_description_reclame_le_marqueur() -> None:
+    """Sans la consigne, le marqueur n'arrive jamais et le garde-fou dort."""
+    from app.services.prompts_constat import CONSIGNE_DESCRIPTION
+
+    assert "PHOTO_INEXPLOITABLE" in CONSIGNE_DESCRIPTION

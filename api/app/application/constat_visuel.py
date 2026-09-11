@@ -27,12 +27,18 @@ from app.services.prompts_constat import CONSIGNE_DESCRIPTION, consigne_redactio
 
 logger = get_logger(__name__)
 
-# Signes qu'une description déclare elle-même la photo INEXPLOITABLE. Vérifié en
-# production le 11/09/2026 : le modèle de vision était irréprochable (« aucun élément
-# végétal identifiable, aucune observation sur l'entretien ne peut être faite ») et
-# l'étage de rédaction en a tiré « votre parcelle semble en très mauvais état
-# d'entretien ». Il a comblé un vide.
+# Marqueur EXACT que la consigne de description réclame quand la photo ne porte rien
+# d'exploitable. Vérifié en production le 11/09/2026 : le modèle de vision était
+# irréprochable (« aucun élément végétal identifiable, aucune observation sur
+# l'entretien ne peut être faite ») et l'étage de rédaction en a tiré « votre parcelle
+# semble en très mauvais état d'entretien ». Il a comblé un vide.
 #
+# La première version de ce garde-fou reconnaissait des TOURNURES. Elle a laissé passer
+# le cas suivant en production, le modèle ayant reformulé autrement : une détection qui
+# dépend du style ne protège rien. Le marqueur, lui, ne dépend d'aucune formulation.
+# Les tournures restent en second rideau, pour les modèles qui ignoreraient la consigne.
+MARQUEUR_INEXPLOITABLE = "PHOTO_INEXPLOITABLE"
+
 # On ne demande pas au modèle de ne pas inventer — on lui retire l'occasion : quand la
 # description dit qu'il n'y a rien à voir, la rédaction n'est pas appelée du tout et le
 # texte servi est une constante. Aucune génération, donc aucune fabrication possible.
@@ -67,6 +73,8 @@ def _est_inexploitable(description: str) -> bool:
     Returns:
         True si la photo ne porte rien d'observable — il n'y a alors rien à rédiger.
     """
+    if MARQUEUR_INEXPLOITABLE in description:
+        return True
     minuscules = description.lower()
     return any(signe in minuscules for signe in _SIGNES_INEXPLOITABLE)
 

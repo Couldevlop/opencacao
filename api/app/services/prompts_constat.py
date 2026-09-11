@@ -14,8 +14,10 @@ CONSIGNE_DESCRIPTION = (
     "d'ensemble), couleurs, taches, textures, étendue approximative de ce que tu "
     "observes, état de l'ombrage et de l'entretien.\n"
     "INTERDITS ABSOLUS : ne nomme JAMAIS une maladie ni un ravageur. Ne propose "
-    "JAMAIS un produit, un traitement ou une dose. N'affirme pas une cause. Si une "
-    "photo est inexploitable, dis-le simplement.\n"
+    "JAMAIS un produit, un traitement ou une dose. N'affirme pas une cause.\n"
+    "SI LA PHOTO NE MONTRE AUCUN ÉLÉMENT VÉGÉTAL EXPLOITABLE (image unie, floue au "
+    "point d'être illisible, sujet absent), réponds EXACTEMENT par ce seul mot, sans "
+    "rien ajouter : PHOTO_INEXPLOITABLE\n"
     "Réponds en français simple, en trois phrases au maximum."
 )
 
