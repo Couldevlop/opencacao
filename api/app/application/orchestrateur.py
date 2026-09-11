@@ -159,7 +159,7 @@ class Orchestrateur:
             return await self._journaliser(question, langue, conseil)
 
         # 1. Garde-fous d'entrée CENTRALISÉS : refus sans solliciter d'agent.
-        refus = guardrails.evaluer(fil, courante=question)
+        refus = guardrails.evaluer(fil, courante=question, conversation=texte_conv)
         if refus is not None:
             logger.info("garde_fou_declenche", categorie=refus.categorie.value)
             conseil = conseil_commun.enrichir_contact(
@@ -326,7 +326,7 @@ class Orchestrateur:
             return
 
         # 1. Garde-fou d'entrée (refus émis d'un bloc).
-        refus = guardrails.evaluer(fil, courante=question)
+        refus = guardrails.evaluer(fil, courante=question, conversation=texte_conv)
         if refus is not None:
             logger.info("garde_fou_declenche", categorie=refus.categorie.value)
             conseil = conseil_commun.enrichir_contact(

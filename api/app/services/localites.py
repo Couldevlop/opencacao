@@ -288,6 +288,72 @@ def aptitude_cacao(texte: str) -> tuple[Aptitude, str] | None:
     return None
 
 
+def _positions_prefixe(norm: str, cle: str) -> list[int]:
+    """Positions des mots du texte qui sont une forme COURTE de la localité.
+
+    Même tolérance que :func:`_prefixe_cite` (« Ouangolo » pour « Ouangolodougou »),
+    mais en rendant les positions : sur un fil de conversation, savoir OÙ la ville est
+    citée est ce qui permet de retenir la plus récente.
+    """
+    if len(cle) <= _LONGUEUR_MIN_PREFIXE:
+        return []
+    return [
+        m.start()
+        for m in re.finditer(r"\w+", norm)
+        if len(m.group(0)) >= _LONGUEUR_MIN_PREFIXE and cle.startswith(m.group(0))
+    ]
+
+
+def aptitude_derniere_localite(texte: str) -> tuple[Aptitude, str] | None:
+    """Aptitude cacaoyère de la localité la PLUS RÉCEMMENT citée dans le texte.
+
+    :func:`aptitude_cacao` rend la **première** localité trouvée, ce qui convient à une
+    question isolée mais pas à un fil de conversation : un producteur qui dit « je suis
+    à Katiola » puis « en fait ma parcelle est à Soubré » se verrait encore corriger sur
+    Katiola. On retient donc la dernière citée, comme :func:`detecter` le fait déjà pour
+    les localités cacaoyères.
+
+    À position égale, la deny-list du Nord — curée à la main — prime sur le découpage
+    administratif, qui la contredit parfois (Katiola est en DR Centre).
+
+    Args:
+        texte: Texte libre, typiquement tous les tours du producteur.
+
+    Returns:
+        ``(Aptitude, nom d'affichage)``, ou ``None`` si aucune localité connue n'est
+        citée.
+    """
+    norm = _normaliser(texte)
+    meilleur: tuple[int, int, int] | None = None  # (position, priorité, longueur)
+    resultat: tuple[Aptitude, str] | None = None
+
+    for cle, nom in LOCALITES_NORD.items():
+        positions = (
+            [m.start() for m in re.finditer(rf"\b{re.escape(cle)}\b", norm)]
+            or _positions_flou(norm, cle)
+            or _positions_prefixe(norm, cle)
+        )
+        if not positions:
+            continue
+        repere = (max(positions), 1, len(cle))
+        if meilleur is None or repere > meilleur:
+            meilleur, resultat = repere, (Aptitude.NORD, nom)
+
+    cacaoyeres = localites_cacao()
+    for motif, libelle, canon, _dr in _index():
+        if libelle in LOCALITES_NORD:
+            continue
+        positions = [m.start() for m in motif.finditer(norm)] or _positions_flou(norm, libelle)
+        if not positions:
+            continue
+        repere = (max(positions), 0, len(canon))
+        if meilleur is None or repere > meilleur:
+            aptitude = Aptitude.CACAO if libelle in cacaoyeres else Aptitude.INDETERMINE
+            meilleur, resultat = repere, (aptitude, canon)
+
+    return resultat
+
+
 @lru_cache(maxsize=1)
 def _coordonnees_table() -> dict[str, tuple[float, float]]:
     """Table statique ``{clé normalisée: (lat, lon)}``. ``{}`` si absente/illisible."""

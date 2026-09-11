@@ -153,7 +153,11 @@ class ConseilService:
         # Garde-fous métier : refus sans appeler le modèle (réponse instantanée).
         # Évalués sur la question ANCRÉE au fil (B4) : une intention de dosage étalée
         # sur deux tours est ainsi interceptée comme si elle était posée d'un bloc.
-        refus = guardrails.evaluer(_fil_ancre(question, historique), courante=question)
+        refus = guardrails.evaluer(
+            _fil_ancre(question, historique),
+            courante=question,
+            conversation=texte_conv,
+        )
         if refus is not None:
             logger.info("garde_fou_declenche", categorie=refus.categorie.value)
             conseil = Conseil(
@@ -336,7 +340,11 @@ class ConseilService:
             )
             return
 
-        refus = guardrails.evaluer(_fil_ancre(question, historique), courante=question)
+        refus = guardrails.evaluer(
+            _fil_ancre(question, historique),
+            courante=question,
+            conversation=texte_conv,
+        )
         if refus is not None:
             logger.info("garde_fou_declenche", categorie=refus.categorie.value)
             conseil = self._enrichir_contact(

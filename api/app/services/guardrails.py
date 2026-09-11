@@ -570,7 +570,9 @@ def _contient(texte: str, motifs: tuple[re.Pattern, ...]) -> bool:
     return any(m.search(texte) for m in motifs)
 
 
-def evaluer(question: str, *, courante: str | None = None) -> Refus | None:
+def evaluer(
+    question: str, *, courante: str | None = None, conversation: str | None = None
+) -> Refus | None:
     """Évalue une question et retourne un refus si une règle s'applique.
 
     Ordre de priorité : phytosanitaire, médical/vétérinaire, diagnostic sur image,
@@ -592,12 +594,21 @@ def evaluer(question: str, *, courante: str | None = None) -> Refus | None:
         question: Texte évalué par les règles de protection (le fil, en multi-tours).
         courante: Question du tour en cours, pour les règles de correction. Par
             défaut, ``question`` — les appelants mono-tour n'ont rien à changer.
+        conversation: TOUS les tours du producteur, pour y lire la LOCALITÉ. Le fil
+            ancré ne retient que le dernier tour : une ville citée deux tours plus tôt
+            en sortait, et la correction de zone cessait de s'appliquer (écart du
+            11/09/2026 : « plantation à Odienné » refusée deux fois, puis conseillée).
+            Par défaut, ``question``.
 
     Returns:
         Un objet Refus si un garde-fou se déclenche, sinon None.
     """
     texte = _normaliser(question)
     texte_courant = _normaliser(courante) if courante is not None else texte
+    # La localité est un FAIT durable de la conversation ; l'intention, non. Les deux
+    # ne se lisent donc pas sur la même fenêtre — c'est toute la subtilité de ces
+    # règles, et l'endroit où elles se sont cassées deux fois.
+    texte_lieux = conversation if conversation is not None else question
 
     # 1. Dosages phytosanitaires : terme phyto + intention de dosage, ou présence
     #    d'une valeur chiffrée associée à une unité de dose.
@@ -630,9 +641,16 @@ def evaluer(question: str, *, courante: str | None = None) -> Refus | None:
     # planter ») : c'est le dialogue normal, on ne la fait pas répéter. Mais
     # l'INTENTION de culture doit être dans la question courante, sinon la correction
     # s'accroche au fil et répond à une question qui n'est plus posée.
-    nord = _localite_nord_detectee(texte)
-    if nord is not None and _contient(texte_courant, _RE_ZONE_DECLENCHEUR):
-        return Refus(CategorieRefus.ZONE_NON_CACAO, message=_message_zone(nord))
+    # La localité la plus RÉCEMMENT citée, sur toute la conversation : un producteur
+    # qui déplace sa parcelle (« en fait c'est à Soubré ») ne doit plus être corrigé
+    # sur la ville qu'il vient d'abandonner.
+    lieu = localites.aptitude_derniere_localite(texte_lieux)
+    if (
+        lieu is not None
+        and lieu[0] is localites.Aptitude.NORD
+        and _contient(texte_courant, _RE_ZONE_DECLENCHEUR)
+    ):
+        return Refus(CategorieRefus.ZONE_NON_CACAO, message=_message_zone(lieu[1]))
 
     # 5 bis. Localité citée mais dont l'aptitude cacaoyère n'est PAS établie (zones de
     #        transition des DR Centre et Centre-Est, par exemple). Avant ce garde-fou,
@@ -641,10 +659,9 @@ def evaluer(question: str, *, courante: str | None = None) -> Refus | None:
     #        Sud, le cacaoyer peut bien pousser » — sur une localité de l'extrême nord
     #        (écart constaté en production le 19/08/2026). On préfère dire qu'on ne
     #        sait pas : c'est la même doctrine que partout ailleurs dans ce projet.
-    verdict = localites.aptitude_cacao(texte)
     if (
-        verdict is not None
-        and verdict[0] is localites.Aptitude.INDETERMINE
+        lieu is not None
+        and lieu[0] is localites.Aptitude.INDETERMINE
         and _contient(texte_courant, _RE_ZONE_DECLENCHEUR)
     ):
         return Refus(CategorieRefus.ZONE_INDETERMINEE)

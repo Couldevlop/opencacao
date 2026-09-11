@@ -32,7 +32,7 @@ tests verrouillent :
 
 from __future__ import annotations
 
-from app.application.contexte import fil_ancre
+from app.application.contexte import fil_ancre, texte_conversation
 from app.models.domain import CategorieRefus
 from app.services import guardrails
 
@@ -100,3 +100,71 @@ def test_sans_question_courante_le_comportement_reste_celui_d_avant() -> None:
 
     assert refus is not None
     assert refus.categorie is CategorieRefus.ZONE_NON_CACAO
+
+
+def test_la_localite_survit_a_plus_d_un_tour_ecoule() -> None:
+    """Écart de production du 11/09/2026, reproduit tel quel.
+
+    « plantation de cacao à Odienné » → refus. « je veux faire une plantation » →
+    refus (la ville est encore dans la fenêtre d'ancrage). Même question au tour
+    suivant → **conseils de plantation**, la ville ayant quitté la fenêtre : le fil
+    ancré ne retient que le DERNIER tour utilisateur. Le producteur obtenait donc,
+    pour la même intention, un refus puis un conseil — en zone de savane.
+    """
+    historique = [
+        {"role": "user", "content": "Je veux faire une plantation de cacao à Odienné"},
+        {"role": "assistant", "content": "Odienné se situe dans la zone de savane…"},
+        {"role": "user", "content": "je veux faire une plantation"},
+        {"role": "assistant", "content": "Odienné se situe dans la zone de savane…"},
+    ]
+    question = "je veux faire une plantation"
+
+    refus = guardrails.evaluer(
+        fil_ancre(question, historique),
+        courante=question,
+        conversation=texte_conversation(question, historique),
+    )
+
+    assert refus is not None
+    assert refus.categorie is CategorieRefus.ZONE_NON_CACAO
+    assert "Odienné" in refus.message
+
+
+def test_un_changement_de_sujet_ne_ressort_pas_la_correction_de_zone() -> None:
+    """Contre-épreuve de l'incident du 19/08 : élargir la mémoire de la LOCALITÉ ne
+    doit pas rendre la correction collante. L'INTENTION reste lue dans le tour courant.
+    """
+    historique = [
+        {"role": "user", "content": "Je veux faire une plantation de cacao à Odienné"},
+        {"role": "assistant", "content": "Odienné se situe dans la zone de savane…"},
+        {"role": "user", "content": "je veux faire une plantation"},
+        {"role": "assistant", "content": "Odienné se situe dans la zone de savane…"},
+    ]
+    question = "quel est le prix officiel du cacao ?"
+
+    refus = guardrails.evaluer(
+        fil_ancre(question, historique),
+        courante=question,
+        conversation=texte_conversation(question, historique),
+    )
+
+    assert refus is None
+
+
+def test_le_producteur_qui_deplace_sa_parcelle_est_suivi() -> None:
+    """Une ville plus récente prime : on corrigeait sinon sur un lieu abandonné."""
+    historique = [
+        {"role": "user", "content": "je suis à Katiola"},
+        {"role": "assistant", "content": "Katiola se situe dans la zone de savane…"},
+        {"role": "user", "content": "en fait ma parcelle est à Soubré"},
+        {"role": "assistant", "content": "Très bien."},
+    ]
+    question = "je veux y faire une plantation"
+
+    refus = guardrails.evaluer(
+        fil_ancre(question, historique),
+        courante=question,
+        conversation=texte_conversation(question, historique),
+    )
+
+    assert refus is None
