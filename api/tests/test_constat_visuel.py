@@ -156,3 +156,61 @@ async def test_l_organe_est_deduit_de_la_description(texte, attendu):
     constat = await service.analyser(IMAGES, _contexte())
     assert constat is not None
     assert constat.observations[0].organe is attendu
+
+
+# --- Une photo illisible ne passe PAS par le modèle de rédaction ---
+#
+# Vérifié en production le 11/09/2026 sur une image unie : le modèle de vision était
+# irréprochable (« aucun élément végétal identifiable, aucune observation sur
+# l'entretien ne peut être faite »), et l'étage de rédaction en a tiré « votre parcelle
+# semble en très mauvais état d'entretien ». Il a comblé un vide.
+#
+# On ne demande pas au modèle de ne pas inventer : on lui retire l'occasion. Quand la
+# description déclare la photo inexploitable, la rédaction n'est pas appelée du tout.
+
+
+class VisionQuiNeVoitRien:
+    """Modèle de vision honnête devant une image sans contenu exploitable."""
+
+    async def decrire(self, images, consigne):  # noqa: ANN001, ANN201
+        return (
+            "L'image est une surface uniforme de couleur marron-olive, sans détail "
+            "visible de plante, de feuille, de tronc ou de cabosse. Aucun élément "
+            "végétal n'est identifiable, donc aucune observation sur l'état de "
+            "l'ombrage ou l'entretien ne peut être faite."
+        )
+
+
+class InferenceQuiCompteLesAppels:
+    """Double de l'inférence : on vérifie qu'elle n'est PAS sollicitée."""
+
+    def __init__(self) -> None:
+        self.appels = 0
+
+    async def generer(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
+        self.appels += 1
+        return "Votre parcelle semble en très mauvais état d'entretien."
+
+
+@pytest.mark.asyncio
+async def test_une_photo_illisible_n_appelle_jamais_la_redaction() -> None:
+    inference = InferenceQuiCompteLesAppels()
+    service = ServiceConstatVisuel(VisionQuiNeVoitRien(), inference)
+
+    constat = await service.analyser(((b"octets", "empreinte"),), _contexte())
+
+    assert inference.appels == 0, "la rédaction a été appelée sur une photo illisible"
+    assert constat is not None
+    assert "mauvais état" not in constat.texte
+    assert "photo" in constat.texte.lower()
+
+
+@pytest.mark.asyncio
+async def test_le_texte_rendu_dit_quoi_refaire() -> None:
+    """Le producteur est dans sa plantation : il doit savoir comment reprendre."""
+    service = ServiceConstatVisuel(VisionQuiNeVoitRien(), InferenceQuiCompteLesAppels())
+
+    constat = await service.analyser(((b"octets", "empreinte"),), _contexte())
+
+    assert constat is not None
+    assert "ANADER" in constat.texte or "reprenez" in constat.texte.lower()

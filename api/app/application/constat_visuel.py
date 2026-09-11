@@ -27,6 +27,50 @@ from app.services.prompts_constat import CONSIGNE_DESCRIPTION, consigne_redactio
 
 logger = get_logger(__name__)
 
+# Signes qu'une description déclare elle-même la photo INEXPLOITABLE. Vérifié en
+# production le 11/09/2026 : le modèle de vision était irréprochable (« aucun élément
+# végétal identifiable, aucune observation sur l'entretien ne peut être faite ») et
+# l'étage de rédaction en a tiré « votre parcelle semble en très mauvais état
+# d'entretien ». Il a comblé un vide.
+#
+# On ne demande pas au modèle de ne pas inventer — on lui retire l'occasion : quand la
+# description dit qu'il n'y a rien à voir, la rédaction n'est pas appelée du tout et le
+# texte servi est une constante. Aucune génération, donc aucune fabrication possible.
+_SIGNES_INEXPLOITABLE = (
+    "aucun element",
+    "aucun élément",
+    "sans detail visible",
+    "sans détail visible",
+    "ne permet pas d",
+    "inexploitable",
+    "aucune observation",
+    "n'est identifiable",
+    "n est identifiable",
+    "pas identifiable",
+)
+
+TEXTE_PHOTO_INEXPLOITABLE = (
+    "Cette photo ne me montre pas assez de détails pour que je puisse décrire quoi que "
+    "ce soit, et je préfère vous le dire plutôt que de supposer. Reprenez-la de plus "
+    "près, en plein jour et sans contre-jour, en cadrant la partie qui vous inquiète "
+    "(feuille, cabosse, tronc). Pour un avis sur ce que vous observez, montrez-la à "
+    "votre agent ANADER."
+)
+
+
+def _est_inexploitable(description: str) -> bool:
+    """Vrai si la description déclare elle-même ne rien pouvoir observer.
+
+    Args:
+        description: Texte produit par le modèle de vision.
+
+    Returns:
+        True si la photo ne porte rien d'observable — il n'y a alors rien à rédiger.
+    """
+    minuscules = description.lower()
+    return any(signe in minuscules for signe in _SIGNES_INEXPLOITABLE)
+
+
 # Un constat tient en quelques phrases : on borne la génération.
 MAX_TOKENS_CONSTAT = 260
 
@@ -89,6 +133,30 @@ class ServiceConstatVisuel:
         if fautif:
             logger.warning("constat_description_compromise", terme=fautif)
             return None
+
+        # Rien d'observable : on court-circuite la rédaction. C'est le seul moyen sûr
+        # d'éviter qu'un état de parcelle soit affirmé à partir de rien.
+        if _est_inexploitable(description):
+            logger.info("constat_photo_inexploitable")
+            return Constat(
+                identifiant=uuid4().hex,
+                capture="",
+                parcelle="",
+                proprietaire="",
+                observations=tuple(
+                    Observation(
+                        organe=Organe.INDETERMINE,
+                        description=description,
+                        confiance=NiveauConfiance.FAIBLE,
+                        empreinte_image=empreinte,
+                    )
+                    for _, empreinte in images
+                ),
+                texte=TEXTE_PHOTO_INEXPLOITABLE,
+                confiance=NiveauConfiance.FAIBLE,
+                cree_le=datetime.now(UTC),
+                facteurs_contexte=(),
+            )
 
         fusion = fusionner(description, NiveauConfiance.MOYENNE, contexte)
         texte = await self._inference.generer(
