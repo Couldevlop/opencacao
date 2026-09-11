@@ -113,3 +113,36 @@ def test_sans_identifiant_d_appareil_la_route_refuse(client) -> None:
     )
 
     assert resp.status_code == 400
+
+
+def test_une_VRAIE_photo_passe_le_plafond_de_corps(client) -> None:
+    """Défaut trouvé le 11/09 en testant avec une vraie photo de cabosse : HTTP 413.
+
+    Le corps des requêtes est plafonné à 16 Ko — taillé pour une question — avec une
+    seule porte élargie, ouverte pour `/v1/parcelles`. La route photo du chat n'y
+    figurait pas : AUCUNE vraie photo ne pouvait passer. Les vérifications précédentes
+    étaient vertes parce que les images de contrôle, unies, se compressent à presque
+    rien. C'est précisément le genre de défaut qu'un test synthétique ne voit jamais.
+    """
+    # 300 Ko de base64 : l'ordre de grandeur d'une photo de téléphone redimensionnée.
+    grosse = {**PHOTO, "contenu_base64": PHOTO["contenu_base64"] + "A" * 300_000}
+
+    resp = client.post(
+        "/v1/chat/photo",
+        json={"question": "Que voyez-vous sur cette photo ?", "images": [grosse]},
+        headers=ENTETES,
+    )
+
+    assert resp.status_code != 413, "le plafond de corps rejette les vraies photos"
+
+
+def test_le_chat_TEXTUEL_garde_son_plafond_etroit(client) -> None:
+    """Contre-épreuve : on ouvre une porte, on n'élargit pas tout le couloir. Un corps
+    démesuré sur la route textuelle doit toujours être refusé."""
+    resp = client.post(
+        "/v1/chat",
+        json={"question": "a" * 300_000},
+        headers=ENTETES,
+    )
+
+    assert resp.status_code in (413, 422)

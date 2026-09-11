@@ -349,10 +349,19 @@ def create_app() -> FastAPI:
     app.add_middleware(
         BodySizeLimitMiddleware,
         max_body_bytes=settings.max_body_bytes,
-        # Les captures de parcelle transportent des images encodées en base64 : le
-        # plafond global (quelques kilo-octets, taillé pour une question) les
-        # rejetterait toutes en 413. On ouvre une porte étroite sur ce seul préfixe.
-        plafonds_par_prefixe={"/v1/parcelles": settings.captures_max_body_bytes},
+        # Les requêtes portant des images encodées en base64 : le plafond global
+        # (quelques kilo-octets, taillé pour une question) les rejetterait toutes en
+        # 413. On ouvre des portes ÉTROITES sur ces seuls chemins — le préfixe le plus
+        # long l'emporte, donc `/v1/chat/photo` n'élargit pas `/v1/chat`.
+        #
+        # La photo du chat a été oubliée à sa livraison, et le défaut ne s'est vu qu'en
+        # essayant une VRAIE photo de cabosse : les images de contrôle, unies, se
+        # compressent à presque rien et passaient sous les 16 Ko. Un test synthétique ne
+        # voit pas ce genre de plafond.
+        plafonds_par_prefixe={
+            "/v1/parcelles": settings.captures_max_body_bytes,
+            "/v1/chat/photo": settings.captures_max_body_bytes,
+        },
     )
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
 
