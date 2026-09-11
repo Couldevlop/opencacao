@@ -77,3 +77,7 @@ scripts/gen_bp_assets.py
 scripts/build_businessplan.py
 docs/OpenCacao_Benchmark_Commercialisation.md
 etudes_test_19082026/
+
+# Cache de session du CLI Semgrep : il contient les jetons OAuth de l'utilisateur
+# (access_token / refresh_token). Jamais dans le dépôt — a fortiori public.
+.semgrep/

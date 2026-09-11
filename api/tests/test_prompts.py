@@ -116,3 +116,21 @@ def test_build_messages_choisit_le_prompt_systeme() -> None:
 
     msgs = build_messages("q", system_prompt=SYSTEM_PROMPT_STRICT)
     assert msgs[0]["content"] == SYSTEM_PROMPT_STRICT
+
+
+def test_le_constat_visuel_vouvoie_lui_aussi() -> None:
+    """Le vouvoiement est une règle PRODUIT (arbitrage Waopron du 19/08), pas une
+    préférence du prompt principal.
+
+    La cascade visuelle a sa propre consigne de rédaction, qui ne la portait pas : en
+    production le 11/09, un constat de photo répondait « je ne peux pas te donner de
+    conseils précis sur ta plantation » — tutoiement, au milieu d'un service qui vouvoie
+    partout ailleurs. Le registre qui change d'un écran à l'autre se remarque
+    immédiatement, et fait passer le produit pour un assemblage.
+    """
+    from app.services.prompts_constat import consigne_redaction
+
+    consigne = consigne_redaction(())
+
+    assert "VOUVOIE" in consigne.upper()
+    assert "« vous »" in consigne or '"vous"' in consigne
