@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app.models.domain import Canal, Confiance, Langue
+from app.models.parcelle import ImageRequest
 
 DISCLAIMER = (
     "OpenCacao est un outil d'aide à la décision. Pour confirmation, "
@@ -38,6 +39,10 @@ class ChatRequest(BaseModel):
             l'historique à chaque tour. Borné à 20 messages pour éviter les abus.
         session_id: Session de conversation persistée (V2). Si fourni, l'historique
             fait autorité côté serveur et le champ ``historique`` est ignoré.
+        images: Photo jointe au message, pour la route ``/v1/chat/photo``. Bornée à
+            une image : le constat visuel est séquentiel, et une rafale rendrait la
+            réponse plus lente sans la rendre meilleure. Les images n'entrent JAMAIS
+            dans l'historique — la session persisterait alors du base64.
     """
 
     question: str = Field(min_length=3, max_length=2000)
@@ -45,6 +50,7 @@ class ChatRequest(BaseModel):
     canal: Canal = Canal.WEB
     historique: list[Message] = Field(default_factory=list, max_length=20)
     session_id: str | None = Field(default=None, max_length=64)
+    images: list[ImageRequest] = Field(default_factory=list, max_length=1)
 
 
 class ChatResponse(BaseModel):

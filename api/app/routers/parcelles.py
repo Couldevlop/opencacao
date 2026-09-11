@@ -28,6 +28,7 @@ from app.models.parcelle import (
     GeometrieRequest,
     ParcelleReponse,
 )
+from app.routers.gardes import garde_analyse, garde_debit
 from app.services.constats import (
     CaptureIntrouvable,
     ServiceConstats,
@@ -43,46 +44,6 @@ from app.services.parcelles import (
 
 router = APIRouter(prefix="/v1", tags=["parcelles"])
 
-_TROP_DE_REQUETES = "Trop de requêtes, veuillez réessayer dans une minute."
-
-
-async def _garde_debit(cache: CachePort, client_ip: str) -> None:
-    """Applique le rate-limit par IP.
-
-    Args:
-        cache: Port de cache portant le compteur de débit.
-        client_ip: Adresse IP cliente déterminée par la dépendance dédiée.
-
-    Raises:
-        HTTPException: 429 si la limite est dépassée.
-    """
-    if await cache.hit_rate_limit(client_ip):
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=_TROP_DE_REQUETES)
-
-
-# Budget propre à l'analyse visuelle. Une génération de vision suivie d'une génération
-# de conseil occupe le CPU des dizaines de secondes : partager le budget d'un simple
-# GET laisserait une poignée de requêtes saturer l'inférence (OWASP API4). Compté par
-# appareil, et non par IP : derrière un partage de connexion, une IP porte plusieurs
-# producteurs légitimes.
-_CONSTATS_PAR_FENETRE = 3
-_CONSTATS_FENETRE_S = 60
-_TROP_D_ANALYSES = "Trop d'analyses d'images demandées. Patientez une minute avant la suivante."
-
-
-async def _garde_analyse(cache: CachePort, device_id: str) -> None:
-    """Applique le quota d'analyses visuelles, par appareil.
-
-    Args:
-        cache: Port de cache portant les compteurs.
-        device_id: Identifiant anonyme de l'appareil appelant.
-
-    Raises:
-        HTTPException: 429 si le quota d'analyses est dépassé.
-    """
-    if await cache.hit_quota(f"constat:{device_id}", _CONSTATS_PAR_FENETRE, _CONSTATS_FENETRE_S):
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=_TROP_D_ANALYSES)
-
 
 @router.post("/parcelles", response_model=ParcelleReponse, status_code=status.HTTP_201_CREATED)
 async def creer_parcelle(
@@ -93,7 +54,7 @@ async def creer_parcelle(
     service: ServiceParcelles = Depends(get_service_parcelles),
 ) -> ParcelleReponse:
     """Crée une parcelle rattachée à l'appareil appelant."""
-    await _garde_debit(cache, client_ip)
+    await garde_debit(cache, client_ip)
     parcelle = await service.creer(device_id, payload)
     return ParcelleReponse.model_validate(parcelle, from_attributes=True)
 
@@ -153,7 +114,7 @@ async def enregistrer_geometrie(
         HTTPException: 404 si la parcelle est inconnue, 422 si la géométrie est
             invalide (le motif est renvoyé tel quel, il est destiné au producteur).
     """
-    await _garde_debit(cache, client_ip)
+    await garde_debit(cache, client_ip)
     try:
         parcelle = await service.enregistrer_geometrie(identifiant, device_id, payload)
     except ParcelleIntrouvable as exc:
@@ -185,7 +146,7 @@ async def deposer_capture(
     Raises:
         HTTPException: 404 si la parcelle est inconnue, 422 si la trace est invalide.
     """
-    await _garde_debit(cache, client_ip)
+    await garde_debit(cache, client_ip)
     try:
         capture = await service.deposer_capture(identifiant, device_id, payload)
     except ParcelleIntrouvable as exc:
@@ -242,8 +203,8 @@ async def produire_constat(
         HTTPException: 404 si la capture est inconnue, 503 si la vision est
             indisponible (profil CPU ou VLM absent), 429 si le débit est dépassé.
     """
-    await _garde_debit(cache, client_ip)
-    await _garde_analyse(cache, device_id)
+    await garde_debit(cache, client_ip)
+    await garde_analyse(cache, device_id)
     try:
         constat = await service.produire(identifiant, capture_id, device_id)
     except CaptureIntrouvable as exc:

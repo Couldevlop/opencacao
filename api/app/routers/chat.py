@@ -7,12 +7,22 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
-from app.api_deps import get_client_ip, get_dialogue_service, get_journal
+from app.api_deps import (
+    get_cache_client,
+    get_client_ip,
+    get_device_id_obligatoire,
+    get_dialogue_service,
+    get_journal,
+    get_service_constat_chat,
+)
+from app.application.constat_chat import ServiceConstatChat
 from app.application.dialogue_session import DialogueSessionService
 from app.core.config import Settings, get_settings
 from app.domain.exceptions import InferenceUnavailable, RateLimitDepasse
-from app.domain.ports import JournalPort
-from app.models.chat import ChatRequest, ChatResponse
+from app.domain.ports import CachePort, JournalPort
+from app.models.chat import DISCLAIMER, ChatRequest, ChatResponse
+from app.models.domain import Confiance
+from app.routers.gardes import garde_analyse, garde_debit
 
 router = APIRouter(prefix="/v1", tags=["chat"])
 
@@ -119,4 +129,72 @@ async def chat_stream(
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",  # désactive le buffering nginx (SSE temps réel)
         },
+    )
+
+
+@router.post("/chat/photo")
+async def chat_photo(
+    payload: ChatRequest,
+    request: Request,
+    client_ip: str = Depends(get_client_ip),
+    device_id: str = Depends(get_device_id_obligatoire),
+    cache: CachePort = Depends(get_cache_client),
+    constat: ServiceConstatChat = Depends(get_service_constat_chat),
+    journal: JournalPort = Depends(get_journal),
+) -> StreamingResponse:
+    """Analyse une photo envoyée dans le fil, en flux.
+
+    **Pourquoi une route à part, et pourquoi en flux.** L'analyse d'une image tient
+    un budget de plusieurs dizaines de secondes, là où Cloudflare coupe vers 100 s :
+    servie sur `/v1/chat` synchrone, elle rendrait un 524 devant le public. Le flux
+    émet un premier octet immédiatement (`progress`), puis le constat.
+
+    Une route distincte, plutôt qu'un champ de plus sur `/chat/stream`, garde le
+    chemin textuel — celui qui sert la quasi-totalité du trafic — strictement
+    inchangé la veille d'une démonstration.
+
+    Les mêmes événements que `/chat/stream` sont émis, pour que l'interface réutilise
+    son rendu : ``progress``, ``token``, ``done``, ``error``.
+
+    Les gardes de débit sont celles, partagées, du parcours parcelle : une analyse
+    d'image mobilise l'inférence des dizaines de secondes, et une seconde porte non
+    protégée annulerait la protection de la première.
+
+    Raises:
+        HTTPException: 429 si le débit par IP ou le quota d'analyses par appareil est
+            dépassé.
+    """
+    await garde_debit(cache, client_ip)
+    await garde_analyse(cache, device_id)
+    await _journaliser_visite(request, client_ip, payload.canal.value, journal)
+    tours = " ".join(m.content for m in payload.historique if m.role == "user")
+    conversation = f"{tours} {payload.question}".strip()
+
+    async def flux() -> object:
+        # Premier octet immédiat : sans lui, l'attente est muette et le proxy coupe.
+        debut = {"type": "progress", "text": "Lecture de la photo…"}
+        yield f"data: {json.dumps(debut, ensure_ascii=False)}\n\n"
+        try:
+            resultat = await constat.analyser(payload.question, payload.images, conversation)
+        except InferenceUnavailable:
+            yield f'data: {json.dumps({"type": "error", "kind": "indisponible"})}\n\n'
+            return
+        texte = resultat.conseil_reprise or resultat.texte
+        yield f"data: {json.dumps({'type': 'token', 'text': texte}, ensure_ascii=False)}\n\n"
+        final = {
+            "type": "done",
+            "sources": [],
+            # Un constat est descriptif : il ne prétend jamais à une confiance élevée,
+            # et il oriente toujours vers un agent de terrain.
+            "confiance": Confiance.MOYENNE.value if resultat.texte else Confiance.FAIBLE.value,
+            "redirection_anader": True,
+            "disclaimer": DISCLAIMER,
+            "session_id": payload.session_id,
+        }
+        yield f"data: {json.dumps(final, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        flux(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

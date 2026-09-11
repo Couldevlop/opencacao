@@ -6,6 +6,7 @@ import { creerCasUsageAuth } from "./application/auth.js";
 import { creerCasUsageConseilStream } from "./application/conseil.js";
 import { creerCasUsageSessions } from "./application/sessions.js";
 import { ConseilError, ErreurKind } from "./domain/models.js";
+import { imageDepuisFichier } from "./infrastructure/capture-media.js";
 import { creerClientApi } from "./infrastructure/api-client.js";
 import { ecrireCompte, lireCompte } from "./infrastructure/auth-store-local.js";
 import { ecrireSessionActive, lireSessionActive } from "./infrastructure/session-store-local.js";
@@ -28,6 +29,12 @@ const refs = {
   input: $("input"),
   send: $("send"),
   suggestions: $("suggestions"),
+  // Photo dans le fil (C2 étendu au chat)
+  boutonPhoto: $("boutonPhoto"),
+  fichierPhoto: $("fichierPhoto"),
+  apercuPhoto: $("apercuPhoto"),
+  apercuPhotoImg: $("apercuPhotoImg"),
+  retirerPhoto: $("retirerPhoto"),
   settingsBtn: $("settingsBtn"),
   modal: $("modal"),
   apiUrl: $("apiUrl"),
@@ -193,13 +200,46 @@ async function supprimerConversation(id, titre) {
   }
 }
 
+/* ---------- photo jointe au message ---------- */
+// Une seule photo à la fois : le constat visuel est séquentiel, et une rafale
+// rendrait la réponse plus lente sans la rendre meilleure. L'image ne rejoint
+// JAMAIS l'historique — la session persisterait alors du base64.
+let photoJointe = null;
+
+function afficherApercuPhoto(image) {
+  photoJointe = image;
+  if (!refs.apercuPhoto) return;
+  if (!image) {
+    refs.apercuPhoto.hidden = true;
+    refs.apercuPhotoImg.removeAttribute("src");
+    return;
+  }
+  refs.apercuPhotoImg.src = `data:image/jpeg;base64,${image.contenu_base64}`;
+  refs.apercuPhoto.hidden = false;
+}
+
+async function choisirPhoto(fichier) {
+  if (!fichier) return;
+  try {
+    afficherApercuPhoto(await imageDepuisFichier(fichier));
+    majBouton(true);
+  } catch {
+    vue.ajouterErreur("Cette photo n'a pas pu être lue. Réessayez la prise de vue.");
+  }
+}
+
 /* ---------- envoi d'une question ---------- */
 async function envoyer(question) {
-  const q = (question || "").trim();
+  // Une photo peut partir sans texte : on écrit alors la question à la place du
+  // producteur, plutôt que de lui imposer d'en rédiger une (la question minimale
+  // du schéma fait 3 caractères).
+  const photo = photoJointe;
+  const q = (question || "").trim() || (photo ? "Que voyez-vous sur cette photo ?" : "");
   if (enCours || !q) return;
   enCours = true;
   majBouton(false);
-  vue.ajouterUtilisateur(q);
+  vue.ajouterUtilisateur(photo ? `📷 ${q}` : q);
+  afficherApercuPhoto(null);
   refs.input.value = "";
   autogrow();
   vue.montrerSaisie();
@@ -221,6 +261,9 @@ async function envoyer(question) {
     }
     // Étapes serveur (« J'analyse… », « Je consulte… ») affichées pendant l'attente.
     options.onProgress = (texte) => vue.majSaisie(texte);
+    // La photo emprunte sa propre route (budget d'analyse bien plus long) ; le client
+    // API s'en charge à partir de ce seul champ.
+    if (photo) options.images = [photo];
 
     const conseil = await demanderConseilStream(
       q,
@@ -266,7 +309,8 @@ async function envoyer(question) {
 
 /* ---------- interactions ---------- */
 function majBouton(force) {
-  const ok = force !== undefined ? force : refs.input.value.trim().length > 0;
+  const ok =
+    force !== undefined ? force : refs.input.value.trim().length > 0 || photoJointe !== null;
   refs.send.disabled = !ok || enCours;
 }
 
@@ -286,6 +330,15 @@ refs.input.addEventListener("keydown", (e) => {
 refs.form.addEventListener("submit", (e) => {
   e.preventDefault();
   envoyer(refs.input.value);
+});
+refs.boutonPhoto?.addEventListener("click", () => refs.fichierPhoto?.click());
+refs.fichierPhoto?.addEventListener("change", (e) => {
+  choisirPhoto(e.target.files?.[0]);
+  e.target.value = "";  // rejouer la même photo doit redéclencher l'événement
+});
+refs.retirerPhoto?.addEventListener("click", () => {
+  afficherApercuPhoto(null);
+  majBouton();
 });
 refs.suggestions?.addEventListener("click", (e) => {
   const chip = e.target.closest(".chip");
@@ -408,6 +461,11 @@ if (vues.chat && vues.parcelle && vues.atelier) {
     // Le bandeau AVANT les destinations : si le service est en repli, la première
     // chose lisible doit être l'explication, pas une porte fermée sans motif.
     afficherAvisRepli($("bandeauRepli"), replie);
+    // Le bouton photo suit la capacité RÉELLE de l'API. Tant que la vision est
+    // fermée (profil CPU, repli, ou modèle absent), il reste caché : proposer de
+    // joindre une photo pour répondre « je ne sais pas la lire » serait pire que
+    // ne rien proposer. Même principe que les destinations annoncées.
+    if (refs.boutonPhoto) refs.boutonPhoto.hidden = capacites?.vision !== true;
     const fermees = appliquerCapacites(
       {
         parcelle: {

@@ -104,15 +104,22 @@ export function creerClientApi(lireBaseUrl) {
    * « progress » (étape en cours côté serveur) sont relayés à options.onProgress.
    * @param {string} question
    * @param {(texte: string) => void} onToken
-   * @param {{historique?: Array<{role: string, content: string}>, sessionId?: string|null, onProgress?: (texte: string) => void}} options
+   * @param {{historique?: Array<{role: string, content: string}>, sessionId?: string|null, onProgress?: (texte: string) => void, images?: Array<object>}} options
    */
   async function demanderStream(question, onToken, options = {}) {
     let resp;
     try {
-      resp = await fetch(baseCourante() + "/v1/chat/stream", {
+      // Une photo jointe part sur sa propre route. Le budget d'analyse d'une image se
+      // compte en dizaines de secondes : mélangée au chemin textuel, elle en
+      // alourdirait le contrat pour tout le trafic. Le flux d'événements, lui, est
+      // identique — d'où la lecture commune ci-dessous.
+      const avecPhoto = Array.isArray(options.images) && options.images.length > 0;
+      const corps = corpsChat(question, options);
+      if (avecPhoto) corps.images = options.images;
+      resp = await fetch(baseCourante() + (avecPhoto ? "/v1/chat/photo" : "/v1/chat/stream"), {
         method: "POST",
         headers: enTetes({ "Content-Type": "application/json", Accept: "text/event-stream" }),
-        body: JSON.stringify(corpsChat(question, options)),
+        body: JSON.stringify(corps),
       });
     } catch {
       throw new ConseilError(ErreurKind.RESEAU, "API injoignable");

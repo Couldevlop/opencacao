@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app import __version__
+from app.application.constat_chat import ServiceConstatChat
 from app.application.constat_visuel import ServiceConstatVisuel
 from app.core.auth_store import AuthStore
 from app.core.cache import CacheClient
@@ -74,11 +75,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.vision = ClientVLM.from_settings(settings)
     else:
         app.state.vision = VisionIndisponible()
+    constat_visuel = ServiceConstatVisuel(app.state.vision, app.state.inference)
     app.state.service_constats = ServiceConstats(
         app.state.parcelles,
-        ServiceConstatVisuel(app.state.vision, app.state.inference),
+        constat_visuel,
         dossier_captures=Path(settings.captures_dir),
     )
+    # La photo dans le chat réutilise EXACTEMENT la même cascade : même description,
+    # mêmes garde-fous de sortie. Seule la porte d'entrée change — c'est ce qui permet
+    # d'ouvrir la fonction sans rouvrir la question de la doctrine.
+    app.state.service_constat_chat = ServiceConstatChat(constat_visuel)
 
     # Atelier de livrables (V3, chantier C3).
     app.state.rapports = RapportStore.from_settings(settings)

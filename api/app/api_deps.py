@@ -12,6 +12,7 @@ from app.application.auth_service import AuthService
 from app.application.cache_semantique import CacheSemantique
 from app.application.conseil_agentique import ConseilAgentique
 from app.application.conseil_service import ConseilService
+from app.application.constat_chat import ServiceConstatChat
 from app.application.dialogue_session import DialogueSessionService
 from app.application.orchestrateur import Orchestrateur
 from app.application.registre import RegistreAgents
@@ -69,6 +70,11 @@ def get_service_parcelles(request: Request) -> ServiceParcelles:
 def get_service_constats(request: Request) -> ServiceConstats:
     """Retourne le service du constat visuel stocké dans l'état de l'application."""
     return request.app.state.service_constats
+
+
+def get_service_constat_chat(request: Request) -> ServiceConstatChat:
+    """Retourne le service de la photo dans le chat."""
+    return request.app.state.service_constat_chat
 
 
 def get_service_rapports(request: Request) -> ServiceRapports:

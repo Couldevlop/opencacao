@@ -571,7 +571,11 @@ def _contient(texte: str, motifs: tuple[re.Pattern, ...]) -> bool:
 
 
 def evaluer(
-    question: str, *, courante: str | None = None, conversation: str | None = None
+    question: str,
+    *,
+    courante: str | None = None,
+    conversation: str | None = None,
+    image_analysee: bool = False,
 ) -> Refus | None:
     """Évalue une question et retourne un refus si une règle s'applique.
 
@@ -594,6 +598,12 @@ def evaluer(
         question: Texte évalué par les règles de protection (le fil, en multi-tours).
         courante: Question du tour en cours, pour les règles de correction. Par
             défaut, ``question`` — les appelants mono-tour n'ont rien à changer.
+        image_analysee: Vrai lorsqu'une image RECEVABLE accompagne la question et va
+            être analysée par la cascade descriptive. La règle d'image est alors levée
+            — mais elle seule, et les garde-fous de SORTIE restent les mêmes : la
+            description produite ne peut toujours pas nommer une maladie ni prescrire
+            un produit (``contient_diagnostic``). Faux par défaut : un appelant qui
+            n'en sait rien conserve le refus, qui est le comportement sûr.
         conversation: TOUS les tours du producteur, pour y lire la LOCALITÉ. Le fil
             ancré ne retient que le dernier tour : une ville citée deux tours plus tôt
             en sortait, et la correction de zone cessait de s'appliquer (écart du
@@ -621,8 +631,13 @@ def evaluer(
     if _contient(texte, _RE_MEDICAL):
         return Refus(CategorieRefus.MEDICAL)
 
-    # 3. Identification de maladie sur image sans agent
-    if _contient(texte, _RE_IMAGE):
+    # 3. Identification de maladie sur image sans agent.
+    #    Règle LEXICALE : le mot « photo » suffit. C'est volontairement large, et c'est
+    #    la bonne réponse tant qu'aucune image n'est réellement lue — promettre une
+    #    analyse qu'on ne fait pas serait pire que refuser. Quand une image recevable
+    #    est jointe et passe par la cascade descriptive, le relais est pris par les
+    #    garde-fous de SORTIE, qui eux ne bougent pas.
+    if not image_analysee and _contient(texte, _RE_IMAGE):
         return Refus(CategorieRefus.DIAGNOSTIC_IMAGE)
 
     # 3 bis. Transformation (chocolat, beurre/poudre de cacao, torréfaction…) : un autre
