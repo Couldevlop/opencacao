@@ -9,7 +9,12 @@ from __future__ import annotations
 
 import pytest
 
-from app.application.intention_rapport import DEMANDE_MAX, Intention, resoudre_demande
+from app.application.intention_rapport import (
+    DEMANDE_MAX,
+    PAGES_MAX,
+    Intention,
+    resoudre_demande,
+)
 from app.services.gabarits import Gabarit
 
 
@@ -189,3 +194,63 @@ class TestRobustesse:
     def test_le_plafond_est_expose(self) -> None:
         # La couche HTTP borne l'entrée avec la MÊME valeur : elle doit venir d'ici.
         assert DEMANDE_MAX == 2000
+
+
+# --- L'ampleur demandée : « minimum 25 pages » ---
+#
+# Écart vécu en production le 11/09/2026. Waopron demande « une étude de la filière sur
+# la campagne 2025-2026 » en précisant un minimum de 25 pages, et reçoit quatre pages.
+# La demande ne portait AUCUNE notion de longueur : le nombre de pages était purement
+# ignoré, et rien ne le signalait. Le gabarit annonce pourtant « 5 à 15 pages », qu'il
+# ne tenait pas davantage.
+#
+# On lit donc l'ampleur, et on la rend disponible au moteur. Ce qu'on ne fait PAS :
+# promettre une longueur. Une étude est bornée par les sources mobilisables, pas par
+# un souhait — le moteur dira honnêtement ce qu'il a pu produire.
+
+
+def test_le_nombre_de_pages_demande_est_lu() -> None:
+    intention = resoudre_demande(
+        "Fais une étude de la filière sur la campagne 2025-2026, minimum 25 pages",
+        CATALOGUE,
+    )
+
+    assert intention.pages == 25
+
+
+def test_les_formulations_courantes_sont_reconnues() -> None:
+    for demande, attendu in (
+        ("une étude sur le cacao de 30 pages", 30),
+        ("une étude sur le cacao en 12 pages", 12),
+        ("une étude sur le cacao, au moins 8 pages", 8),
+        ("une étude sur le cacao d'environ 15 pages", 15),
+    ):
+        assert resoudre_demande(demande, CATALOGUE).pages == attendu, demande
+
+
+def test_sans_precision_l_ampleur_est_absente() -> None:
+    """Rien n'est deviné : une demande sans nombre de pages n'en invente pas."""
+    assert resoudre_demande("une étude sur le cacao", CATALOGUE).pages is None
+
+
+def test_le_nombre_de_pages_ne_pollue_pas_le_sujet() -> None:
+    """« minimum 25 pages » est une consigne de forme, pas l'objet de l'étude."""
+    intention = resoudre_demande(
+        "Fais une étude de la filière sur la campagne 2025-2026, minimum 25 pages",
+        CATALOGUE,
+    )
+
+    assert intention.sujet == "la campagne 2025-2026"
+    # « 25 » figure dans « 2025-2026 » : ce n'est pas le nombre de pages qu'on traque,
+    # c'est la consigne de forme — le mot « pages » et son qualificatif.
+    assert "page" not in intention.sujet.lower()
+    assert "minimum" not in intention.sujet.lower()
+
+
+def test_une_ampleur_absurde_est_bornee() -> None:
+    """La demande vient d'une saisie publique : 900 pages ne doivent pas devenir
+    900 générations. On borne, on ne refuse pas."""
+    intention = resoudre_demande("une étude sur le cacao en 900 pages", CATALOGUE)
+
+    assert intention.pages is not None
+    assert intention.pages <= PAGES_MAX

@@ -175,7 +175,9 @@ describe("la demande", () => {
     noeuds.champDemande.value = "un bulletin pour Daloa";
     noeuds.formDemande.emettre("submit");
     await pause();
-    assert.deepEqual(journal.crees, [{ gabarit: "bulletin_regional", sujet: "Daloa" }]);
+    // `pages` fait partie du contrat depuis le 11/09 : l'ampleur lue par le serveur
+  // est transportée jusqu'à la création. 0 = non précisée.
+  assert.deepEqual(journal.crees, [{ gabarit: "bulletin_regional", sujet: "Daloa", pages: 0 }]);
   });
 
   it("pose une question quand le type est ambigu", async () => {
@@ -199,7 +201,7 @@ describe("la demande", () => {
     noeuds.questionChoix.children[0].click();
     await pause();
     assert.deepEqual(journal.crees, [
-      { gabarit: "bulletin_regional", sujet: "les cours du cacao" },
+      { gabarit: "bulletin_regional", sujet: "les cours du cacao", pages: 0 },
     ]);
   });
 });
@@ -226,7 +228,7 @@ describe("le sujet dicté après une question", () => {
     await pause();
     assert.equal(journal.intentions.length, 1, "la seconde phrase ne doit pas être réinterprétée");
     assert.deepEqual(journal.crees, [
-      { gabarit: "bulletin_regional", sujet: "la région de Daloa" },
+      { gabarit: "bulletin_regional", sujet: "la région de Daloa", pages: 0 },
     ]);
   });
 });

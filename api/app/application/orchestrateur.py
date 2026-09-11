@@ -177,7 +177,19 @@ class Orchestrateur:
         #    inférence) par défaut ; naturelle (formulée par le modèle) derrière le
         #    drapeau ``dialogue_naturel`` si une inférence est injectée.
         if self._dialogue_naturel and self._inference is not None:
-            theme = clarification.detecter_theme(question, historique, self._profondeur_dialogue)
+            # Le dialogue se poursuit sur le sujet DÉJÀ engagé quand le tour courant
+            # ne renomme pas de thème : « depuis deux semaines » répond à la question
+            # posée, ce n'est pas une question neuve sans objet.
+            sujet_engage, reste_a_savoir = conseil_commun.contexte_de_poursuite(
+                question, historique, fiche_producteur
+            )
+            theme = clarification.detecter_theme(
+                question,
+                historique,
+                self._profondeur_dialogue,
+                sujet_en_cours=sujet_engage,
+                faits_manquants=reste_a_savoir,
+            )
             if theme is not None:
                 logger.info("clarification_demandee", mode="naturel", theme=theme)
                 if await self._cache.hit_rate_limit(client_ip):
@@ -353,7 +365,19 @@ class Orchestrateur:
         # 2. Clarification consultative (émise d'un bloc en scripté ; en flux
         #    token par token pour la variante naturelle derrière le drapeau).
         if self._dialogue_naturel and self._inference is not None:
-            theme = clarification.detecter_theme(question, historique, self._profondeur_dialogue)
+            # Le dialogue se poursuit sur le sujet DÉJÀ engagé quand le tour courant
+            # ne renomme pas de thème : « depuis deux semaines » répond à la question
+            # posée, ce n'est pas une question neuve sans objet.
+            sujet_engage, reste_a_savoir = conseil_commun.contexte_de_poursuite(
+                question, historique, fiche_producteur
+            )
+            theme = clarification.detecter_theme(
+                question,
+                historique,
+                self._profondeur_dialogue,
+                sujet_en_cours=sujet_engage,
+                faits_manquants=reste_a_savoir,
+            )
             if theme is not None:
                 logger.info("clarification_demandee", mode="naturel", theme=theme)
                 if await self._cache.hit_rate_limit(client_ip):

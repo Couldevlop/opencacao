@@ -231,6 +231,38 @@ def rappel_court(fiche: Fiche) -> str:
     return ", ".join(morceaux)
 
 
+# Faits que la fiche sait RELIRE, par thème. Poser une question sur ce qu'on ne saura
+# pas relire ferait boucler le dialogue : on redemanderait indéfiniment la même chose.
+# La liste est donc volontairement restreinte à ce que l'extraction couvre vraiment.
+_FAITS_ATTENDUS: dict[str, tuple[str, ...]] = {
+    "symptome": ("partie", "anciennete"),
+    "traitement": ("partie", "localite"),
+    "rendement": ("age_ans", "localite"),
+    "fertilisation": ("age_ans", "localite"),
+    "plantation": ("localite", "superficie_ha"),
+    "contact": ("localite",),
+}
+
+
+def faits_manquants(fiche: Fiche, theme: str) -> tuple[str, ...]:
+    """Faits encore inconnus pour ce thème, parmi ceux que la fiche sait relire.
+
+    C'est ce qui décide de POURSUIVRE un dialogue plutôt que de répondre : tant qu'il
+    reste quelque chose à apprendre, on demande ; dès que tout est là, on conseille.
+    Ce n'est donc pas le plafond de tours qui arrête la conversation, c'est le fait de
+    tout savoir — et c'est ce qui empêche de tourner en rond.
+
+    Args:
+        fiche: Fiche extraite du fil.
+        theme: Thème en cours (``symptome``, ``plantation``…).
+
+    Returns:
+        Les noms des faits manquants. Vide si tout est connu, ou si le thème n'attend
+        rien que la fiche sache relire.
+    """
+    return tuple(nom for nom in _FAITS_ATTENDUS.get(theme, ()) if not getattr(fiche, nom, None))
+
+
 def faits_connus(fiche: Fiche) -> str:
     """Résume en une phrase ce que le producteur a déjà dit, pour ne plus le redemander.
 

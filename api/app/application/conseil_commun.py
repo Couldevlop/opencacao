@@ -85,6 +85,35 @@ def enrichir_contact(conseil: Conseil, texte_conversation: str) -> Conseil:
     )
 
 
+def contexte_de_poursuite(
+    question: str,
+    historique: list[dict[str, str]] | None,
+    fiche_producteur: fiche.Fiche | None,
+) -> tuple[str, bool]:
+    """Sujet engagé et faits encore manquants, pour décider de poursuivre un dialogue.
+
+    Le calcul vit ICI parce qu'il croise deux modules — la fiche sait ce qui est connu,
+    la clarification sait quoi en faire — et parce que les quatre points d'appel (V2 et
+    V3, synchrone et flux) doivent en faire exactement la même lecture. Recopié, il
+    aurait divergé.
+
+    La fiche peut être absente : certains chemins ne l'ont pas construite. On l'extrait
+    alors, c'est quelques expressions régulières et aucune inférence.
+
+    Args:
+        question: Dernier tour du producteur.
+        historique: Tours précédents.
+        fiche_producteur: Fiche déjà extraite, ou ``None``.
+
+    Returns:
+        ``(sujet_en_cours, faits_manquants)``.
+    """
+    connue = (
+        fiche_producteur if fiche_producteur is not None else fiche.extraire(question, historique)
+    )
+    return connue.sujet, bool(fiche.faits_manquants(connue, connue.sujet))
+
+
 def _consigne_clarification(
     theme: str,
     question: str,

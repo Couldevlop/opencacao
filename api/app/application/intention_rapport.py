@@ -35,6 +35,50 @@ DEMANDE_MAX = 2000
 # section : il est borné à la source, pas seulement à la validation d'entrée.
 SUJET_MAX = 200
 
+# Plafond de l'ampleur demandée. La demande vient d'une saisie publique : « 900 pages »
+# ne doit pas devenir neuf cents générations. On borne plutôt que de refuser — une
+# ampleur excessive reste une intention lisible, et le moteur dira de toute façon ce
+# qu'il a réellement pu produire.
+PAGES_MAX = 60
+PAGES_MIN = 1
+
+# « minimum 25 pages », « en 12 pages », « au moins 8 pages », « d'environ 15 pages ».
+# Le nombre précède toujours le mot « page » : c'est ce qui distingue une consigne de
+# forme d'un chiffre du sujet (« la campagne 2025-2026 » n'est pas une ampleur).
+#
+# Le qualificatif qui précède est absorbé lui aussi — sans quoi « minimum 25 pages »
+# laissait « minimum » derrière lui, et le document s'intitulait « Étude de filière —
+# la campagne 2025-2026, minimum ».
+_AMPLEUR = re.compile(
+    r"(?:[,;]\s*)?"
+    r"(?:d['’]?\s*|de\s+|en\s+|sur\s+)?"
+    r"(?:minimum|mini|maximum|maxi|au\s+moins|au\s+maximum|environ|a\s+peu\s+pres|"
+    r"à\s+peu\s+près|pas\s+moins\s+de)?\s*"
+    r"(?:d['’]?\s*|de\s+|en\s+)?"
+    r"(\d{1,3})\s*(?:à|a|-)?\s*\d{0,3}\s*pages?\b",
+    re.IGNORECASE,
+)
+
+
+def _ampleur(demande: str) -> int | None:
+    """Nombre de pages demandé, borné, ou ``None`` s'il n'est pas énoncé.
+
+    Args:
+        demande: Texte de la demande, tel qu'il a été écrit.
+
+    Returns:
+        Le nombre de pages, borné à ``PAGES_MAX``, ou ``None``. Rien n'est deviné :
+        une demande sans nombre de pages n'en reçoit pas.
+    """
+    trouve = _AMPLEUR.search(demande)
+    if trouve is None:
+        return None
+    pages = int(trouve.group(1))
+    if pages < PAGES_MIN:
+        return None
+    return min(pages, PAGES_MAX)
+
+
 # Mots qui séparent la commande de son objet. « une étude SUR la campagne » : ce qui
 # suit est le sujet, ce qui précède est la façon de le demander.
 _PIVOTS = frozenset(
@@ -75,12 +119,16 @@ class Intention:
         certaine: Vrai seulement si le type ET le sujet sont établis sans ambiguïté.
         candidats: Types entre lesquels l'appelant doit faire trancher. Vide quand
             l'intention est certaine.
+        pages: Ampleur demandée, en pages, ou ``None`` si elle n'a pas été énoncée.
+            C'est un SOUHAIT, pas une promesse : une étude est bornée par les sources
+            mobilisables, et le moteur dira ce qu'il a réellement pu produire.
     """
 
     gabarit: str
     sujet: str
     certaine: bool
     candidats: tuple[str, ...]
+    pages: int | None = None
 
 
 def _plier(texte: str) -> str:
@@ -189,9 +237,13 @@ def resoudre_demande(demande: str, gabarits: Iterable[Gabarit]) -> Intention:
     """
     catalogue = tuple(gabarits)
     if not catalogue:
-        return Intention(gabarit="", sujet="", certaine=False, candidats=())
+        return Intention(gabarit="", sujet="", certaine=False, candidats=(), pages=None)
 
-    texte = _assainir(demande)
+    pages = _ampleur(demande)
+    # La consigne de forme est retirée AVANT l'extraction du sujet : « minimum 25
+    # pages » n'est pas l'objet de l'étude, et le laisser ferait titrer un document
+    # « Étude de filière — la campagne 2025-2026, minimum 25 pages ».
+    texte = _assainir(_AMPLEUR.sub(" ", demande))
     plie = _plier(texte)
     mots = [(trouve.group(), trouve.span()) for trouve in _MOT.finditer(plie)]
 
@@ -241,9 +293,10 @@ def resoudre_demande(demande: str, gabarits: Iterable[Gabarit]) -> Intention:
             sujet=sujet,
             certaine=False,
             candidats=tuple(sorted(scores)),
+            pages=pages,
         )
     if len(en_tete) > 1:
-        return Intention(gabarit="", sujet=sujet, certaine=False, candidats=en_tete)
+        return Intention(gabarit="", sujet=sujet, certaine=False, candidats=en_tete, pages=pages)
 
     retenu = next(gabarit for gabarit in catalogue if gabarit.identifiant == en_tete[0])
     sujet = _degager_du_type(sujet, retenu.declencheurs)
@@ -252,6 +305,7 @@ def resoudre_demande(demande: str, gabarits: Iterable[Gabarit]) -> Intention:
         sujet=sujet,
         certaine=bool(sujet),
         candidats=() if sujet else en_tete,
+        pages=pages,
     )
 
 

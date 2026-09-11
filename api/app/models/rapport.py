@@ -197,6 +197,10 @@ class IntentionReponse(BaseModel):
     sujet: str
     certaine: bool
     candidats: list[GabaritReponse] = Field(default_factory=list)
+    # Ampleur lue dans la demande, en pages. 0 = non précisée. L'écran la
+    # renvoie telle quelle à la création : c'est un souhait transporté, pas
+    # une promesse tenue — le moteur dira ce qu'il a pu produire.
+    pages: int = 0
 
 
 class RapportReponse(BaseModel):

@@ -73,6 +73,7 @@ class Rapport:
     erreur: str
     cree_le: datetime
     maj_le: datetime
+    pages: int = 0
 
 
 class RapportStore:
@@ -96,6 +97,13 @@ class RapportStore:
         CREATE INDEX IF NOT EXISTS idx_rapports_demandeur
             ON rapports(demandeur, cree_le DESC);
         CREATE INDEX IF NOT EXISTS idx_rapports_etat ON rapports(etat);
+        """,
+        # Ampleur demandée, en pages. 0 = non précisée — le moteur garde alors ses
+        # budgets historiques. Ajoutée le 11/09/2026 : jusque-là « minimum 25 pages »
+        # était lu par personne, et le document faisait quatre pages sans que rien ne
+        # le signale.
+        """
+        ALTER TABLE rapports ADD COLUMN pages INTEGER NOT NULL DEFAULT 0;
         """,
     )
 
@@ -179,15 +187,17 @@ class RapportStore:
             erreur=ligne["erreur"],
             cree_le=datetime.fromisoformat(ligne["cree_le"]),
             maj_le=datetime.fromisoformat(ligne["maj_le"]),
+            pages=int(ligne["pages"] or 0),
         )
 
-    async def creer(self, gabarit: str, sujet: str, demandeur: str) -> Rapport:
+    async def creer(self, gabarit: str, sujet: str, demandeur: str, pages: int = 0) -> Rapport:
         """Crée un job en attente.
 
         Args:
             gabarit: Identifiant du gabarit demandé.
             sujet: Sujet du document.
             demandeur: Identifiant anonyme du demandeur.
+            pages: Ampleur demandée, en pages. 0 quand elle n'a pas été énoncée.
 
         Returns:
             Le job créé.
@@ -205,6 +215,7 @@ class RapportStore:
             erreur="",
             cree_le=horodatage,
             maj_le=horodatage,
+            pages=pages,
         )
         if not self._pret:
             return rapport
@@ -217,8 +228,8 @@ class RapportStore:
         with closing(self._connexion()) as connexion:
             connexion.execute(
                 "INSERT INTO rapports (id, gabarit, sujet, demandeur, etat, sections_faites, "
-                "sections_total, markdown, erreur, cree_le, maj_le) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "sections_total, markdown, erreur, cree_le, maj_le, pages) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     rapport.identifiant,
                     rapport.gabarit,
@@ -231,6 +242,7 @@ class RapportStore:
                     rapport.erreur,
                     rapport.cree_le.isoformat(),
                     rapport.maj_le.isoformat(),
+                    rapport.pages,
                 ),
             )
             connexion.commit()

@@ -5,7 +5,14 @@ from __future__ import annotations
 import pytest
 
 from app.application.provenance import affirmations_sans_source
-from app.application.redaction import ContexteGeneration, MoteurRedaction, SujetRefuse
+from app.application.redaction import (
+    MAX_AFFIRMATIONS_SECTION,
+    MAX_TOKENS_SECTION,
+    PLAFOND_TOKENS_SECTION,
+    ContexteGeneration,
+    MoteurRedaction,
+    SujetRefuse,
+)
 from app.models.constat import NiveauConfiance
 from app.models.rapport import Affirmation
 from app.services.gabarits import Gabarit, SectionGabarit
@@ -460,3 +467,128 @@ async def test_une_prescription_chiffree_reste_refusee(corps):
     document = await moteur.rediger(_gabarit(), "le cacao", "appareil-a")
     assert document.sections[0].lacune is True
     assert corps not in document.sections[0].corps
+
+
+# --- Une section sans source déclarée porte sur le DOCUMENT, pas sur le corpus ---
+#
+# Écart vécu en production le 11/09/2026. Le gabarit « étude de filière » déclare une
+# dernière section « Limites de la présente étude » avec `sources: []`. La règle D4 —
+# une section sans source ne mobilise pas le modèle — la faisait retomber sur le
+# constat de lacune générique, systématiquement, sur CHAQUE étude produite :
+#
+#   « Aucune source mobilisable n'a été trouvée pour cette section. Elle est laissée
+#     en l'état plutôt que renseignée par estimation… »
+#
+# Le lecteur y voyait un échec de collecte, alors que cette section n'a par nature
+# aucune source externe à mobiliser : elle parle de l'étude elle-même. Elle se rédige
+# donc à partir des sections déjà écrites, exactement comme le résumé et la conclusion,
+# et énonce les lacunes RÉELLEMENT rencontrées.
+
+
+def _gabarit_avec_limites() -> Gabarit:
+    return _gabarit(
+        *(
+            SectionGabarit(titre="Contexte", sources=("rag",), consigne="Situer."),
+            SectionGabarit(titre="Limites de la présente étude", sources=(), consigne="Énoncer."),
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_la_section_limites_est_redigee_et_non_declaree_en_lacune() -> None:
+    """Elle porte sur l'étude, pas sur le corpus : elle n'a aucune source à manquer."""
+    inference = FausseInference("Les sources mobilisées ne permettent pas d'établir X.")
+    moteur = _moteur(inference, rag=FauxCollecteur(_affirmation()))
+
+    document = await moteur.rediger(_gabarit_avec_limites(), "campagne 2025-2026", "demandeur")
+
+    limites = document.sections[-1]
+    assert limites.titre == "Limites de la présente étude"
+    assert not limites.lacune, "la section méta était comptée comme une lacune de collecte"
+    assert "Aucune source mobilisable" not in limites.corps
+
+
+@pytest.mark.asyncio
+async def test_la_section_limites_part_des_sections_ECRITES() -> None:
+    """Elle ne redemande rien au corpus : son contexte est le document lui-même."""
+    inference = FausseInference("Limites.")
+    moteur = _moteur(inference, rag=FauxCollecteur(_affirmation()))
+
+    await moteur.rediger(_gabarit_avec_limites(), "campagne 2025-2026", "demandeur")
+
+    dernier = inference.appels[-1]
+    assert "Contexte" in str(
+        dernier.get("contexte", "")
+    ), "la section méta doit recevoir les sections déjà écrites comme contexte"
+
+
+@pytest.mark.asyncio
+async def test_sans_aucune_section_ecrite_la_lacune_reste_honnete() -> None:
+    """Si tout le document est vide, il n'y a rien dont on puisse énoncer les limites."""
+    inference = FausseInference("Limites.")
+    moteur = _moteur(inference, rag=FauxCollecteur())
+
+    document = await moteur.rediger(_gabarit_avec_limites(), "campagne 2025-2026", "demandeur")
+
+    limites = document.sections[-1]
+    assert limites.lacune
+
+
+# --- L'ampleur demandée est honorée, dans la limite de ce que les sources permettent -
+#
+# Écart de production du 11/09/2026 : « minimum 25 pages » produisait quatre pages, et
+# rien ne le signalait. Le budget par section était fixe (420 tokens), quelle que soit
+# la demande.
+#
+# Ce qu'on fait : on répartit l'ampleur demandée sur les sections et on élargit d'autant
+# la base documentaire mobilisée. Ce qu'on ne fait PAS : promettre la longueur. Une
+# étude est bornée par les sources, jamais par un souhait — et quand l'écart subsiste,
+# le document le DIT au lieu de le combler par du remplissage.
+
+
+@pytest.mark.asyncio
+async def test_une_ampleur_demandee_elargit_le_budget_des_sections() -> None:
+    inference = FausseInference()
+    moteur = _moteur(inference, rag=FauxCollecteur(_affirmation()))
+
+    await moteur.rediger(_gabarit(), "le cacao", "appareil-a", pages=25)
+
+    ecriture = inference.appels[0]
+    assert ecriture["max_tokens"] > MAX_TOKENS_SECTION
+
+
+@pytest.mark.asyncio
+async def test_sans_ampleur_le_budget_ne_bouge_pas() -> None:
+    """Le comportement par défaut reste celui d'avant : rien n'est changé en silence."""
+    inference = FausseInference()
+    moteur = _moteur(inference, rag=FauxCollecteur(_affirmation()))
+
+    await moteur.rediger(_gabarit(), "le cacao", "appareil-a")
+
+    assert inference.appels[0]["max_tokens"] == MAX_TOKENS_SECTION
+
+
+@pytest.mark.asyncio
+async def test_le_budget_par_section_reste_borne() -> None:
+    """Une section de 4 000 tokens sortirait du contexte utile et se dégraderait. On
+    plafonne : l'ampleur s'obtient par le nombre de sections, pas par des pavés."""
+    inference = FausseInference()
+    moteur = _moteur(inference, rag=FauxCollecteur(_affirmation()))
+
+    await moteur.rediger(_gabarit(), "le cacao", "appareil-a", pages=60)
+
+    assert inference.appels[0]["max_tokens"] <= PLAFOND_TOKENS_SECTION
+
+
+@pytest.mark.asyncio
+async def test_l_ampleur_elargit_aussi_la_base_documentaire() -> None:
+    """Allonger le budget sans élargir les sources ferait délayer le modèle : plus de
+    mots pour les mêmes faits, c'est exactement le remplissage qu'on refuse."""
+    inference = FausseInference()
+    collecteur = FauxCollecteur(*[_affirmation() for _ in range(40)])
+    moteur = _moteur(inference, rag=collecteur)
+
+    await moteur.rediger(_gabarit(), "le cacao", "appareil-a", pages=25)
+
+    lignes = str(inference.appels[0].get("contexte", "")).splitlines()
+    assert len(lignes) > MAX_AFFIRMATIONS_SECTION

@@ -277,3 +277,132 @@ def test_une_vraie_reponse_remet_le_compteur_a_zero() -> None:
         clarification.detecter_theme("mes cabosses pourrissent", historique, profondeur_max=1)
         == "symptome"
     )
+
+
+# --- Le dialogue se poursuit sur le SUJET EN COURS, pas sur les mots du dernier tour --
+#
+# Vérifié sur le code déployé le 11/09/2026. La profondeur de 5 était bien en place,
+# mais aucune conversation réelle ne l'atteignait :
+#
+#   « Mon cacaoyer est malade »   -> clarifie (symptôme)
+#   « les feuilles jaunissent »   -> clarifie (symptôme)
+#   « depuis deux semaines »      -> RÉPOND   <- la chaîne casse ici
+#
+# La réponse du producteur à une question — « depuis deux semaines », « sur toute la
+# parcelle » — ne contient aucun mot de thème. Le système la traitait comme une
+# question neuve sans sujet. On avait livré la CAPACITÉ d'aller à cinq, pas le dialogue.
+#
+# La règle devient : tant qu'un dialogue est engagé ET qu'il manque des faits au sujet
+# en cours, on poursuit. Dès que tout est connu, on répond — c'est ce qui empêche de
+# tourner en rond, et non le plafond.
+
+
+def test_une_reponse_sans_mot_de_theme_poursuit_le_dialogue() -> None:
+    """« depuis deux semaines » répond à la question posée : c'est le même sujet."""
+    historique = [
+        {"role": "user", "content": "Mon cacaoyer est malade"},
+        {"role": "assistant", "content": f"Sur quelle partie ? {clarification._PIED}"},
+    ]
+
+    theme = clarification.detecter_theme(
+        "depuis deux semaines",
+        historique,
+        profondeur_max=5,
+        sujet_en_cours="symptome",
+        faits_manquants=True,
+    )
+
+    assert theme == "symptome"
+
+
+def test_quand_plus_rien_ne_manque_on_repond() -> None:
+    """Ce qui arrête le dialogue, c'est de tout savoir — pas d'avoir compté cinq tours."""
+    historique = [
+        {"role": "user", "content": "Mon cacaoyer est malade"},
+        {"role": "assistant", "content": f"Sur quelle partie ? {clarification._PIED}"},
+    ]
+
+    theme = clarification.detecter_theme(
+        "depuis deux semaines",
+        historique,
+        profondeur_max=5,
+        sujet_en_cours="symptome",
+        faits_manquants=False,
+    )
+
+    assert theme is None
+
+
+def test_hors_dialogue_engage_rien_ne_se_poursuit() -> None:
+    """Une question quelconque après un vrai conseil n'ouvre pas un dialogue par
+    contagion : il faut qu'une clarification vienne d'être posée."""
+    historique = [
+        {"role": "user", "content": "Mon cacaoyer est malade"},
+        {"role": "assistant", "content": "Voici le conseil complet."},
+    ]
+
+    theme = clarification.detecter_theme(
+        "merci beaucoup",
+        historique,
+        profondeur_max=5,
+        sujet_en_cours="symptome",
+        faits_manquants=True,
+    )
+
+    assert theme is None
+
+
+def test_le_plafond_arrete_la_poursuite() -> None:
+    """Même avec des faits manquants, cinq questions suffisent : le producteur doit
+    obtenir un conseil."""
+    historique: list[dict[str, str]] = []
+    for i in range(5):
+        historique.append({"role": "user", "content": f"reponse {i}"})
+        historique.append({"role": "assistant", "content": f"Question ? {clarification._PIED}"})
+
+    theme = clarification.detecter_theme(
+        "encore une reponse",
+        historique,
+        profondeur_max=5,
+        sujet_en_cours="symptome",
+        faits_manquants=True,
+    )
+
+    assert theme is None
+
+
+def test_un_theme_explicite_prime_sur_le_sujet_en_cours() -> None:
+    """Le producteur change de sujet en cours de dialogue : on le suit."""
+    historique = [
+        {"role": "user", "content": "Mon cacaoyer est malade"},
+        {"role": "assistant", "content": f"Sur quelle partie ? {clarification._PIED}"},
+    ]
+
+    theme = clarification.detecter_theme(
+        "et pour la fertilisation ?",
+        historique,
+        profondeur_max=5,
+        sujet_en_cours="symptome",
+        faits_manquants=True,
+    )
+
+    assert theme == "fertilisation"
+
+
+def test_sur_cpu_la_poursuite_n_a_pas_lieu() -> None:
+    """Profondeur 1 : une salve, puis on répond. Le comportement du profil CPU ne
+    change pas d'un iota."""
+    historique = [
+        {"role": "user", "content": "Mon cacaoyer est malade"},
+        {"role": "assistant", "content": f"Sur quelle partie ? {clarification._PIED}"},
+    ]
+
+    theme = clarification.detecter_theme(
+        "depuis deux semaines",
+        historique,
+        profondeur_max=1,
+        sujet_en_cours="symptome",
+        faits_manquants=True,
+    )
+
+    assert theme is None

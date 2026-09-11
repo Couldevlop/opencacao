@@ -53,7 +53,7 @@ export function creerAtelier(client) {
    *   AVANT la première génération.
    * @returns {Promise<{identifiant: string, sommaire: object}>} L'état final.
    */
-  async function produire({ gabarit, sujet, onEtat }) {
+  async function produire({ gabarit, sujet, pages, onEtat }) {
     const notifier = typeof onEtat === "function" ? onEtat : () => {};
 
     // Le plan s'affiche d'emblée : le lecteur voit où va le document avant qu'une
@@ -61,7 +61,13 @@ export function creerAtelier(client) {
     let sommaire = sommaireDepuisPlan(gabarit.sections);
     notifier(sommaire);
 
-    const rapport = await client.creerRapport({ gabarit: gabarit.identifiant, sujet });
+    const rapport = await client.creerRapport({
+      gabarit: gabarit.identifiant,
+      sujet,
+      // Toujours un nombre : laisser passer `undefined` ferait varier le corps de la
+      // requête selon le chemin d'appel, et le contrat avec le serveur avec lui.
+      pages: Number(pages) || 0,
+    });
 
     sommaire = demarrer(sommaire);
     notifier(sommaire);
@@ -112,6 +118,45 @@ export const SUJET_MAX = 200;
 /** Ramène un texte à un sujet présentable et borné. */
 const borner = (texte) => (texte || "").trim().slice(0, SUJET_MAX);
 
+/**
+ * Longueur visée d'un extrait de section affiché à l'écran. Assez pour savoir de quoi
+ * la section parle, trop court pour noyer le lecteur.
+ */
+export const EXTRAIT_MAX = 320;
+
+/**
+ * Aperçu d'une section, pour l'ÉCRAN. L'export, lui, reste complet.
+ *
+ * L'atelier déversait la prose entière au fil de l'eau : une étude de vingt pages y
+ * devenait illisible, et ce n'est pas ainsi que procèdent les autres assistants — ils
+ * montrent un aperçu et proposent le document. Le texte intégral n'est jamais perdu,
+ * il n'est simplement pas déversé.
+ *
+ * La coupe se fait à une frontière de PHRASE quand c'est possible, à défaut sur un
+ * espace : un extrait qui s'arrête en plein mot donne l'impression d'un texte tronqué
+ * par erreur, ce qui est précisément l'effet qu'on veut éviter.
+ *
+ * @param {string} texte Prose complète de la section.
+ * @returns {string} L'extrait, terminé par une ellipse s'il a été coupé.
+ */
+export function extrait(texte) {
+  const prose = (texte || "").trim();
+  if (prose.length <= EXTRAIT_MAX) return prose;
+
+  const debut = prose.slice(0, EXTRAIT_MAX);
+  const finDePhrase = Math.max(
+    debut.lastIndexOf(". "),
+    debut.lastIndexOf("! "),
+    debut.lastIndexOf("? ")
+  );
+  // Une frontière de phrase trop précoce donnerait un extrait d'une ligne là où on en
+  // voulait trois : en dessous de la moitié, on préfère couper sur un espace.
+  if (finDePhrase > EXTRAIT_MAX / 2) return `${debut.slice(0, finDePhrase + 1)} …`;
+
+  const espace = debut.lastIndexOf(" ");
+  return `${(espace > 0 ? debut.slice(0, espace) : debut).trimEnd()} …`;
+}
+
 /** Ce que l'écran doit faire d'une intention. */
 export const Suite = Object.freeze({
   PRODUIRE: "produire",
@@ -130,13 +175,14 @@ export const Suite = Object.freeze({
  * @param {string} texte Phrase saisie, tenue pour le sujet.
  * @returns {object} La décision, figée.
  */
-export function suiteDirecte(gabarit, texte) {
+export function suiteDirecte(gabarit, texte, pages = 0) {
   const sujet = borner(texte);
   return Object.freeze({
     suite: sujet ? Suite.PRODUIRE : Suite.PRECISER,
     gabarit,
     sujet,
     candidats: [],
+    pages,
   });
 }
 
@@ -154,6 +200,9 @@ export function suiteDirecte(gabarit, texte) {
 export function deciderSuite(intention, catalogue) {
   const connus = catalogue || [];
   const sujet = borner(intention?.sujet);
+  // Ampleur lue par le serveur. L'écran ne l'interprète pas : il la transporte
+  // jusqu'à la création, où le moteur décidera de ce qu'il peut réellement produire.
+  const pages = Number(intention?.pages) || 0;
   const gabarit = connus.find((g) => g.identifiant === intention?.gabarit) || null;
 
   if (!gabarit) {
@@ -162,10 +211,10 @@ export function deciderSuite(intention, catalogue) {
     // Une question sans réponse possible est une impasse : mieux vaut dire que rien
     // n'est disponible que d'afficher « Que puis-je produire ? » sous zéro bouton.
     const suite = proposes.length ? Suite.CHOISIR : Suite.IMPOSSIBLE;
-    return Object.freeze({ suite, gabarit: null, sujet, candidats: proposes });
+    return Object.freeze({ suite, gabarit: null, sujet, candidats: proposes, pages });
   }
   if (!sujet) {
-    return Object.freeze({ suite: Suite.PRECISER, gabarit, sujet: "", candidats: [] });
+    return Object.freeze({ suite: Suite.PRECISER, gabarit, sujet: "", candidats: [], pages });
   }
-  return Object.freeze({ suite: Suite.PRODUIRE, gabarit, sujet, candidats: [] });
+  return Object.freeze({ suite: Suite.PRODUIRE, gabarit, sujet, candidats: [], pages });
 }

@@ -130,7 +130,7 @@ async function soumettre(evenement) {
 function appliquer(decision) {
   if (decision.suite === Suite.PRODUIRE) {
     vue.poserQuestion("");
-    lancer(decision.gabarit, decision.sujet);
+    lancer(decision.gabarit, decision.sujet, decision.pages);
     return;
   }
   if (decision.suite === Suite.PRECISER) {
@@ -149,7 +149,7 @@ function appliquer(decision) {
     decision.candidats,
     (gabarit) => {
       vue.poserQuestion("");
-      if (decision.sujet) lancer(gabarit, decision.sujet);
+      if (decision.sujet) lancer(gabarit, decision.sujet, decision.pages);
       else demanderLeSujet(gabarit);
     }
   );
@@ -165,7 +165,7 @@ function demanderLeSujet(gabarit) {
 }
 
 /** Lance la production et suit son flux. */
-async function lancer(gabarit, sujet) {
+async function lancer(gabarit, sujet, pages = 0) {
   enCours = true;
   dernierRapport = null;
   vue.produireActif(false);
@@ -188,6 +188,7 @@ async function lancer(gabarit, sujet) {
     const { identifiant } = await atelier.produire({
       gabarit,
       sujet,
+      pages,
       onEtat: (sommaire) => vue.rendreSommaire({ ...sommaire, mention: gabarit.mention }),
     });
     dernierRapport = identifiant;

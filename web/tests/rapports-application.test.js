@@ -13,6 +13,7 @@ import {
   creerAtelier,
   deciderSuite,
   suiteDirecte,
+  extrait,
 } from "../src/application/rapports.js";
 import { EtatProduction, EtatSection } from "../src/domain/rapport.js";
 
@@ -96,11 +97,13 @@ describe("production d'un document", () => {
     assert.ok(etats[0].sections.every((s) => s.etat === EtatSection.ATTENTE));
   });
 
-  it("transmet le gabarit et le sujet au serveur", async () => {
+  it("transmet le gabarit, le sujet et l'ampleur au serveur", async () => {
     const client = clientSimule([]);
     await creerAtelier(client).produire({ gabarit: GABARIT, sujet: "Soubré" });
+    // `pages` est toujours un nombre, même sans ampleur demandée : laisser passer
+    // `undefined` ferait varier le corps de la requête selon le chemin d'appel.
     assert.deepEqual(client.appels.crees, [
-      { gabarit: "bulletin_regional", sujet: "Soubré" },
+      { gabarit: "bulletin_regional", sujet: "Soubré", pages: 0 },
     ]);
     assert.deepEqual(client.appels.suivis, ["r1"]);
   });
@@ -337,5 +340,48 @@ describe("historique et téléchargement", () => {
     const { nom } = await creerAtelier(client).telecharger("r1", "docx");
     assert.deepEqual(client.appels.exports, [{ identifiant: "r1", format: "docx" }]);
     assert.match(nom, /\.docx$/);
+  });
+});
+
+
+describe("l'extrait affiché à l'écran", () => {
+  // Retour de Waopron le 11/09/2026 : l'atelier déversait la prose entière à l'écran.
+  // Une étude de vingt pages y devient illisible, et ce n'est pas ainsi que les autres
+  // assistants procèdent — ils montrent un aperçu et proposent le document.
+  //
+  // La règle : l'ÉCRAN montre un extrait, l'EXPORT reste complet. Le texte intégral
+  // n'est jamais perdu, il n'est simplement pas déversé.
+
+  it("garde une prose courte telle quelle", () => {
+    const court = "La production avoisine 2,2 millions de tonnes.";
+    assert.equal(extrait(court), court);
+  });
+
+  it("coupe une prose longue à la fin d'une phrase", () => {
+    // Nettement au-delà de EXTRAIT_MAX : une section d'étude fait plusieurs
+    // paragraphes, c'est précisément le cas qu'on veut éprouver.
+    const long =
+      "La production avoisine 2,2 millions de tonnes. " +
+      "Elle place la Côte d'Ivoire au premier rang mondial depuis plusieurs décennies. " +
+      "Les volumes varient selon la pluviométrie et l'état du verger. ".repeat(6);
+    const vu = extrait(long);
+    assert.ok(vu.length < long.length);
+    // On coupe à une frontière de phrase : un extrait qui s'arrête en plein mot
+    // donne l'impression d'un texte tronqué par erreur.
+    assert.ok(vu.endsWith("…"));
+    assert.ok(vu.startsWith("La production avoisine"));
+  });
+
+  it("ne coupe jamais en plein mot", () => {
+    const long = "mot ".repeat(200);
+    const vu = extrait(long);
+    assert.ok(!/\w…$/.test(vu.replace("…", "")) || vu.endsWith(" …") || vu.endsWith("…"));
+    assert.ok(vu.length <= 400);
+  });
+
+  it("rend une chaîne vide sur une section sans prose", () => {
+    assert.equal(extrait(""), "");
+    assert.equal(extrait(null), "");
+    assert.equal(extrait(undefined), "");
   });
 });

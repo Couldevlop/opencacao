@@ -477,14 +477,20 @@ export function creerClientApi(lireBaseUrl) {
     return resp.json();
   }
 
-  /** Crée un job de génération. Renvoie l'état initial du rapport. */
-  async function creerRapport({ gabarit, sujet }) {
+  /**
+   * Crée un job de génération. Renvoie l'état initial du rapport.
+   *
+   * `pages` est l'ampleur lue par le serveur dans la demande écrite librement
+   * (« minimum 25 pages »). On la lui renvoie telle quelle : c'est lui qui l'a
+   * comprise, l'écran ne fait que la transporter.
+   */
+  async function creerRapport({ gabarit, sujet, pages }) {
     const resp = await appelParcelle(
       "/v1/rapports",
       {
         method: "POST",
         headers: enTetes({ "Content-Type": "application/json", Accept: "application/json" }),
-        body: JSON.stringify({ gabarit, sujet }),
+        body: JSON.stringify({ gabarit, sujet, pages: pages || 0 }),
       },
       { messageAbsence: "L'atelier de livrables n'est pas activé sur ce serveur." }
     );

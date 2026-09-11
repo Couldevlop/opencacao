@@ -5,6 +5,8 @@
 // Le rendu est reconstruit à chaque état plutôt que muté au coup par coup : un
 // sommaire de six lignes est trop petit pour que la différence se voie, et une
 // reconstruction ne peut pas désynchroniser l'écran de l'état.
+import { extrait } from "../application/rapports.js";
+
 
 import { EtatProduction, EtatSection, avancement } from "../domain/rapport.js";
 
@@ -187,7 +189,10 @@ export function creerVueRapport(refs) {
       // La prose est en serif : ce qui se produit ici est un DOCUMENT, et l'écran
       // finit par ressembler à une page plutôt qu'à un tableau de bord.
       corps.className = "section-corps";
-      corps.textContent = section.corps;
+      // L'ÉCRAN montre un aperçu, l'EXPORT reste complet. Déverser vingt pages de
+      // prose au fil de l'eau rendait le suivi illisible (retour du 11/09/2026) ;
+      // le texte intégral est dans le document, pas perdu.
+      corps.textContent = extrait(section.corps);
       ligne.append(corps);
     }
 

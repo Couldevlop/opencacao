@@ -173,7 +173,19 @@ class ConseilService:
         # Clarification consultative : au 1er tour, on analyse et on pose des questions
         # complémentaires plutôt que de répondre à l'aveugle (réponse instantanée).
         if self._dialogue_naturel:
-            theme = clarification.detecter_theme(question, historique, self._profondeur_dialogue)
+            # Le dialogue se poursuit sur le sujet DÉJÀ engagé quand le tour courant
+            # ne renomme pas de thème : « depuis deux semaines » répond à la question
+            # posée, ce n'est pas une question neuve sans objet.
+            sujet_engage, reste_a_savoir = conseil_commun.contexte_de_poursuite(
+                question, historique, fiche_producteur
+            )
+            theme = clarification.detecter_theme(
+                question,
+                historique,
+                self._profondeur_dialogue,
+                sujet_en_cours=sujet_engage,
+                faits_manquants=reste_a_savoir,
+            )
             if theme is not None:
                 logger.info("clarification_demandee", mode="naturel", theme=theme)
                 if await self._cache.hit_rate_limit(client_ip):
@@ -372,7 +384,19 @@ class ConseilService:
 
         # Clarification consultative (1er tour) : poser des questions complémentaires.
         if self._dialogue_naturel:
-            theme = clarification.detecter_theme(question, historique, self._profondeur_dialogue)
+            # Le dialogue se poursuit sur le sujet DÉJÀ engagé quand le tour courant
+            # ne renomme pas de thème : « depuis deux semaines » répond à la question
+            # posée, ce n'est pas une question neuve sans objet.
+            sujet_engage, reste_a_savoir = conseil_commun.contexte_de_poursuite(
+                question, historique, fiche_producteur
+            )
+            theme = clarification.detecter_theme(
+                question,
+                historique,
+                self._profondeur_dialogue,
+                sujet_en_cours=sujet_engage,
+                faits_manquants=reste_a_savoir,
+            )
             if theme is not None:
                 logger.info("clarification_demandee", mode="naturel", theme=theme)
                 if await self._cache.hit_rate_limit(client_ip):

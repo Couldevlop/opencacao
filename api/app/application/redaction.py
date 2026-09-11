@@ -62,6 +62,22 @@ logger = get_logger(__name__)
 # longue que le plafond.
 MAX_TOKENS_SECTION = 420
 
+# Plafond par section, quelle que soit l'ampleur demandée. Au-delà, la qualité se
+# dégrade : le modèle délaye, se répète et sort du contexte utile. L'ampleur s'obtient
+# par le nombre de sections et par la base documentaire mobilisée, jamais en demandant
+# des pavés.
+PLAFOND_TOKENS_SECTION = 1400
+
+# Tokens par page de document rendu, mesuré sur les études produites (environ 350 mots
+# de prose par page en A4, corps 11). Sert à répartir une ampleur demandée en pages sur
+# les sections du gabarit.
+TOKENS_PAR_PAGE = 500
+
+# Plafond des affirmations mobilisées quand l'ampleur est relevée. Allonger le budget
+# sans élargir la base documentaire ferait délayer le modèle : plus de mots pour les
+# mêmes faits, c'est-à-dire précisément le remplissage qu'on refuse.
+PLAFOND_AFFIRMATIONS_SECTION = 40
+
 # Température basse : un document d'analyse doit être reproductible, pas créatif.
 TEMPERATURE_SECTION = 0.3
 
@@ -324,8 +340,39 @@ class MoteurRedaction:
             affirmation for affirmation in recoltees if not source_absente(affirmation.source)
         )
 
+    @staticmethod
+    def _budget(pages: int | None, nb_sections: int) -> tuple[int, int]:
+        """Budget de génération et de contexte par section, selon l'ampleur demandée.
+
+        Args:
+            pages: Ampleur demandée en pages, ou ``None`` si rien n'a été demandé.
+            nb_sections: Nombre de sections du gabarit.
+
+        Returns:
+            ``(max_tokens, max_affirmations)``. Sans ampleur demandée, les valeurs
+            historiques : rien ne change en silence pour les documents existants.
+        """
+        if not pages or nb_sections <= 0:
+            return MAX_TOKENS_SECTION, MAX_AFFIRMATIONS_SECTION
+        vise = (pages * TOKENS_PAR_PAGE) // nb_sections
+        tokens = max(MAX_TOKENS_SECTION, min(vise, PLAFOND_TOKENS_SECTION))
+        # La base documentaire suit le budget, dans le même rapport : c'est elle qui
+        # fournit la matière, le budget ne fait qu'autoriser à l'exposer.
+        affirmations = max(
+            MAX_AFFIRMATIONS_SECTION,
+            min(
+                MAX_AFFIRMATIONS_SECTION * tokens // MAX_TOKENS_SECTION,
+                PLAFOND_AFFIRMATIONS_SECTION,
+            ),
+        )
+        return tokens, affirmations
+
     async def _rediger_section(
-        self, section: SectionGabarit, sujet: str, affirmations: tuple[Affirmation, ...]
+        self,
+        section: SectionGabarit,
+        sujet: str,
+        affirmations: tuple[Affirmation, ...],
+        budget: tuple[int, int] = (MAX_TOKENS_SECTION, MAX_AFFIRMATIONS_SECTION),
     ) -> Section:
         """Rédige une section, ou rend son constat de lacune.
 
@@ -333,17 +380,18 @@ class MoteurRedaction:
             section: Section déclarée par le gabarit.
             sujet: Sujet du document.
             affirmations: Affirmations collectées pour cette section.
+            budget: ``(max_tokens, max_affirmations)`` issus de l'ampleur demandée.
 
         Returns:
             La section rédigée, ou une section en lacune.
         """
+        max_tokens, max_affirmations = budget
         if not affirmations:
             logger.info("section_en_lacune", section=section.titre)
             return Section(titre=section.titre, corps=_LACUNE, affirmations=(), lacune=True)
 
         contexte = "\n".join(
-            _ligne_de_contexte(affirmation)
-            for affirmation in affirmations[:MAX_AFFIRMATIONS_SECTION]
+            _ligne_de_contexte(affirmation) for affirmation in affirmations[:max_affirmations]
         )
         corps = await self._inference.generer(
             question=consigne_section(section, sujet),
@@ -356,7 +404,7 @@ class MoteurRedaction:
             entete_contexte=ENTETE_CONTEXTE_ANALYTIQUE,
             libelle_question=LIBELLE_SECTION,
             temperature=TEMPERATURE_SECTION,
-            max_tokens=MAX_TOKENS_SECTION,
+            max_tokens=max_tokens,
         )
         # On refuse la PRESCRIPTION, pas le chiffre. « verifier_reponse » se
         # declenche sur tout taux de dose, kg/ha compris : juste pour un conseil au
@@ -367,6 +415,43 @@ class MoteurRedaction:
             logger.warning("section_sortie_refusee", section=section.titre)
             return Section(titre=section.titre, corps=_LACUNE_REFUSEE, affirmations=(), lacune=True)
         return Section(titre=section.titre, corps=corps.strip(), affirmations=affirmations)
+
+    async def _rediger_section_du_document(
+        self, declaree: SectionGabarit, ecrites: list[Section]
+    ) -> Section:
+        """Rédige une section MÉTA à partir du document déjà écrit.
+
+        Son contexte n'est pas le corpus mais les sections précédentes : aucun fait
+        nouveau ne peut donc y apparaître. Les lacunes qu'elle énonce sont celles
+        RÉELLEMENT rencontrées, nommées par leur titre — une information vraie et
+        utile, là où le constat générique laissait croire à un échec de collecte.
+
+        Args:
+            declaree: Section déclarée par le gabarit, sans source.
+            ecrites: Sections déjà produites, lacunes comprises.
+
+        Returns:
+            La section rédigée, ou une section en lacune si le document est vide —
+            il n'y a alors rien dont on puisse énoncer les limites.
+        """
+        manquantes = [section.titre for section in ecrites if section.lacune]
+        rappel = (
+            " Les sections suivantes n'ont pu être renseignées faute de source "
+            f"mobilisable, dis-le explicitement : {', '.join(manquantes)}."
+            if manquantes
+            else ""
+        )
+        corps = await self._synthetiser(
+            ecrites,
+            f"{declaree.consigne} Appuie-toi UNIQUEMENT sur les sections ci-dessus : "
+            "dis ce que les sources mobilisées ne permettent pas d'établir, sans "
+            "ajouter aucun fait, chiffre ou date qui n'y figure pas, et sans formuler "
+            f"de recommandation.{rappel}",
+        )
+        if not corps:
+            logger.info("section_meta_sans_document", section=declaree.titre)
+            return Section(titre=declaree.titre, corps=_LACUNE, affirmations=(), lacune=True)
+        return Section(titre=declaree.titre, corps=corps, affirmations=())
 
     async def _synthetiser(self, sections: list[Section], consigne: str) -> str:
         """Rédige une synthèse (résumé ou conclusion) à partir des sections ÉCRITES.
@@ -412,6 +497,7 @@ class MoteurRedaction:
         sujet: str,
         demandeur: str,
         progression: ProgressionRappel | None = None,
+        pages: int | None = None,
     ) -> Document:
         """Produit le document complet.
 
@@ -421,6 +507,10 @@ class MoteurRedaction:
             demandeur: Identifiant du demandeur — seule son empreinte entre au manifeste.
             progression: Rappel appelé après chaque section, avec la section produite —
                 c'est lui qui alimente le flux SSE.
+            pages: Ampleur demandée, en pages. C'est un SOUHAIT : il élargit le budget
+                de chaque section et la base documentaire mobilisée, mais une étude
+                reste bornée par les sources. Quand l'écart subsiste, le document le
+                dit plutôt que de le combler par du remplissage.
 
         Returns:
             Le document assemblé, manifeste compris.
@@ -440,12 +530,23 @@ class MoteurRedaction:
 
         sections: list[Section] = []
         total = len(gabarit.sections)
+        budget = self._budget(pages, total)
         # Partagé pour tout le document : les sources qui ne varient pas par section
         # ne sont interrogées qu'une fois.
         partagees: dict[str, tuple[Affirmation, ...]] = {}
         for index, declaree in enumerate(gabarit.sections, start=1):
-            affirmations = await self._collecter(declaree, sujet, partagees)
-            section = await self._rediger_section(declaree, sujet, affirmations)
+            if not declaree.sources:
+                # Une section sans source DÉCLARÉE porte sur le document, pas sur le
+                # corpus : « Limites de la présente étude » n'a aucune source externe
+                # à mobiliser, elle parle de l'étude elle-même. La traiter comme les
+                # autres la faisait retomber sur le constat de lacune — sur CHAQUE
+                # étude produite, le lecteur y lisait un échec de collecte qui n'en
+                # était pas un (vécu en production le 11/09/2026). Elle se rédige donc
+                # à partir des sections déjà écrites, comme le résumé et la conclusion.
+                section = await self._rediger_section_du_document(declaree, sections)
+            else:
+                affirmations = await self._collecter(declaree, sujet, partagees)
+                section = await self._rediger_section(declaree, sujet, affirmations, budget)
             sections.append(section)
             if progression is not None:
                 await progression(index, total, section)

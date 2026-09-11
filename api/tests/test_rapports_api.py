@@ -250,7 +250,7 @@ def test_un_gabarit_malforme_donne_un_503_lisible(client: TestClient):
     from app.services.gabarits import GabaritInvalide
 
     class _ServiceCasse:
-        async def creer(self, gabarit: str, sujet: str, demandeur: str):
+        async def creer(self, gabarit: str, sujet: str, demandeur: str, pages: int = 0):
             raise GabaritInvalide("sections mal formées")
 
     client.app.dependency_overrides[get_service_rapports] = _ServiceCasse

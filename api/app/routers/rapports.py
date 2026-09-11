@@ -24,7 +24,7 @@ from app.api_deps import (
     get_device_id_obligatoire,
     get_service_rapports,
 )
-from app.application.intention_rapport import DEMANDE_MAX, resoudre_demande
+from app.application.intention_rapport import DEMANDE_MAX, PAGES_MAX, resoudre_demande
 from app.core.rapports_store import Rapport
 from app.domain.ports import CachePort
 from app.models.rapport import GabaritReponse, IntentionReponse, RapportReponse
@@ -90,6 +90,10 @@ class CreerRapportRequest(BaseModel):
 
     gabarit: str = Field(min_length=1, max_length=64)
     sujet: str = Field(min_length=1, max_length=200)
+    # Ampleur demandée, telle que la route d'intention l'a lue. 0 = non
+    # précisée. Bornée au même plafond que la résolution : deux valeurs
+    # indépendantes finiraient par diverger.
+    pages: int = Field(default=0, ge=0, le=PAGES_MAX)
 
 
 class IntentionRequest(BaseModel):
@@ -190,6 +194,7 @@ async def comprendre_demande(
         sujet=intention.sujet,
         certaine=intention.certaine,
         candidats=[_en_gabarit_reponse(par_nom[nom]) for nom in intention.candidats],
+        pages=intention.pages or 0,
     )
 
 
@@ -207,7 +212,7 @@ async def creer_rapport(
     """
     await _garde_generation(cache, device_id)
     try:
-        rapport = await service.creer(payload.gabarit, payload.sujet, device_id)
+        rapport = await service.creer(payload.gabarit, payload.sujet, device_id, payload.pages)
     except GabaritInconnu as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Gabarit inconnu."

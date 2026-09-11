@@ -97,13 +97,15 @@ class ServiceRapports:
         self._file = file or FileAttente()
         self._documents: OrderedDict[str, Document] = OrderedDict()
 
-    async def creer(self, gabarit: str, sujet: str, demandeur: str) -> Rapport:
+    async def creer(self, gabarit: str, sujet: str, demandeur: str, pages: int = 0) -> Rapport:
         """Crée un job de rapport.
 
         Args:
             gabarit: Identifiant du gabarit.
             sujet: Sujet du document.
             demandeur: Identifiant anonyme du demandeur.
+            pages: Ampleur demandée, en pages. 0 quand elle n'a pas été énoncée :
+                le moteur garde alors ses budgets historiques.
 
         Returns:
             Le job créé, en attente.
@@ -121,7 +123,7 @@ class ServiceRapports:
         propre = assainir_sujet(sujet)
         if not propre:
             raise SujetVide(sujet)
-        return await self._store.creer(gabarit, propre, demandeur)
+        return await self._store.creer(gabarit, propre, demandeur, pages)
 
     async def obtenir(self, identifiant: str, demandeur: str) -> Rapport | None:
         """Retourne un job de ce demandeur, ou None."""
@@ -196,7 +198,11 @@ class ServiceRapports:
             gabarit = charger_gabarit(rapport.gabarit)
             async with self._file.place():
                 document = await self._moteur().rediger(
-                    gabarit, rapport.sujet, demandeur, progression=_progression
+                    gabarit,
+                    rapport.sujet,
+                    demandeur,
+                    progression=_progression,
+                    pages=rapport.pages or None,
                 )
         except FileSaturee:
             await self._store.echouer(identifiant, "file d'attente saturée")

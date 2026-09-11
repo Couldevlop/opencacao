@@ -297,6 +297,8 @@ def detecter_theme(
     question: str,
     historique: list[dict[str, str]] | None,
     profondeur_max: int = 1,
+    sujet_en_cours: str = "",
+    faits_manquants: bool = False,
 ) -> str | None:
     """Retourne le thème nécessitant une clarification, ou None (réponse directe).
 
@@ -314,6 +316,11 @@ def detecter_theme(
             prend tout son sens. Le plafond est indispensable : sans lui, un producteur
             pourrait ne jamais obtenir de conseil. Ce qui empêche de tourner en rond,
             c'est la fiche — on ne redemande pas ce qui a été dit (cf. ``fiche.py``).
+        sujet_en_cours: Thème déjà engagé dans la conversation, lu dans la fiche du
+            producteur. Sert à POURSUIVRE un dialogue quand le tour courant ne renomme
+            pas le thème.
+        faits_manquants: Vrai s'il reste, pour ce sujet, des faits que la fiche sait
+            lire et que le producteur n'a pas encore donnés.
 
     Returns:
         Le thème, ou ``None`` s'il faut répondre.
@@ -327,7 +334,19 @@ def detecter_theme(
     texte = _normaliser(question)
     if _repondre_directement(texte):
         return None
-    return _detecter(texte)
+    theme = _detecter(texte)
+    if theme is not None:
+        # Le producteur nomme un thème : il prime, même en plein dialogue. Il a le
+        # droit de changer de sujet, et le suivre vaut mieux que finir un questionnaire.
+        return theme
+
+    # Aucun thème dans le tour courant. S'il RÉPOND à une question qu'on vient de lui
+    # poser, c'est le même sujet : « depuis deux semaines » n'est pas une question
+    # neuve sans objet. Sans cette poursuite, le dialogue s'arrêtait au deuxième tour,
+    # quelle que soit la profondeur autorisée — la capacité était livrée, pas l'usage.
+    if _salves_consecutives(historique) >= 1 and sujet_en_cours and faits_manquants:
+        return sujet_en_cours
+    return None
 
 
 def besoin_localite(question: str, historique: list[dict[str, str]] | None) -> bool:
