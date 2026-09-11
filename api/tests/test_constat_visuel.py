@@ -244,3 +244,39 @@ def test_la_consigne_de_description_reclame_le_marqueur() -> None:
     from app.services.prompts_constat import CONSIGNE_DESCRIPTION
 
     assert "PHOTO_INEXPLOITABLE" in CONSIGNE_DESCRIPTION
+
+
+class InferenceQuiInventeUneSource:
+    """Le modèle signe son constat d'une source documentaire, comme en production."""
+
+    async def generer(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
+        return (
+            "Votre arbre porte des cabosses à différents stades de maturation. "
+            "Montrez ces photos à votre agent ANADER. Sources : Conseil du Café-Cacao."
+        )
+
+
+class VisionQuiDecritVraiment:
+    async def decrire(self, images, consigne):  # noqa: ANN001, ANN201
+        return "Cabosses vertes, jaunes et rouges sur un tronc couvert de mousse."
+
+
+@pytest.mark.asyncio
+async def test_un_constat_ne_cite_aucune_source_documentaire() -> None:
+    """Vérifié en production le 11/09 sur une vraie photo de cabosse : le constat, par
+    ailleurs exact, se terminait par « Sources : Conseil du Café-Cacao ».
+
+    Un constat visuel décrit une PHOTO : il n'a aucune source documentaire, donc toute
+    attribution y est fabriquée par construction. Le nettoyage des sources non ancrées
+    ne couvrait que les chemins textuels ; la cascade visuelle y échappait.
+    """
+    service = ServiceConstatVisuel(VisionQuiDecritVraiment(), InferenceQuiInventeUneSource())
+
+    constat = await service.analyser(((b"octets", "empreinte"),), _contexte())
+
+    assert constat is not None
+    assert "Sources" not in constat.texte
+    assert "Conseil du Café-Cacao" not in constat.texte
+    # Le constat lui-même est conservé : on retire l'attribution, pas l'observation.
+    assert "cabosses" in constat.texte.lower()
+    assert "ANADER" in constat.texte

@@ -22,7 +22,7 @@ from app.application.fusion_contextuelle import ContexteParcelle, fusionner
 from app.core.logging import get_logger
 from app.domain.ports import InferencePort, VisionPort
 from app.models.constat import Constat, NiveauConfiance, Observation, Organe
-from app.services import guardrails
+from app.services import guardrails, postprocess
 from app.services.prompts_constat import CONSIGNE_DESCRIPTION, consigne_redaction
 
 logger = get_logger(__name__)
@@ -172,6 +172,13 @@ class ServiceConstatVisuel:
             temperature=0.3,
             max_tokens=MAX_TOKENS_CONSTAT,
         )
+
+        # Un constat décrit une PHOTO : il n'a aucune source documentaire, donc toute
+        # attribution y est fabriquée par construction. Vérifié en production le 11/09
+        # sur une vraie photo de cabosse — le constat, par ailleurs exact, se terminait
+        # par « Sources : Conseil du Café-Cacao ». La liste ancrée est vide ici, ce qui
+        # fait tomber la mention entière.
+        texte = postprocess.retirer_sources_non_ancrees(texte, [])
 
         fautif = guardrails.contient_diagnostic(texte)
         if fautif:
