@@ -59,6 +59,15 @@ _SYMPTOME = (
     "deperiss",
     "symptome",
     "nuisible",
+    # Chute d'organes : un symptôme classique. Motifs volontairement ÉTROITS — un
+    # simple « tombe » happerait « le prix tombe », et la conversation se mettrait à
+    # demander quelle partie de l'arbre est touchée à propos d'un cours du cacao.
+    "feuilles tomb",
+    "cabosses tomb",
+    "fleurs tomb",
+    "chute des feuilles",
+    "chute des cabosses",
+    "defoliation",
 )
 _TRAITEMENT = (
     "traiter",
@@ -102,6 +111,19 @@ _PLANTATION = (
     "creer un champ",
     "demarrer un champ",
     "champ de cacao",
+    # Écart de production du 11/09 : « je veux faire une plantation » et « je veux
+    # faire de la culture de cacao » recevaient un conseil immédiat. Aucun motif ne
+    # correspondait — la liste ne connaissait que « créer/installer une plantation ».
+    "faire une plantation",
+    "faire de la plantation",
+    "faire une exploitation",
+    "cultiver",
+    "culture de cacao",
+    "culture du cacao",
+    "faire de la culture",
+    "me lancer dans le cacao",
+    "commencer le cacao",
+    "demarrer une plantation",
 )
 
 _BULLETS = {
@@ -123,8 +145,9 @@ _BULLETS = {
         "Connaissez-vous le type de sol (sableux, argileux, latéritique) ?",
     ],
     "plantation": [
+        "Confirmez-moi qu'il s'agit bien d'une plantation de CACAO : c'est la seule "
+        "culture sur laquelle je peux vous accompagner.",
         "Quelle surface envisagez-vous, et quel type de sol ?",
-        "Avez-vous déjà des plants ou semences sélectionnés ?",
     ],
 }
 
@@ -133,7 +156,7 @@ _INTRO = {
     "traitement": "Avant de vous orienter, dites-moi :",
     "rendement": "Pour comprendre la baisse de rendement :",
     "fertilisation": "Pour vous conseiller sur la fertilité de votre sol :",
-    "plantation": "Pour bien démarrer votre plantation :",
+    "plantation": "Avec plaisir. Avant de vous orienter, deux précisions :",
 }
 
 
@@ -182,6 +205,33 @@ def _detecter(texte: str) -> str | None:
     return None
 
 
+def _salves_consecutives(historique: list[dict[str, str]]) -> int:
+    """Nombre de clarifications posées D'AFFILÉE, en remontant depuis la fin du fil.
+
+    On compte les salves CONSÉCUTIVES et non le total : dès qu'un vrai conseil a été
+    donné, le compteur repart de zéro, de sorte qu'un thème nouveau rouvre un dialogue
+    en cours de conversation (décision Waopron 06/07). C'est ce qui permet d'autoriser
+    cinq échanges sur GPU sans qu'une conversation longue finisse par ne plus jamais
+    poser de question.
+
+    Args:
+        historique: Tours précédents, du plus ancien au plus récent.
+
+    Returns:
+        Le nombre de questions de clarification qui terminent le fil.
+    """
+    salves = 0
+    for tour in reversed(historique):
+        if tour.get("role") != "assistant":
+            continue
+        texte = tour.get("content", "")
+        if _PIED in texte or "dites-moi dans quelle ville ou région" in texte:
+            salves += 1
+            continue
+        break
+    return salves
+
+
 def _derniere_reponse_est_clarification(historique: list[dict[str, str]]) -> bool:
     """Vrai si la dernière réponse de l'assistant était une salve de clarification.
 
@@ -228,23 +278,48 @@ _CONSIGNES: dict[str, str] = {
         "déjà été fertilisée et le type de sol. Pose UNE question brève et naturelle "
         "pour le savoir, sans donner de recommandation encore."
     ),
+    # Arbitrage Waopron du 11/09/2026. Une intention de plantation est le seul cas où
+    # l'on CONFIRME le périmètre avant de questionner : « plantation » tout court ne dit
+    # pas quelle culture, et répondre cacao d'office reviendrait à supposer. On demande
+    # donc les deux choses d'un coup — est-ce bien du cacao, et où — puis on annonce
+    # franchement la limite si ce n'en est pas.
     "plantation": (
-        "Pour bien accompagner une nouvelle plantation, il te faut la surface envisagée, "
-        "le type de sol et si le producteur a déjà des plants sélectionnés. Pose UNE "
-        "question brève et naturelle en ce sens, sans conseiller encore."
+        "Le producteur veut créer une plantation mais n'a pas dit de quelle culture ni "
+        "où. Demande-lui, en UNE phrase chaleureuse, de confirmer qu'il s'agit bien de "
+        "CACAO et dans quelle ville ou zone il compte planter. Précise, en quelques mots, "
+        "que tu ne peux l'accompagner que sur le cacao si c'est une autre culture. Ne "
+        "donne aucun conseil de plantation à ce stade."
     ),
 }
 
 
-def detecter_theme(question: str, historique: list[dict[str, str]] | None) -> str | None:
+def detecter_theme(
+    question: str,
+    historique: list[dict[str, str]] | None,
+    profondeur_max: int = 1,
+) -> str | None:
     """Retourne le thème nécessitant une clarification, ou None (réponse directe).
 
     Même logique de déclenchement que :func:`analyser` (anti-boucle, contact sans
     ville, question informationnelle, détection de thème), mais renvoie le THÈME plutôt
     que le texte scripté — pour que l'appelant fasse formuler la question par le modèle.
+
+    Args:
+        question: Dernière question du producteur.
+        historique: Tours précédents de la conversation.
+        profondeur_max: Nombre de questions de clarification tolérées d'affilée. **1 sur
+            CPU** : chaque tour y coûte des dizaines de secondes, et enchaîner les
+            questions ferait attendre le producteur sans rien lui apprendre. **Jusqu'à 5
+            sur GPU**, où un tour coûte une à deux secondes et où le dialogue consultatif
+            prend tout son sens. Le plafond est indispensable : sans lui, un producteur
+            pourrait ne jamais obtenir de conseil. Ce qui empêche de tourner en rond,
+            c'est la fiche — on ne redemande pas ce qui a été dit (cf. ``fiche.py``).
+
+    Returns:
+        Le thème, ou ``None`` s'il faut répondre.
     """
     historique = historique or []
-    if _derniere_reponse_est_clarification(historique):
+    if _salves_consecutives(historique) >= max(1, profondeur_max):
         return None
     fil = _fil_utilisateur(question, historique)
     if contacts.intention_contact(question) and contacts.chercher(fil) is None:

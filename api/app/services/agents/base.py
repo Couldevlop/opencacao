@@ -112,6 +112,9 @@ class AgentBase:
         # Sources ANCRÉES : on croise le texte avec le contexte injecté -> la confiance
         # ne peut être élevée que si les sources citées sont réellement dans le contexte.
         sources = postprocess.extraire_sources(texte, contexte)
+        # Et on efface du TEXTE les attributions que l'ancrage vient de rejeter :
+        # détecter une source fabriquée sans la retirer revient à l'afficher quand même.
+        texte = postprocess.retirer_sources_non_ancrees(texte, sources)
         return AgentReponse(
             texte=texte,
             sources=sources,

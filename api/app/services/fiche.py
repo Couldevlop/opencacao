@@ -35,6 +35,32 @@ _AGE_HUMAIN = ("j ai", "jai", "age de", "agee de", "age de")
 # Un cacaoyer dépasse rarement 60 ans ; au-delà, c'est un autre sujet que la parcelle.
 _AGE_MAX_PLANTATION = 60
 
+# Partie de l'arbre citée par le producteur. C'est l'une des deux moitiés du
+# questionnaire « symptôme » — et en production le 11/09, « Les feuilles de mon
+# cacaoyer jaunissent » recevait « Quelles parties sont touchées ? ». La réponse était
+# dans la question : la fiche ne savait pas la lire, donc la consigne la redemandait.
+#
+# Les libellés sont ceux de la consigne de clarification, pour que le modèle reçoive un
+# vocabulaire cohérent avec ce qu'il aurait demandé.
+_PARTIES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("les feuilles", ("feuille", "feuilles", "limbe", "feuillage")),
+    ("les cabosses", ("cabosse", "cabosses", "fruit", "fruits", "fève", "feves", "fèves")),
+    (
+        "le tronc ou les rameaux",
+        ("tronc", "rameau", "rameaux", "branche", "branches", "tige", "tiges", "ecorce"),
+    ),
+    ("les racines", ("racine", "racines", "pivot")),
+    ("les fleurs", ("fleur", "fleurs", "floraison")),
+)
+
+# Ancienneté du symptôme : l'autre moitié du questionnaire. On garde la formulation du
+# producteur (« depuis deux semaines »), pas une durée normalisée — on ne saurait pas
+# quoi faire d'une valeur numérique, et la citer telle quelle prouve qu'on a écouté.
+_ANCIENNETE = re.compile(
+    r"depuis\s+((?:un|une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|\d{1,3})\s*"
+    r"(?:jours?|semaines?|mois|ans?|annees?)|hier|peu|longtemps|toujours)"
+)
+
 _LIBELLES_SUJET: dict[str, str] = {
     "symptome": "les symptômes observés sur les cacaoyers",
     "traitement": "le traitement à mener",
@@ -52,11 +78,20 @@ class Fiche:
     age_ans: int | None = None
     superficie_ha: float | None = None
     sujet: str = ""
+    partie: str = ""
+    anciennete: str = ""
 
     @property
     def vide(self) -> bool:
         """Vrai si le producteur n'a encore rien dit de mémorisable."""
-        return not (self.localite or self.age_ans or self.superficie_ha or self.sujet)
+        return not (
+            self.localite
+            or self.age_ans
+            or self.superficie_ha
+            or self.sujet
+            or self.partie
+            or self.anciennete
+        )
 
 
 def _fil_producteur(question: str, historique: list[dict[str, str]] | None) -> str:
@@ -91,6 +126,27 @@ def _age(texte: str) -> int | None:
     return None
 
 
+def _partie(texte: str) -> str:
+    """Partie de l'arbre citée par le producteur, ou ``""``.
+
+    La PREMIÈRE citée dans le fil l'emporte : c'est celle qui a motivé la demande, et
+    les organes énumérés ensuite sont le plus souvent ceux d'une comparaison.
+    """
+    meilleur: tuple[int, str] | None = None
+    for libelle, mots in _PARTIES:
+        for mot in mots:
+            trouve = re.search(rf"\b{re.escape(mot)}\b", texte)
+            if trouve and (meilleur is None or trouve.start() < meilleur[0]):
+                meilleur = (trouve.start(), libelle)
+    return meilleur[1] if meilleur else ""
+
+
+def _anciennete(texte: str) -> str:
+    """Ancienneté du symptôme telle que le producteur l'a dite, ou ``""``."""
+    trouve = _ANCIENNETE.search(texte)
+    return f"depuis {trouve.group(1).strip()}" if trouve else ""
+
+
 def extraire(question: str, historique: list[dict[str, str]] | None) -> Fiche:
     """Construit la fiche à partir de TOUT le fil, hors tours de l'assistant.
 
@@ -103,11 +159,19 @@ def extraire(question: str, historique: list[dict[str, str]] | None) -> Fiche:
     """
     fil = _fil_producteur(question, historique)
     norme = _normaliser(fil)
+    sujet = clarification.theme_du_texte(fil) or ""
+    # La partie atteinte et l'ancienneté n'ont de sens que pour un PROBLÈME observé.
+    # « Quand récolter les cabosses ? » nomme un organe sans rien décrire : en tirer un
+    # fait ferait dire au modèle « le problème touche les cabosses » devant une question
+    # de calendrier. On ne déduit rien ailleurs, on ne déduit rien ici non plus.
+    concerne_un_symptome = sujet in ("symptome", "traitement")
     return Fiche(
         localite=localites.detecter(fil) or "",
         age_ans=_age(norme),
         superficie_ha=_superficie(norme),
-        sujet=clarification.theme_du_texte(fil) or "",
+        sujet=sujet,
+        partie=_partie(norme) if concerne_un_symptome else "",
+        anciennete=_anciennete(norme) if concerne_un_symptome else "",
     )
 
 
@@ -188,4 +252,8 @@ def faits_connus(fiche: Fiche) -> str:
         morceaux.append(f"sa plantation fait {fiche.superficie_ha:g} ha")
     if fiche.age_ans is not None:
         morceaux.append(f"elle a environ {fiche.age_ans} ans")
+    if fiche.partie:
+        morceaux.append(f"le problème touche {fiche.partie}")
+    if fiche.anciennete:
+        morceaux.append(f"cela dure {fiche.anciennete}")
     return " ; ".join(morceaux)

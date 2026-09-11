@@ -183,3 +183,97 @@ def test_consigne_theme_ajoute_la_localite_si_besoin() -> None:
 def test_besoin_localite_vrai_si_aucune_ville() -> None:
     assert clarification.besoin_localite("Mes feuilles jaunissent", None) is True
     assert clarification.besoin_localite("Mes feuilles jaunissent à Daloa", None) is False
+
+
+# --- « Je veux faire une plantation » : confirmer le cacao, puis demander la zone ---
+#
+# Arbitrage Waopron du 11/09/2026. Une intention de plantation sans autre précision ne
+# doit pas recevoir un conseil immédiat : le système confirme d'abord qu'il s'agit bien
+# de cacao — c'est son seul périmètre — puis demande la zone, qui commande les variétés
+# et le calendrier. Si ce n'est pas du cacao, il le dit franchement.
+
+
+def test_une_intention_de_plantation_declenche_le_dialogue() -> None:
+    """« je veux faire une plantation » ne correspondait à aucun motif : le système
+    répondait directement, en zone de savane comme ailleurs."""
+    assert clarification.detecter_theme("je veux faire une plantation", []) == "plantation"
+
+
+def test_l_intention_de_cultiver_declenche_aussi() -> None:
+    """Écart de production : « je veux faire de la culture de cacao »."""
+    assert clarification.detecter_theme("je veux faire de la culture de cacao", []) == "plantation"
+
+
+def test_la_consigne_de_plantation_fait_confirmer_le_cacao() -> None:
+    """Le producteur doit pouvoir dire « non, c'est de l'hévéa » et être redirigé."""
+    consigne = clarification.consigne_theme("plantation", besoin_localite=True)
+    assert "cacao" in consigne.lower()
+    assert "zone" in consigne.lower() or "localit" in consigne.lower()
+
+
+def test_la_zone_n_est_pas_redemandee_si_elle_est_connue() -> None:
+    """Redemander ce qui vient d'être dit est le défaut qu'on corrige, pas qu'on ajoute."""
+    consigne = clarification.consigne_theme("plantation", besoin_localite=False)
+    assert "dans quelle localité" not in consigne.lower()
+
+
+# --- Profondeur du dialogue : courte sur CPU, jusqu'à cinq échanges sur GPU ---
+#
+# Arbitrage Waopron du 11/09/2026. Sur CPU chaque tour coûte des dizaines de secondes :
+# une seule question de clarification, puis on répond. Sur GPU un tour coûte une à deux
+# secondes, et un vrai dialogue consultatif devient possible — sans jamais boucler, ce
+# que garantit la fiche (on ne redemande pas ce qui a été dit) et le plafond.
+
+
+def _fil_clarifie(nb: int) -> list[dict[str, str]]:
+    """Historique où l'assistant a déjà posé ``nb`` questions de clarification."""
+    historique: list[dict[str, str]] = []
+    for i in range(nb):
+        historique.append({"role": "user", "content": f"mes feuilles jaunissent {i}"})
+        historique.append(
+            {"role": "assistant", "content": f"Sur quelle partie ? {clarification._PIED}"}
+        )
+    return historique
+
+
+def test_sur_cpu_une_seule_salve_puis_on_repond() -> None:
+    """Comportement historique, inchangé : le producteur obtient une réponse."""
+    assert (
+        clarification.detecter_theme("elles jaunissent aussi", _fil_clarifie(1), profondeur_max=1)
+        is None
+    )
+
+
+def test_sur_gpu_le_dialogue_peut_aller_jusqu_a_cinq() -> None:
+    """Quatre questions déjà posées : une cinquième reste permise."""
+    assert (
+        clarification.detecter_theme(
+            "mes cabosses pourrissent aussi", _fil_clarifie(4), profondeur_max=5
+        )
+        == "symptome"
+    )
+
+
+def test_le_plafond_est_respecte_meme_sur_gpu() -> None:
+    """Cinq questions posées : on répond, on ne questionne plus. Sans ce plafond, le
+    producteur n'obtiendrait jamais de conseil."""
+    assert (
+        clarification.detecter_theme(
+            "mes cabosses pourrissent aussi", _fil_clarifie(5), profondeur_max=5
+        )
+        is None
+    )
+
+
+def test_une_vraie_reponse_remet_le_compteur_a_zero() -> None:
+    """Un thème nouveau après un conseil rouvre un dialogue : ce sont les salves
+    CONSÉCUTIVES qui comptent, pas le total d'une conversation entière."""
+    historique = [
+        *_fil_clarifie(3),
+        {"role": "user", "content": "merci"},
+        {"role": "assistant", "content": "Taillez votre cacaoyer après la récolte."},
+    ]
+    assert (
+        clarification.detecter_theme("mes cabosses pourrissent", historique, profondeur_max=1)
+        == "symptome"
+    )

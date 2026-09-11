@@ -133,3 +133,57 @@ def test_le_rappel_court_se_contente_du_sujet_sans_localite() -> None:
     rappel = fiche.rappel_court(fiche.extraire("Mes cabosses pourrissent", None))
     assert rappel
     assert "à " not in rappel
+
+
+# --- La partie atteinte et l'ancienneté : ce que la clarification redemandait ---
+#
+# Écart de production du 11/09/2026 : « Les feuilles de mon cacaoyer jaunissent »
+# recevait « Quelles parties de l'arbre sont touchées ? ». La réponse était dans la
+# question. La fiche ne savait extraire que la localité, la surface et l'âge — la
+# consigne de clarification réclamait donc son questionnaire complet.
+
+
+def test_la_partie_atteinte_est_relevee() -> None:
+    """Le mot est dans la question : il ne doit plus jamais être redemandé."""
+    assert fiche.extraire("Les feuilles de mon cacaoyer jaunissent", None).partie == "les feuilles"
+
+
+def test_chaque_organe_est_reconnu() -> None:
+    """Les quatre parties que la consigne de clarification énumère."""
+    cas = {
+        "mes cabosses pourrissent": "les cabosses",
+        "le tronc de mes arbres est troué": "le tronc ou les rameaux",
+        "les racines sont attaquées": "les racines",
+        "les feuilles tombent": "les feuilles",
+    }
+    for texte, attendu in cas.items():
+        assert fiche.extraire(texte, None).partie == attendu, texte
+
+
+def test_aucune_partie_n_est_deduite() -> None:
+    """Rien de déduit : une question sans organe cité laisse le champ vide."""
+    assert fiche.extraire("Mon cacaoyer va mal", None).partie == ""
+
+
+def test_la_partie_citee_par_l_assistant_ne_compte_pas() -> None:
+    """La question de clarification ÉNUMÈRE les organes. La relire ferait croire que
+    le producteur a répondu — c'est le même piège que le contact ANADER pour la ville."""
+    historique = [
+        {"role": "user", "content": "mon cacaoyer va mal"},
+        {"role": "assistant", "content": "Sur quelle partie ? (feuilles, cabosses, racines)"},
+    ]
+    assert fiche.extraire("depuis deux semaines", historique).partie == ""
+
+
+def test_l_anciennete_est_relevee() -> None:
+    """L'autre moitié du questionnaire « symptôme »."""
+    assert fiche.extraire("les feuilles jaunissent depuis deux semaines", None).anciennete
+
+
+def test_les_faits_connus_citent_la_partie_et_l_anciennete() -> None:
+    """C'est ce texte qui interdit au modèle de redemander ce qu'il sait déjà."""
+    connus = fiche.faits_connus(
+        fiche.extraire("les feuilles de mes cacaoyers jaunissent depuis 2 semaines", None)
+    )
+    assert "feuilles" in connus
+    assert "semaines" in connus

@@ -125,3 +125,40 @@ def terminer_proprement(texte: str) -> str:
     if coupe < 0:
         return texte
     return depouille[: coupe + 1]
+
+
+# Mention d'attribution écrite par le modèle en fin de réponse : « Sources : X, Y. »
+# Le singulier est aussi fréquent que le pluriel, et la ponctuation finale facultative.
+_MENTION_SOURCES = re.compile(
+    r"(?:^|(?<=[.!?\n]))\s*\**\s*Sources?\s*:\s*(?P<liste>[^.\n]*)\.?\s*$",
+    re.IGNORECASE,
+)
+
+
+def retirer_sources_non_ancrees(reponse: str, sources: list[str]) -> str:
+    """Efface du TEXTE toute source que l'ancrage n'a pas retenue.
+
+    ``extraire_sources`` rejette déjà une source absente du contexte : la confiance
+    tombe, aucun badge n'est affiché. Mais la phrase « Sources : … » reste écrite dans
+    la réponse — et c'est elle que le producteur lit. En production le 11/09, une
+    prévision météo était créditée au Conseil du Café-Cacao, qui ne fait pas la pluie.
+
+    On retire donc les seuls noms non ancrés, et la mention entière s'il n'en reste
+    aucun : mieux vaut une réponse sans attribution qu'une attribution fausse.
+
+    Args:
+        reponse: Texte généré par le modèle.
+        sources: Sources ANCRÉES, telles que renvoyées par :func:`extraire_sources`.
+
+    Returns:
+        Le texte, débarrassé des attributions non fondées. Inchangé s'il n'en porte pas.
+    """
+    mention = _MENTION_SOURCES.search(reponse)
+    if mention is None:
+        return reponse
+
+    retenues = [s for s in sources if s.lower() in mention.group("liste").lower()]
+    debut = reponse[: mention.start()].rstrip()
+    if not retenues:
+        return debut
+    return f"{debut} Sources : {', '.join(retenues)}."

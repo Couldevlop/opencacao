@@ -45,6 +45,7 @@ class ConseilService:
         semantic_cache_threshold: float = 0.92,
         semantic_cache_lexical_min: float = 0.75,
         dialogue_naturel: bool = False,
+        profondeur_dialogue: int = 1,
         conversationnel: bool = False,
     ) -> None:
         """Initialise le service avec ses dépendances (ports).
@@ -60,6 +61,7 @@ class ConseilService:
                 réponse cachée sémantiquement proche.
             semantic_cache_lexical_min: Couverture lexicale minimale (garde-fou) des
                 mots-clés de la question cachée par la question entrante.
+            profondeur_dialogue: Clarifications tolérées d'affilée (1 sur CPU, 5 sur GPU).
             dialogue_naturel: Si vrai, la clarification est formulée par le modèle
                 (naturelle) plutôt que par le texte scripté. Défaut False (inchangé).
         """
@@ -73,6 +75,7 @@ class ConseilService:
             cache, embeddings, semantic_cache_threshold, semantic_cache_lexical_min
         )
         self._dialogue_naturel = dialogue_naturel
+        self._profondeur_dialogue = profondeur_dialogue
         self._conversationnel = conversationnel
 
     @staticmethod
@@ -170,7 +173,7 @@ class ConseilService:
         # Clarification consultative : au 1er tour, on analyse et on pose des questions
         # complémentaires plutôt que de répondre à l'aveugle (réponse instantanée).
         if self._dialogue_naturel:
-            theme = clarification.detecter_theme(question, historique)
+            theme = clarification.detecter_theme(question, historique, self._profondeur_dialogue)
             if theme is not None:
                 logger.info("clarification_demandee", mode="naturel", theme=theme)
                 if await self._cache.hit_rate_limit(client_ip):
@@ -236,6 +239,7 @@ class ConseilService:
             )
 
         sources = postprocess.extraire_sources(texte, contexte)
+        texte = postprocess.retirer_sources_non_ancrees(texte, sources)
         conseil = Conseil(
             reponse=texte,
             confiance=postprocess.estimer_confiance(sources),
@@ -283,6 +287,7 @@ class ConseilService:
             return False
 
         sources = postprocess.extraire_sources(texte, contexte)
+        texte = postprocess.retirer_sources_non_ancrees(texte, sources)
         conseil = Conseil(
             reponse=texte,
             confiance=postprocess.estimer_confiance(sources),
@@ -367,7 +372,7 @@ class ConseilService:
 
         # Clarification consultative (1er tour) : poser des questions complémentaires.
         if self._dialogue_naturel:
-            theme = clarification.detecter_theme(question, historique)
+            theme = clarification.detecter_theme(question, historique, self._profondeur_dialogue)
             if theme is not None:
                 logger.info("clarification_demandee", mode="naturel", theme=theme)
                 if await self._cache.hit_rate_limit(client_ip):
@@ -468,6 +473,7 @@ class ConseilService:
 
         texte = postprocess.nettoyer_tirets("".join(emis))
         sources = postprocess.extraire_sources(texte, contexte)
+        texte = postprocess.retirer_sources_non_ancrees(texte, sources)
         confiance = postprocess.estimer_confiance(sources)
         base = Conseil(texte, confiance, sources, redirection_anader=False)
         if not historique:

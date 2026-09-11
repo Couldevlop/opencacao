@@ -68,6 +68,7 @@ class Orchestrateur:
         cache_semantique: CacheSemantique | None = None,
         inference: InferencePort | None = None,
         dialogue_naturel: bool = False,
+        profondeur_dialogue: int = 1,
         conversationnel: bool = False,
     ) -> None:
         """Initialise l'orchestrateur.
@@ -97,6 +98,7 @@ class Orchestrateur:
         self._semantique = cache_semantique or CacheSemantique(cache, embeddings=None)
         self._inference = inference
         self._dialogue_naturel = dialogue_naturel
+        self._profondeur_dialogue = profondeur_dialogue
         self._conversationnel = conversationnel
 
     def _civilite(
@@ -175,7 +177,7 @@ class Orchestrateur:
         #    inférence) par défaut ; naturelle (formulée par le modèle) derrière le
         #    drapeau ``dialogue_naturel`` si une inférence est injectée.
         if self._dialogue_naturel and self._inference is not None:
-            theme = clarification.detecter_theme(question, historique)
+            theme = clarification.detecter_theme(question, historique, self._profondeur_dialogue)
             if theme is not None:
                 logger.info("clarification_demandee", mode="naturel", theme=theme)
                 if await self._cache.hit_rate_limit(client_ip):
@@ -351,7 +353,7 @@ class Orchestrateur:
         # 2. Clarification consultative (émise d'un bloc en scripté ; en flux
         #    token par token pour la variante naturelle derrière le drapeau).
         if self._dialogue_naturel and self._inference is not None:
-            theme = clarification.detecter_theme(question, historique)
+            theme = clarification.detecter_theme(question, historique, self._profondeur_dialogue)
             if theme is not None:
                 logger.info("clarification_demandee", mode="naturel", theme=theme)
                 if await self._cache.hit_rate_limit(client_ip):
@@ -549,6 +551,7 @@ class Orchestrateur:
         # 8. Post-traitement : sources, confiance, cache, enrichissement, événement final.
         texte = postprocess.nettoyer_tirets(filtre.texte)
         sources = postprocess.extraire_sources(texte, contexte)
+        texte = postprocess.retirer_sources_non_ancrees(texte, sources)
         confiance = postprocess.estimer_confiance(sources)
         base = Conseil(texte, confiance, sources, redirection_anader=False)
         if not historique:

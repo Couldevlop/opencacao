@@ -212,6 +212,22 @@ class Settings(BaseSettings):
     # configuration dégrade le service, elle ne le casse pas.
     profil_materiel: Literal["gpu", "cpu"] = "cpu"
 
+    # Profondeur du dialogue consultatif, par profil. Sur CPU un tour coûte des
+    # dizaines de secondes : enchaîner les questions ferait attendre le producteur sans
+    # rien lui apprendre, donc UNE salve puis on répond. Sur GPU un tour coûte une à
+    # deux secondes, et le dialogue consultatif — celui d'un agent qui creuse avant de
+    # conseiller — devient possible. Le plafond reste indispensable : sans lui, un
+    # producteur pourrait ne jamais obtenir de conseil.
+    profondeur_dialogue_cpu: int = 1
+    profondeur_dialogue_gpu: int = 5
+
+    @property
+    def profondeur_dialogue(self) -> int:
+        """Nombre de clarifications tolérées d'affilée, selon le matériel disponible."""
+        if self.profil_materiel == "gpu" and not self.repli_cpu:
+            return self.profondeur_dialogue_gpu
+        return self.profondeur_dialogue_cpu
+
     # Levé par la sentinelle (``app.exploitation.sentinelle``) quand elle a ramené le
     # service au CPU sans intervention humaine. Il ne change AUCUN comportement du
     # moteur : il sert à DIRE ce qui se passe. Sans lui, l'interface annoncerait
